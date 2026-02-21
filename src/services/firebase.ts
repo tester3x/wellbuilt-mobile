@@ -106,6 +106,54 @@ const firebaseGet = async (path: string): Promise<any> => {
   return response.json();
 };
 
+/**
+ * Firebase GET with server-side query filtering.
+ * Uses REST API query params: orderBy, equalTo, startAt, endAt.
+ * Much less bandwidth than downloading everything and filtering client-side.
+ */
+const firebaseQuery = async (
+  path: string,
+  orderByChild: string,
+  equalTo: string
+): Promise<any> => {
+  // Firebase REST API requires JSON-encoded strings for orderBy and equalTo
+  const orderByParam = encodeURIComponent(`"${orderByChild}"`);
+  const equalToParam = encodeURIComponent(`"${equalTo}"`);
+
+  let url = `${FIREBASE_DATABASE_URL}/${path}.json`;
+  url += `?auth=${FIREBASE_API_KEY}`;
+  url += `&orderBy=${orderByParam}`;
+  url += `&equalTo=${equalToParam}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Firebase query failed (${response.status})`);
+  }
+
+  return response.json();
+};
+
+// --- In-memory cache for packets/processed (all-wells fetch) ---
+// Used by getPerformanceData() which needs all wells. Short TTL avoids
+// repeated full downloads within the same screen session.
+let _processedCache: { data: any; timestamp: number } | null = null;
+const PROCESSED_CACHE_TTL_MS = 60 * 1000; // 1 minute
+
+const getCachedProcessedData = async (): Promise<any> => {
+  if (_processedCache && (Date.now() - _processedCache.timestamp) < PROCESSED_CACHE_TTL_MS) {
+    console.log("[Firebase] Using cached packets/processed data");
+    return _processedCache.data;
+  }
+  console.log("[Firebase] Fetching fresh packets/processed data");
+  const data = await firebaseGet("packets/processed");
+  _processedCache = { data, timestamp: Date.now() };
+  return data;
+};
+
 const firebasePut = async (path: string, data: any): Promise<void> => {
   const url = buildFirebaseUrl(path);
 
@@ -568,14 +616,14 @@ export const requestWellHistory = async (
   console.log(`[WellHistory] Fetching history for ${wellName} from Firebase (limit: ${limit})`);
 
   try {
-    // Fetch all processed packets AND well config for tank count
+    // Server-side query: only fetch packets for THIS well (not all wells)
     const [processedData, wellConfig] = await Promise.all([
-      firebaseGet("packets/processed"),
+      firebaseQuery("packets/processed", "wellName", wellName),
       firebaseGet(`well_config/${wellName}`)
     ]);
 
-    if (!processedData) {
-      console.log("[WellHistory] No processed packets found");
+    if (!processedData || Object.keys(processedData).length === 0) {
+      console.log("[WellHistory] No processed packets found for", wellName);
       return {
         wellName,
         rows: [],
@@ -594,8 +642,7 @@ export const requestWellHistory = async (
     const pullBbls = (wellConfig as any)?.pullBbls || 140;
     const allowedBottom = (wellConfig as any)?.allowedBottom || 3; // feet
 
-    // Filter packets for this well and build raw data
-    const wellNameLower = wellName.toLowerCase().replace(/\s+/g, "");
+    // Build raw data from query-filtered packets (already filtered to this well)
     interface RawPullData {
       dateTimeUTC: string;
       dateTime: string;
@@ -627,10 +674,6 @@ export const requestWellHistory = async (
       // Skip non-pull packets (history requests, edits that were superseded, etc.)
       if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
       if (p.wasEdited === true) continue; // Skip original packets that were edited
-
-      // Match well name (case-insensitive, ignore spaces)
-      const packetWellName = (p.wellName || "").toLowerCase().replace(/\s+/g, "");
-      if (packetWellName !== wellNameLower) continue;
 
       // Check if this is an edit and get original data
       // isEdit is set by Cloud Function; also check requestType for older packets
@@ -1365,9 +1408,9 @@ export const getPerformanceData = async (
   try {
     console.log("[Performance] Reading from packets/processed...");
 
-    // Fetch processed packets AND well config in parallel
+    // Fetch processed packets (cached 1min) AND well config in parallel
     const [processedData, wellConfig] = await Promise.all([
-      firebaseGet("packets/processed"),
+      getCachedProcessedData(),
       loadWellConfig(),
     ]);
 
@@ -1451,38 +1494,69 @@ export const getPerformanceData = async (
 };
 
 /**
+ * Get just the list of well names with their routes.
+ * Uses well_config (tiny payload) — does NOT download packets.
+ * Used by performance-detail dropdown to avoid a full packets/processed fetch.
+ */
+export const getWellNameList = async (): Promise<{ name: string; route?: string }[]> => {
+  const config = await loadWellConfig();
+  if (!config) return [];
+  return Object.entries(config).map(([name, cfg]) => ({
+    name,
+    route: cfg?.route || undefined,
+  }));
+};
+
+/**
  * Get raw performance data for a single well
  * Reads from packets/processed, calculates predictions for old packets
  */
 export const getRawWellData = async (wellName: string): Promise<RawWellData | null> => {
   try {
-    console.log("[Performance] Reading packets/processed for:", wellName);
+    console.log("[Performance] Querying packets/processed for:", wellName);
 
+    // Server-side query: only fetch this well's packets (not all wells)
     const [processedData, wellConfig] = await Promise.all([
-      firebaseGet("packets/processed"),
+      firebaseQuery("packets/processed", "wellName", wellName),
       loadWellConfig(),
     ]);
-    if (!processedData) return null;
+    if (!processedData || Object.keys(processedData).length === 0) return null;
 
-    const { wellPulls, latestProcessedAt } = extractPullsByWell(processedData);
+    // Extract pulls from query-filtered data (all packets are already for this well)
+    const pulls: PullPacket[] = [];
+    let latestProcessedAt = "";
 
-    // Find this well's pulls (case-insensitive match)
-    const wellNameLower = wellName.toLowerCase().replace(/\s+/g, "");
-    let pulls: PullPacket[] | undefined;
-    let matchedName = wellName;
+    for (const [, packet] of Object.entries(processedData)) {
+      const p = packet as any;
+      if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
+      if (p.wasEdited === true) continue;
+      if (!p.tankLevelFeet) continue;
 
-    for (const [name, p] of wellPulls) {
-      if (name.toLowerCase().replace(/\s+/g, "") === wellNameLower) {
-        pulls = p;
-        matchedName = name;
-        break;
+      const dateTimeStr = p.dateTimeUTC || p.dateTime || "";
+      if (!dateTimeStr) continue;
+      const ts = new Date(dateTimeStr).getTime();
+      if (isNaN(ts)) continue;
+
+      pulls.push({
+        dateTimeUTC: dateTimeStr,
+        timestampMs: ts,
+        topLevelFeet: parseFloat(p.tankLevelFeet) || 0,
+        bblsTaken: parseFloat(p.bblsTaken) || 0,
+        predictedLevelInches: p.predictedLevelInches,
+      });
+
+      if (p.processedAt && p.processedAt > latestProcessedAt) {
+        latestProcessedAt = p.processedAt;
       }
     }
 
-    if (!pulls || pulls.length < 2) return null;
+    // Sort chronologically
+    pulls.sort((a, b) => a.timestampMs - b.timestampMs);
+
+    if (pulls.length < 2) return null;
 
     // Get bblPerFoot
-    const config = wellConfig?.[matchedName];
+    const config = wellConfig?.[wellName];
     const numTanks = (config as any)?.numTanks || (config as any)?.tanks || 1;
     const bblPerFoot = numTanks * 20;
 
@@ -1490,7 +1564,7 @@ export const getRawWellData = async (wellName: string): Promise<RawWellData | nu
     if (rows.length === 0) return null;
 
     return {
-      wellName: matchedName,
+      wellName,
       totalPulls: rows.length,
       updated: latestProcessedAt,
       rows,

@@ -19,7 +19,7 @@ import {
   View,
 } from "react-native";
 import {
-  getPerformanceData,
+  getWellNameList,
   getWellPerformance,
   WellPerformance,
 } from "../src/services/firebase";
@@ -165,7 +165,7 @@ export default function PerformanceDetailScreen() {
     }
   }, []);
 
-  // Load available wells from performance data (filtered by My Routes)
+  // Load available wells from well_config (lightweight — no packet download needed)
   const loadAvailableWells = useCallback(async () => {
     // If filtering by My Routes, wait until selectedWells are loaded
     if (showMyRoutesOnly && !selectedWellsLoaded) {
@@ -174,40 +174,26 @@ export default function PerformanceDetailScreen() {
     }
 
     try {
-      // Determine date range
-      let fromDate: Date | undefined;
-      let toDate: Date | undefined;
-      if (dateRangeOption === "custom") {
-        fromDate = customFromDate;
-        toDate = customToDate;
-      } else {
-        fromDate = getFromDate(dateRangeOption);
-        toDate = undefined;
-      }
-
-      // Get all performance data
-      const response = await getPerformanceData(fromDate, toDate);
-      if (response.status === "success" && response.wells) {
-        // Filter to selected wells if showMyRoutesOnly, otherwise show all
-        const wells = showMyRoutesOnly
-          ? response.wells.filter(w => selectedWells.has(w.wellName)).map(w => w.wellName)
-          : response.wells.map(w => w.wellName);
-        // Sort alphabetically
-        wells.sort((a, b) => a.localeCompare(b));
-        setAvailableWells(wells);
-        console.log("[PerformanceDetail] Available wells:", {
-          filterContext: params.filterContext,
-          showMyRoutesOnly,
-          selectedWellsLoaded,
-          selectedWellsCount: selectedWells.size,
-          totalWells: response.wells.length,
-          filteredCount: wells.length,
-        });
-      }
+      // Get well names from config (tiny payload, no packets downloaded)
+      const wellList = await getWellNameList();
+      const wells = showMyRoutesOnly
+        ? wellList.filter(w => selectedWells.has(w.name)).map(w => w.name)
+        : wellList.map(w => w.name);
+      // Sort alphabetically
+      wells.sort((a, b) => a.localeCompare(b));
+      setAvailableWells(wells);
+      console.log("[PerformanceDetail] Available wells:", {
+        filterContext: params.filterContext,
+        showMyRoutesOnly,
+        selectedWellsLoaded,
+        selectedWellsCount: selectedWells.size,
+        totalWells: wellList.length,
+        filteredCount: wells.length,
+      });
     } catch (err) {
       console.error("[PerformanceDetail] Error loading wells:", err);
     }
-  }, [dateRangeOption, customFromDate, customToDate, showMyRoutesOnly, selectedWells, selectedWellsLoaded]);
+  }, [showMyRoutesOnly, selectedWells, selectedWellsLoaded]);
 
   const fetchData = useCallback(async () => {
     setError(null);

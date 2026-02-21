@@ -1,0 +1,78 @@
+{
+  "rules": {
+    "packets": {
+      "incoming": {
+        ".read": true,
+        ".write": true
+      },
+      "incoming_version": {
+        ".read": true,
+        ".write": true
+      },
+      "processed_version": {
+        ".read": true,
+        ".write": true
+      },
+      "outgoing": {
+        ".read": true,
+        ".write": true,
+        ".indexOn": ["wellName"]
+      },
+      "processed": {
+        ".read": true,
+        ".write": true,
+        ".indexOn": ["wellName"]
+      },
+      "rejected": {
+        ".read": true,
+        ".write": true
+      }
+    },
+
+    "status": {
+      ".read": true,
+      ".write": true
+    },
+
+    "drivers": {
+      "approved": {
+        ".read": true,
+        ".write": true
+      },
+      "pending": {
+        ".read": true,
+        ".write": true
+      }
+    },
+
+    "devices": {
+      ".read": true,
+      ".write": true
+    },
+
+    "well_config": {
+      ".read": true,
+      ".write": true
+    },
+
+    "performance": {
+      ".read": true,
+      ".write": true
+    },
+
+    "wells": {
+      ".read": true,
+      ".write": true
+    },
+
+    "logs": {
+      ".read": true,
+      ".write": true
+    },
+
+    "production": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

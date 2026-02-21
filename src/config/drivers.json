@@ -1,0 +1,9 @@
+{
+  "drivers": [
+    {
+      "pin": "1234",
+      "name": "Test Driver",
+      "active": true
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "expo": {
+    "name": "WellBuilt",
+    "slug": "WellBuiltMobile",
+    "version": "2.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/WellBuilt_Icon.png",
+    "scheme": "wellbuiltmobile",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.wellbuiltmobile.app",
+      "buildNumber": "24",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["wellbuiltmobile", "msauth.com.wellbuiltmobile.app"]
+          }
+        ],
+        "LSApplicationQueriesSchemes": ["whatsapp", "sms", "tel"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#EDECE9",
+        "foregroundImage": "./assets/images/WellBuilt_Adaptive_Foreground.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_EXTERNAL_STORAGE",
+        "ACCESS_NETWORK_STATE",
+        "INTERNET"
+      ],
+      "package": "com.wellbuiltmobile.app"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/WellBuilt_Icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/WellBuilt_Icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#05060B",
+          "dark": {
+            "backgroundColor": "#05060B"
+          }
+        }
+      ],
+      "expo-localization",
+      "expo-secure-store",
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "manifestQueries": {
+              "intent": [
+                {
+                  "action": "android.intent.action.SENDTO",
+                  "data": { "scheme": "sms" }
+                },
+                {
+                  "action": "android.intent.action.SENDTO",
+                  "data": { "scheme": "smsto" }
+                },
+                {
+                  "action": "android.intent.action.VIEW",
+                  "data": { "scheme": "whatsapp" }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ac1e9099-93a8-4bb3-9d18-579d8c4b60ff"
+      }
+    }
+  }
+}

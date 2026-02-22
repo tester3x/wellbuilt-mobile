@@ -12,7 +12,7 @@ import { DispatchButton } from '../src/components/DispatchButton';
 // (it still needs to know if Firebase is reachable to decide upload vs queue).
 import { WhatsNewModal } from '../components/WhatsNewModal';
 import { useWhatsNew } from '../hooks/use-whats-new';
-import { OfflineStatusBar } from '../src/components/OfflineStatusBar';
+import { SyncConfirmation } from '../src/components/OfflineStatusBar';
 import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/services/wellHistory';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
 
@@ -79,7 +79,7 @@ export default function RootLayout() {
     <I18nextProvider i18n={i18n}>
       <DispatchProvider>
         <View style={styles.container}>
-          <OfflineStatusBar />
+          <SyncConfirmation />
           <Stack
             screenOptions={{
               headerShown: false,

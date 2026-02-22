@@ -1,53 +1,18 @@
 // src/components/OfflineStatusBar.tsx
-// Slim offline indicator + sync confirmation for WB Mobile.
-// Designed to be non-annoying — just a thin bar, no dismiss button.
-// Shows sync confirmation alert when queued packets are sent.
+// Sync confirmation only — no persistent offline banner.
+// Shows an alert when queued packets are successfully sent after reconnection.
+// The "saved locally" alerts in record.tsx handle the queuing notification.
 
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Alert } from 'react-native';
-import {
-  isOnlineSync,
-  onConnectivityChange,
-  onFlushComplete,
-  getQueueCount,
-  type FlushResult,
-} from '../services/packetQueue';
+import React, { useEffect } from 'react';
+import { Alert } from 'react-native';
+import { onFlushComplete, type FlushResult } from '../services/packetQueue';
 
-export function OfflineStatusBar() {
-  const [offline, setOffline] = useState(!isOnlineSync());
-  const [queueCount, setQueueCount] = useState(0);
-  const slideAnim = useRef(new Animated.Value(offline ? 0 : -36)).current;
-
-  // Track connectivity
-  useEffect(() => {
-    const unsub = onConnectivityChange((online) => {
-      setOffline(!online);
-    });
-    return unsub;
-  }, []);
-
-  // Update queue count when offline
-  useEffect(() => {
-    if (offline) {
-      const update = async () => setQueueCount(await getQueueCount());
-      update();
-      const interval = setInterval(update, 5000);
-      return () => clearInterval(interval);
-    } else {
-      setQueueCount(0);
-    }
-  }, [offline]);
-
-  // Animate
-  useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: offline ? 0 : -36,
-      duration: 250,
-      useNativeDriver: true,
-    }).start();
-  }, [offline]);
-
-  // Sync confirmation
+/**
+ * Invisible component that listens for queue flush completion
+ * and shows a confirmation alert to the driver.
+ * No banner — drivers in dead zones don't need a constant reminder.
+ */
+export function SyncConfirmation() {
   useEffect(() => {
     const unsub = onFlushComplete((result: FlushResult) => {
       const wells = result.wellNames.join(', ');
@@ -60,38 +25,5 @@ export function OfflineStatusBar() {
     return unsub;
   }, []);
 
-  if (!offline) return null;
-
-  return (
-    <Animated.View style={[styles.bar, { transform: [{ translateY: slideAnim }] }]}>
-      <View style={styles.dot} />
-      <Text style={styles.text}>
-        No Connection{queueCount > 0 ? ` · ${queueCount} pull${queueCount > 1 ? 's' : ''} queued` : ''}
-      </Text>
-    </Animated.View>
-  );
+  return null; // No visible UI — just the listener
 }
-
-const styles = StyleSheet.create({
-  bar: {
-    backgroundColor: '#92400E',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    zIndex: 999,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FDE68A',
-    marginRight: 8,
-  },
-  text: {
-    color: '#FEF3C7',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-});

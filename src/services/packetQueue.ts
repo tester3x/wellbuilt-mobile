@@ -114,6 +114,7 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
 
   let sent = 0;
   let failed = 0;
+  const wellNames: string[] = [];
   const stillQueued: QueuedPacket[] = [];
 
   // Process in order (oldest first)
@@ -124,6 +125,7 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
 
     if (success) {
       sent++;
+      if (packet.data?.wellName) wellNames.push(packet.data.wellName);
       console.log("[PacketQueue] Sent:", packet.id);
     } else {
       failed++;
@@ -143,6 +145,14 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
 
   console.log(`[PacketQueue] Flush complete: ${sent} sent, ${failed} failed, ${stillQueued.length} still queued`);
 
+  // Notify listeners with flush results
+  if (sent > 0) {
+    const result: FlushResult = { sent, failed, wellNames: [...new Set(wellNames)] };
+    for (const listener of _flushListeners) {
+      try { listener(result); } catch {}
+    }
+  }
+
   return { sent, failed };
 }
 
@@ -158,6 +168,35 @@ export async function clearQueue(): Promise<void> {
   console.log("[PacketQueue] Queue cleared");
 }
 
+// ── Sync completion + connectivity listeners ──────────────────────────────
+
+export interface FlushResult {
+  sent: number;
+  failed: number;
+  wellNames: string[];
+}
+
+let _flushListeners: Array<(result: FlushResult) => void> = [];
+let _connectivityListeners: Array<(online: boolean) => void> = [];
+let _currentOnlineState = true;
+
+/** Subscribe to flush completion events. Returns unsubscribe function. */
+export function onFlushComplete(listener: (result: FlushResult) => void): () => void {
+  _flushListeners.push(listener);
+  return () => { _flushListeners = _flushListeners.filter(l => l !== listener); };
+}
+
+/** Subscribe to online/offline state changes. Returns unsubscribe function. */
+export function onConnectivityChange(listener: (online: boolean) => void): () => void {
+  _connectivityListeners.push(listener);
+  return () => { _connectivityListeners = _connectivityListeners.filter(l => l !== listener); };
+}
+
+/** Get current connectivity state synchronously. */
+export function isOnlineSync(): boolean {
+  return _currentOnlineState;
+}
+
 // Subscribe to network changes and auto-flush when back online
 let unsubscribeNetInfo: (() => void) | null = null;
 
@@ -166,10 +205,26 @@ export function startNetworkMonitor(): void {
 
   // Listen for network state changes — flush queue when connection is restored
   unsubscribeNetInfo = NetInfo.addEventListener(async (state) => {
-    if (state.isConnected && state.isInternetReachable) {
+    const nowOnline = state.isConnected === true && state.isInternetReachable !== false;
+    const wasOffline = !_currentOnlineState;
+
+    if (_currentOnlineState !== nowOnline) {
+      _currentOnlineState = nowOnline;
+      console.log(`[PacketQueue] Connectivity: ${nowOnline ? 'ONLINE' : 'OFFLINE'}`);
+      for (const listener of _connectivityListeners) {
+        try { listener(nowOnline); } catch {}
+      }
+    }
+
+    if (nowOnline && wasOffline) {
       console.log("[PacketQueue] Network restored, flushing queue...");
       await flushQueue();
     }
+  });
+
+  // Initial state check
+  NetInfo.fetch().then((state) => {
+    _currentOnlineState = state.isConnected === true && state.isInternetReachable !== false;
   });
 
   console.log("[PacketQueue] Network monitor started");

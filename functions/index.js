@@ -942,79 +942,41 @@ function calculateOvernightBblsPerDay(historicalPulls, bblPerFoot, pullTimestamp
     return 0;
   }
 
-  const currentWindowEnd = getWindowEnd(pullTimestamp);
-  const currentWindowStart = currentWindowEnd - 24 * 60 * 60 * 1000;
-  console.log(`[ONCalc] pullTimestamp=${new Date(pullTimestamp).toISOString()} windowEnd=${new Date(currentWindowEnd).toISOString()}`);
+  // Driver's manual method: most recent pull from any previous day → first pull today.
+  const todayDate = new Date(pullTimestamp).toISOString().slice(0, 10);
 
-  // Find all consecutive pairs where the current pull is in this window
-  let longestGapDays = 0;
-  let longestGapRecoveryFeet = 0;
-  let pairsInWindow = 0;
+  let firstPullToday = null;
+  let lastPullPrevDay = null;
 
-  for (let i = 1; i < historicalPulls.length; i++) {
-    const current = historicalPulls[i];
-    const previous = historicalPulls[i - 1];
+  // Pulls are chronological (oldest first). Walk backwards.
+  for (let i = historicalPulls.length - 1; i >= 0; i--) {
+    const pull = historicalPulls[i];
+    const pullDate = new Date(pull.timestamp).toISOString().slice(0, 10);
 
-    // Current pull must be in this window
-    const pullWindowEnd = getWindowEnd(current.timestamp);
-    if (pullWindowEnd !== currentWindowEnd) continue;
-
-    // Skip down wells
-    if (current.wellDown || previous.wellDown) continue;
-
-    const timeDifDays = (current.timestamp - previous.timestamp) / (1000 * 60 * 60 * 24);
-    if (timeDifDays <= 0) continue;
-
-    const prevBottomFeet = Math.max(previous.tankLevelFeet - (previous.bblsTaken / bblPerFoot), 0);
-    const recoveryFeet = current.tankLevelFeet - prevBottomFeet;
-
-    if (recoveryFeet <= 0) continue;
-
-    pairsInWindow++;
-
-    // Track the longest gap
-    if (timeDifDays > longestGapDays) {
-      longestGapDays = timeDifDays;
-      longestGapRecoveryFeet = recoveryFeet;
+    if (pullDate === todayDate) {
+      firstPullToday = pull; // Keeps overwriting — last one standing is earliest today
+    } else {
+      lastPullPrevDay = pull; // Most recent pull from a previous day
+      break;
     }
   }
 
-  // If no gaps found in current window, try previous window
-  if (longestGapDays <= 0) {
-    console.log(`[ONCalc] No pairs in current window, trying previous window`);
-    const prevWindowEnd = currentWindowEnd - 24 * 60 * 60 * 1000;
-    for (let i = 1; i < historicalPulls.length; i++) {
-      const current = historicalPulls[i];
-      const previous = historicalPulls[i - 1];
-
-      const pullWindowEnd = getWindowEnd(current.timestamp);
-      if (pullWindowEnd !== prevWindowEnd) continue;
-      if (current.wellDown || previous.wellDown) continue;
-
-      const timeDifDays = (current.timestamp - previous.timestamp) / (1000 * 60 * 60 * 24);
-      if (timeDifDays <= 0) continue;
-
-      const prevBottomFeet = Math.max(previous.tankLevelFeet - (previous.bblsTaken / bblPerFoot), 0);
-      const recoveryFeet = current.tankLevelFeet - prevBottomFeet;
-      if (recoveryFeet <= 0) continue;
-
-      if (timeDifDays > longestGapDays) {
-        longestGapDays = timeDifDays;
-        longestGapRecoveryFeet = recoveryFeet;
-      }
-    }
-  }
-
-  if (longestGapDays <= 0 || longestGapRecoveryFeet <= 0) {
-    console.log(`[ONCalc] No valid gaps found in either window`);
+  if (!firstPullToday || !lastPullPrevDay) {
+    console.log(`[ONCalc] No previous day pull found`);
     return 0;
   }
+  if (firstPullToday.wellDown || lastPullPrevDay.wellDown) return 0;
 
-  // bbls/day from the longest gap
-  const flowRateDays = longestGapDays / longestGapRecoveryFeet; // days per foot
-  const feetPer24hrs = 1 / flowRateDays;
-  const result = Math.round(feetPer24hrs * bblPerFoot);
-  console.log(`[ONCalc] longestGap=${longestGapDays.toFixed(4)}days recovFt=${longestGapRecoveryFeet.toFixed(2)} → flowRate=${flowRateDays.toFixed(4)} days/ft → ${result} bbls/day`);
+  const timeDifDays = (firstPullToday.timestamp - lastPullPrevDay.timestamp) / (1000 * 60 * 60 * 24);
+  if (timeDifDays <= 0) return 0;
+
+  const prevBottomFeet = Math.max(lastPullPrevDay.tankLevelFeet - (lastPullPrevDay.bblsTaken / bblPerFoot), 0);
+  const recoveryFeet = firstPullToday.tankLevelFeet - prevBottomFeet;
+  if (recoveryFeet <= 0) return 0;
+
+  const flowRateDays = timeDifDays / recoveryFeet;
+  const result = Math.round((1 / flowRateDays) * bblPerFoot);
+  console.log(`[ONCalc] prevDay=${new Date(lastPullPrevDay.timestamp).toISOString()} today=${new Date(firstPullToday.timestamp).toISOString()} gap=${timeDifDays.toFixed(4)}d recov=${recoveryFeet.toFixed(2)}ft → ${result} bbls/day`);
   return result;
 }
 

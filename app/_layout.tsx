@@ -71,9 +71,11 @@ export default function RootLayout() {
     flushQueue();
   }, []);
 
-  if (!appIsReady) {
-    return null;
-  }
+  // IMPORTANT: Always render the Stack — even during loading.
+  // Returning null here kills Expo Router deep link matching
+  // because the navigation tree isn't mounted when the deep link arrives.
+  // The splash screen stays visible via SplashScreen.preventAutoHideAsync()
+  // until prepare() finishes and calls hideAsync().
 
   return (
     <I18nextProvider i18n={i18n}>
@@ -88,6 +90,7 @@ export default function RootLayout() {
             }}
           >
             <Stack.Screen name="index" />
+            <Stack.Screen name="login" />
             <Stack.Screen name="driver-login" />
             <Stack.Screen name="welcome" />
             <Stack.Screen name="(tabs)" />
@@ -98,13 +101,15 @@ export default function RootLayout() {
             <Stack.Screen name="manager" />
           </Stack>
           {/* Global dispatch button - appears when there are pending sends */}
-          <DispatchButton />
+          {appIsReady && <DispatchButton />}
           {/* What's New modal - shows after app update */}
-          <WhatsNewModal
-            visible={showWhatsNew}
-            changelog={changelog}
-            onDismiss={dismissWhatsNew}
-          />
+          {appIsReady && (
+            <WhatsNewModal
+              visible={showWhatsNew}
+              changelog={changelog}
+              onDismiss={dismissWhatsNew}
+            />
+          )}
         </View>
       </DispatchProvider>
     </I18nextProvider>

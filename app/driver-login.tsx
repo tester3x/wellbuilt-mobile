@@ -64,9 +64,11 @@ export default function DriverLoginScreen() {
   const [mode, setMode] = useState<Mode>('checking');
   const [passcode, setPasscode] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [error, setError] = useState('');
   const [pendingName, setPendingName] = useState('');
   const [showPasscode, setShowPasscode] = useState(false);
+  const companyRef = useRef<TextInput>(null);
   const [passcodeError, setPasscodeError] = useState('');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -184,7 +186,7 @@ export default function DriverLoginScreen() {
       const result = await verifyLogin(displayName.trim(), passcode.trim());
 
       if (result.valid && result.driverId && result.displayName && result.passcodeHash) {
-        await saveDriverSession(result.driverId, result.displayName, result.passcodeHash, result.isAdmin || false, result.isViewer || false);
+        await saveDriverSession(result.driverId, result.displayName, result.passcodeHash, result.isAdmin || false, result.isViewer || false, result.companyId, result.companyName);
         router.replace('/welcome');
       } else {
         setMode('login');
@@ -232,6 +234,7 @@ export default function DriverLoginScreen() {
       const result = await submitRegistration({
         passcode: passcode.trim(),
         displayName: displayName.trim(),
+        companyName: companyName.trim(),
       });
 
       if (result.success) {
@@ -415,7 +418,24 @@ export default function DriverLoginScreen() {
               placeholderTextColor="#6B7280"
               autoCapitalize="words"
               autoFocus
+              returnKeyType="next"
+              onSubmitEditing={() => companyRef.current?.focus()}
             />
+
+            <TextInput
+              ref={companyRef}
+              style={styles.input}
+              value={companyName}
+              onChangeText={setCompanyName}
+              placeholder={t('driverLogin.companyPlaceholder', 'Your company name')}
+              placeholderTextColor="#6B7280"
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
+            />
+            <Text style={styles.passcodeHint}>
+              {t('driverLogin.companyHint', 'Enter the company name your employer gave you')}
+            </Text>
 
             {renderPasscodeInput(t('driverLogin.createPasscode'))}
 

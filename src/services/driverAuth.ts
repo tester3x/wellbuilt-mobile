@@ -44,6 +44,8 @@ export interface DriverSession {
   passcodeHash: string;
   isAdmin: boolean;
   isViewer: boolean;
+  companyId?: string;
+  companyName?: string;
 }
 
 // --- Firebase helpers ---
@@ -153,6 +155,8 @@ export const verifyLogin = async (
   passcodeHash?: string;
   isAdmin?: boolean;
   isViewer?: boolean;
+  companyId?: string;
+  companyName?: string;
   error?: string;
 }> => {
   console.log("[DriverAuth] Verifying login for:", displayName);
@@ -193,6 +197,8 @@ export const verifyLogin = async (
         passcodeHash: hash,
         isAdmin: driverData.isAdmin === true,
         isViewer: driverData.isViewer === true,
+        companyId: driverData.companyId || undefined,
+        companyName: driverData.companyName || undefined,
       };
     }
 
@@ -216,6 +222,8 @@ export const verifyLogin = async (
           passcodeHash: hash,
           isAdmin: entry.isAdmin === true,
           isViewer: entry.isViewer === true,
+          companyId: entry.companyId || undefined,
+          companyName: entry.companyName || undefined,
         };
       }
     }
@@ -388,7 +396,9 @@ export const saveDriverSession = async (
   displayName: string,
   passcodeHash: string,
   isAdmin: boolean = false,
-  isViewer: boolean = false
+  isViewer: boolean = false,
+  companyId?: string,
+  companyName?: string
 ): Promise<void> => {
   await SecureStore.setItemAsync("driverId", driverId);
   await SecureStore.setItemAsync("driverName", displayName);
@@ -396,6 +406,10 @@ export const saveDriverSession = async (
   await SecureStore.setItemAsync("isAdmin", isAdmin ? "true" : "false");
   await SecureStore.setItemAsync("isViewer", isViewer ? "true" : "false");
   await SecureStore.setItemAsync("driverVerifiedAt", Date.now().toString());
+  if (companyId) await SecureStore.setItemAsync("companyId", companyId);
+  else await SecureStore.deleteItemAsync("companyId");
+  if (companyName) await SecureStore.setItemAsync("companyName", companyName);
+  else await SecureStore.deleteItemAsync("companyName");
 
   // Clear any pending registration data
   await clearPendingRegistration();
@@ -410,6 +424,8 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
   const passcodeHash = await SecureStore.getItemAsync("passcodeHash");
   const isAdminStr = await SecureStore.getItemAsync("isAdmin");
   const isViewerStr = await SecureStore.getItemAsync("isViewer");
+  const companyId = await SecureStore.getItemAsync("companyId");
+  const companyName = await SecureStore.getItemAsync("companyName");
 
   if (driverId && displayName && passcodeHash) {
     return {
@@ -417,7 +433,9 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
       displayName,
       passcodeHash,
       isAdmin: isAdminStr === "true",
-      isViewer: isViewerStr === "true"
+      isViewer: isViewerStr === "true",
+      companyId: companyId || undefined,
+      companyName: companyName || undefined,
     };
   }
   return null;
@@ -563,17 +581,22 @@ export const isPinAvailable = isPasscodeAvailable;
 export const submitRegistration = async (params: {
   passcode: string;
   displayName: string;
+  companyName?: string;
 }): Promise<{ success: boolean; error?: string }> => {
   console.log("[DriverAuth] Submitting registration for:", params.displayName);
 
   try {
     const hash = await hashPasscode(params.passcode);
 
-    const registrationData = {
+    const registrationData: Record<string, any> = {
       displayName: params.displayName,
       passcodeHash: hash,
       requestedAt: new Date().toISOString(),
+      source: 'wbm',
     };
+    if (params.companyName?.trim()) {
+      registrationData.companyName = params.companyName.trim();
+    }
 
     // POST to pending registrations (Firebase generates key)
     await firebasePost(DRIVERS_PENDING, registrationData);
@@ -672,7 +695,7 @@ export const completeRegistration = async (): Promise<{
     const isAdmin = driverData.isAdmin === true;
     const isViewer = driverData.isViewer === true;
 
-    await saveDriverSession(pending.passcodeHash, displayName, pending.passcodeHash, isAdmin, isViewer);
+    await saveDriverSession(pending.passcodeHash, displayName, pending.passcodeHash, isAdmin, isViewer, driverData.companyId, driverData.companyName);
     return {
       success: true,
       driverId: pending.passcodeHash,

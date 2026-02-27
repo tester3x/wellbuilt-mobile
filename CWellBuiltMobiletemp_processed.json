@@ -1,0 +1,1382 @@
+{
+    "20251220_035802_Gab1_q9vh4q":  {
+                                        "bblsTaken":  100,
+                                        "dateTime":  "12/20/2025 3:57 AM",
+                                        "packetId":  "20251220_035802_Gab1_q9vh4q",
+                                        "tankLevelFeet":  13,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251220_041554_Gab1_fe7whp":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/20/2025 4:15 AM",
+                                        "packetId":  "20251220_041554_Gab1_fe7whp",
+                                        "tankLevelFeet":  10.5,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251220_043107_Gab1_apjt17":  {
+                                        "bblsTaken":  50,
+                                        "dateTime":  "12/20/2025 4:30 AM",
+                                        "packetId":  "20251220_043107_Gab1_apjt17",
+                                        "tankLevelFeet":  10.083333333333334,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_000007_Gab1_yaa755":  {
+                                        "bblsTaken":  280,
+                                        "dateTime":  "12/20/2025 11:59 PM",
+                                        "packetId":  "20251221_000007_Gab1_yaa755",
+                                        "tankLevelFeet":  15.333333333333334,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_003624_Gabriel1_dz6fr2":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/20/2025 2:17 PM",
+                                            "packetId":  "20251221_003624_Gabriel1_dz6fr2",
+                                            "tankLevelFeet":  11,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 1"
+                                        },
+    "20251221_015921_Gabriel7_wz52z2":  {
+                                            "bblsTaken":  70,
+                                            "dateTime":  "12/20/2025 3:10 PM",
+                                            "packetId":  "20251221_015921_Gabriel7_wz52z2",
+                                            "tankLevelFeet":  8,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251221_020822_Gab1_2nec9y":  {
+                                        "bblsTaken":  50,
+                                        "dateTime":  "12/21/2025 2:08 AM",
+                                        "packetId":  "20251221_020822_Gab1_2nec9y",
+                                        "tankLevelFeet":  9,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_021814_Gabriel3_1m3pw2":  {
+                                            "bblsTaken":  70,
+                                            "dateTime":  "12/20/2025 3:10 PM",
+                                            "packetId":  "20251221_021814_Gabriel3_1m3pw2",
+                                            "tankLevelFeet":  10.5,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 3"
+                                        },
+    "20251221_022757_Gab1_mhlodr":  {
+                                        "bblsTaken":  100,
+                                        "dateTime":  "12/21/2025 2:27 AM",
+                                        "packetId":  "20251221_022757_Gab1_mhlodr",
+                                        "tankLevelFeet":  7.833333333333333,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_023743_Gabriel2_atbvbv":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/21/2025 2:37 AM",
+                                            "packetId":  "20251221_023743_Gabriel2_atbvbv",
+                                            "tankLevelFeet":  0,
+                                            "wellDown":  true,
+                                            "wellName":  "Gabriel 2"
+                                        },
+    "20251221_023844_Gabriel2_yuz65c":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/21/2025 2:38 AM",
+                                            "packetId":  "20251221_023844_Gabriel2_yuz65c",
+                                            "tankLevelFeet":  0,
+                                            "wellDown":  true,
+                                            "wellName":  "Gabriel 2"
+                                        },
+    "20251221_031715_Gab1_v9lbu0":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/21/2025 3:17 AM",
+                                        "packetId":  "20251221_031715_Gab1_v9lbu0",
+                                        "tankLevelFeet":  5.583333333333333,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_032618_Gab1_xyst6j":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/21/2025 3:26 AM",
+                                        "packetId":  "20251221_032618_Gab1_xyst6j",
+                                        "tankLevelFeet":  5,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_043636_Atlas1_nqstwm":  {
+                                          "bblsTaken":  135,
+                                          "dateTime":  "12/20/2025 6:50 PM",
+                                          "packetId":  "20251221_043636_Atlas1_nqstwm",
+                                          "tankLevelFeet":  6.25,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251221_084107_Atlas1_fdmntz":  {
+                                          "bblsTaken":  185,
+                                          "dateTime":  "12/21/2025 8:36 AM",
+                                          "packetId":  "20251221_084107_Atlas1_fdmntz",
+                                          "tankLevelFeet":  13.166666666666666,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251221_104155_Atlas1_ekv6uc":  {
+                                          "bblsTaken":  185,
+                                          "dateTime":  "12/21/2025 10:34 AM",
+                                          "packetId":  "20251221_104155_Atlas1_ekv6uc",
+                                          "tankLevelFeet":  9.916666666666666,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251221_111623_Kahuna1_n05jm6":  {
+                                           "bblsTaken":  130,
+                                           "dateTime":  "12/21/2025 10:30 AM",
+                                           "packetId":  "20251221_111623_Kahuna1_n05jm6",
+                                           "tankLevelFeet":  7.333333333333333,
+                                           "wellDown":  false,
+                                           "wellName":  "Kahuna 1"
+                                       },
+    "20251221_111706_Cyclone1_8m13fz":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/21/2025 9:15 AM",
+                                            "packetId":  "20251221_111706_Cyclone1_8m13fz",
+                                            "tankLevelFeet":  8.166666666666666,
+                                            "wellDown":  false,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251221_122616_Taboo_0z8rqr":  {
+                                         "bblsTaken":  170,
+                                         "dateTime":  "12/21/2025 11:58 AM",
+                                         "packetId":  "20251221_122616_Taboo_0z8rqr",
+                                         "tankLevelFeet":  11.25,
+                                         "wellDown":  false,
+                                         "wellName":  "Taboo"
+                                     },
+    "20251221_123809_Gabriel7_j0yf7d":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/21/2025 12:30 PM",
+                                            "packetId":  "20251221_123809_Gabriel7_j0yf7d",
+                                            "tankLevelFeet":  13.416666666666666,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251221_135400_Gabriel1_hqq7he":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/21/2025 1:51 PM",
+                                            "packetId":  "20251221_135400_Gabriel1_hqq7he",
+                                            "tankLevelFeet":  10.3,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 1"
+                                        },
+    "20251221_140011_Dagger2_zk5wyn":  {
+                                           "bblsTaken":  135,
+                                           "dateTime":  "12/21/2025 1:59 PM",
+                                           "packetId":  "20251221_140011_Dagger2_zk5wyn",
+                                           "tankLevelFeet":  11.75,
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 2"
+                                       },
+    "20251221_140028_Dagger1_2zhr81":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "12/21/2025 1:59 PM",
+                                           "packetId":  "20251221_140028_Dagger1_2zhr81",
+                                           "tankLevelFeet":  6.25,
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 1"
+                                       },
+    "20251221_141309_Gab1_2uil8a":  {
+                                        "bblsTaken":  50,
+                                        "dateTime":  "12/21/2025 2:12 PM",
+                                        "packetId":  "20251221_141309_Gab1_2uil8a",
+                                        "tankLevelFeet":  7.75,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_142600_Gab1_rrtfx1":  {
+                                        "bblsTaken":  50,
+                                        "dateTime":  "12/21/2025 2:25 PM",
+                                        "packetId":  "20251221_142600_Gab1_rrtfx1",
+                                        "tankLevelFeet":  6,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_143056_Gab1_fejoxz":  {
+                                        "bblsTaken":  50,
+                                        "dateTime":  "12/21/2025 2:30 PM",
+                                        "packetId":  "20251221_143056_Gab1_fejoxz",
+                                        "tankLevelFeet":  4.833333333333333,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_143311_Gab1_ptv4wl":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/21/2025 2:32 PM",
+                                        "packetId":  "20251221_143311_Gab1_ptv4wl",
+                                        "tankLevelFeet":  3.0833333333333335,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_153215_Gab1_gt1s5v":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/21/2025 3:32 PM",
+                                        "packetId":  "20251221_153215_Gab1_gt1s5v",
+                                        "tankLevelFeet":  4.583333333333333,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_154839_Atlas1_eve52f":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/21/2025 3:43 PM",
+                                          "packetId":  "20251221_154839_Atlas1_eve52f",
+                                          "tankLevelFeet":  9.083333333333334,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251221_155116_Drone_ql4gmb":  {
+                                         "bblsTaken":  170,
+                                         "dateTime":  "12/21/2025 3:29 PM",
+                                         "packetId":  "20251221_155116_Drone_ql4gmb",
+                                         "tankLevelFeet":  7.666666666666667,
+                                         "wellDown":  false,
+                                         "wellName":  "Drone"
+                                     },
+    "20251221_155122_Gab1_gzc86j":  {
+                                        "bblsTaken":  10,
+                                        "dateTime":  "12/21/2025 3:51 PM",
+                                        "packetId":  "20251221_155122_Gab1_gzc86j",
+                                        "tankLevelFeet":  3.8333333333333335,
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251221_155700_TestWell_p4fg83":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/21/2025 3:56 PM",
+                                            "packetId":  "20251221_155700_TestWell_p4fg83",
+                                            "tankLevelFeet":  15,
+                                            "wellDown":  false,
+                                            "wellName":  "Test Well"
+                                        },
+    "20251221_172212_Atlas1_hf3krj":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/21/2025 5:17 PM",
+                                          "packetId":  "20251221_172212_Atlas1_hf3krj",
+                                          "tankLevelFeet":  6.75,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251221_173642_Dagger2_8hjqpx":  {
+                                           "bblsTaken":  170,
+                                           "dateTime":  "12/21/2025 5:36 PM",
+                                           "packetId":  "20251221_173642_Dagger2_8hjqpx",
+                                           "tankLevelFeet":  9.916666666666666,
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 2"
+                                       },
+    "20251221_185329_Dagger2_3rh5aq":  {
+                                           "bblsTaken":  170,
+                                           "dateTime":  "12/21/2025 6:51 PM",
+                                           "packetId":  "20251221_185329_Dagger2_3rh5aq",
+                                           "tankLevelFeet":  7.166666666666667,
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 2"
+                                       },
+    "20251222_071110_Dagger2_5iitxg":  {
+                                           "bblsTaken":  170,
+                                           "dateTime":  "12/22/2025 7:10 AM",
+                                           "packetId":  "20251222_071110_Dagger2_5iitxg",
+                                           "tankLevelFeet":  5.666666666666667,
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 2"
+                                       },
+    "20251222_074754_Atlas1_5wvfsf":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/22/2025 7:24 AM",
+                                          "packetId":  "20251222_074754_Atlas1_5wvfsf",
+                                          "tankLevelFeet":  13,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251222_082121_Phazor1_ipj3f5":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "12/22/2025 8:20 AM",
+                                           "packetId":  "20251222_082121_Phazor1_ipj3f5",
+                                           "tankLevelFeet":  7.583333333333333,
+                                           "wellDown":  false,
+                                           "wellName":  "Phazor 1"
+                                       },
+    "20251222_091630_Gabriel7_y56c62":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/22/2025 9:15 AM",
+                                            "packetId":  "20251222_091630_Gabriel7_y56c62",
+                                            "tankLevelFeet":  14.083333333333334,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251222_091722_Gabriel3_bh18h3":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/22/2025 9:15 AM",
+                                            "packetId":  "20251222_091722_Gabriel3_bh18h3",
+                                            "tankLevelFeet":  9.333333333333334,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 3"
+                                        },
+    "20251222_110040_Thor1_yltfzx":  {
+                                         "bblsTaken":  175,
+                                         "dateTime":  "12/22/2025 10:35 AM",
+                                         "packetId":  "20251222_110040_Thor1_yltfzx",
+                                         "tankLevelFeet":  10.083333333333334,
+                                         "wellDown":  false,
+                                         "wellName":  "Thor 1"
+                                     },
+    "20251222_110535_Kahuna1_0nx6wi":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "12/22/2025 11:05 AM",
+                                           "packetId":  "20251222_110535_Kahuna1_0nx6wi",
+                                           "tankLevelFeet":  8,
+                                           "wellDown":  true,
+                                           "wellName":  "Kahuna 1"
+                                       },
+    "20251222_114757_Crossbow1_pd6iwq":  {
+                                             "bblsTaken":  145,
+                                             "dateTime":  "12/22/2025 11:23 AM",
+                                             "packetId":  "20251222_114757_Crossbow1_pd6iwq",
+                                             "tankLevelFeet":  12.416666666666666,
+                                             "wellDown":  false,
+                                             "wellName":  "Crossbow 1"
+                                         },
+    "20251222_124145_Atlas1_ytzff0":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/22/2025 12:24 PM",
+                                          "packetId":  "20251222_124145_Atlas1_ytzff0",
+                                          "tankLevelFeet":  12.833333333333334,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251222_133746_Cyclone1_e9a782":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/22/2025 1:20 PM",
+                                            "packetId":  "20251222_133746_Cyclone1_e9a782",
+                                            "tankLevelFeet":  11.5,
+                                            "wellDown":  false,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251222_142812_Gabriel1_tmrupe":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/22/2025 2:21 PM",
+                                            "packetId":  "20251222_142812_Gabriel1_tmrupe",
+                                            "tankLevelFeet":  10,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 1"
+                                        },
+    "20251222_150428_Atlas1_s97pbn":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/22/2025 2:39 PM",
+                                          "packetId":  "20251222_150428_Atlas1_s97pbn",
+                                          "tankLevelFeet":  11,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251222_160829_Gabriel3_6kyrd1":  {
+                                            "bblsTaken":  40,
+                                            "dateTime":  "12/22/2025 4:08 PM",
+                                            "packetId":  "20251222_160829_Gabriel3_6kyrd1",
+                                            "tankLevelFeet":  9.75,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 3"
+                                        },
+    "20251222_160848_Gabriel7_2tfz6n":  {
+                                            "bblsTaken":  100,
+                                            "dateTime":  "12/22/2025 4:08 PM",
+                                            "packetId":  "20251222_160848_Gabriel7_2tfz6n",
+                                            "tankLevelFeet":  9.583333333333334,
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251222_163525_Atlas1_tv1faf":  {
+                                          "bblsTaken":  130,
+                                          "dateTime":  "12/22/2025 4:15 PM",
+                                          "packetId":  "20251222_163525_Atlas1_tv1faf",
+                                          "tankLevelFeet":  8.583333333333334,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251222_183742_Cyclone1_e8nj9w":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/22/2025 6:15 PM",
+                                            "packetId":  "20251222_183742_Cyclone1_e8nj9w",
+                                            "tankLevelFeet":  9.166666666666666,
+                                            "wellDown":  false,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251222_183809_Atlas1_cya41p":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/22/2025 5:55 PM",
+                                          "packetId":  "20251222_183809_Atlas1_cya41p",
+                                          "tankLevelFeet":  6.5,
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251223_010141_Gab1_ie6gq0":  {
+                                        "bblsTaken":  2000,
+                                        "dateTime":  "12/23/2025 1:01 AM",
+                                        "dateTimeUTC":  "2025-12-23T07:01:13.491Z",
+                                        "packetId":  "20251223_010141_Gab1_ie6gq0",
+                                        "tankLevelFeet":  57.166666666666664,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_012309_Gab1_7ii390":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/23/2025 1:23 AM",
+                                        "dateTimeUTC":  "2025-12-23T07:23:00.440Z",
+                                        "packetId":  "20251223_012309_Gab1_7ii390",
+                                        "tankLevelFeet":  14.083333333333334,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_015826_Gab1_hq8tz1":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/23/2025 1:58 AM",
+                                        "dateTimeUTC":  "2025-12-23T07:58:18.342Z",
+                                        "packetId":  "20251223_015826_Gab1_hq8tz1",
+                                        "tankLevelFeet":  12.416666666666666,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_020532_Gab1_dav0r5":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/23/2025 2:05 AM",
+                                        "dateTimeUTC":  "2025-12-23T08:05:22.986Z",
+                                        "packetId":  "20251223_020532_Gab1_dav0r5",
+                                        "tankLevelFeet":  14.25,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_022825_Gab1_7ca9xf":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/23/2025 2:28 AM",
+                                        "dateTimeUTC":  "2025-12-23T08:28:11.994Z",
+                                        "packetId":  "20251223_022825_Gab1_7ca9xf",
+                                        "tankLevelFeet":  13.833333333333334,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_023541_Dagger1_f7p3lu":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "12/23/2025 2:35 AM",
+                                           "dateTimeUTC":  "2025-12-23T10:35:00.000Z",
+                                           "packetId":  "20251223_023541_Dagger1_f7p3lu",
+                                           "tankLevelFeet":  0,
+                                           "timezone":  "America/Los_Angeles",
+                                           "wellDown":  true,
+                                           "wellName":  "Dagger 1"
+                                       },
+    "20251223_023650_Turbo2_rh0wlb":  {
+                                          "bblsTaken":  0,
+                                          "dateTime":  "12/23/2025 2:36 AM",
+                                          "dateTimeUTC":  "2025-12-23T10:36:48.262Z",
+                                          "packetId":  "20251223_023650_Turbo2_rh0wlb",
+                                          "tankLevelFeet":  0,
+                                          "timezone":  "America/Los_Angeles",
+                                          "wellDown":  true,
+                                          "wellName":  "Turbo 2"
+                                      },
+    "20251223_032327_TestWell_9whi84":  {
+                                            "bblsTaken":  100,
+                                            "dateTime":  "12/23/2025 3:23 AM",
+                                            "dateTimeUTC":  "2025-12-23T09:23:18.800Z",
+                                            "packetId":  "20251223_032327_TestWell_9whi84",
+                                            "tankLevelFeet":  15,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Test Well"
+                                        },
+    "20251223_032412_Gab1_07kiib":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/23/2025 3:24 AM",
+                                        "dateTimeUTC":  "2025-12-23T09:24:05.094Z",
+                                        "packetId":  "20251223_032412_Gab1_07kiib",
+                                        "tankLevelFeet":  13.583333333333334,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_033335_Gab1_zj1cae":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/23/2025 3:33 AM",
+                                        "dateTimeUTC":  "2025-12-23T09:33:28.538Z",
+                                        "packetId":  "20251223_033335_Gab1_zj1cae",
+                                        "tankLevelFeet":  13.166666666666666,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_034218_Gab1_n5x7bc":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/23/2025 3:42 AM",
+                                        "dateTimeUTC":  "2025-12-23T09:42:09.947Z",
+                                        "packetId":  "20251223_034218_Gab1_n5x7bc",
+                                        "tankLevelFeet":  12.75,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_034455_Gab1_tqj87q":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/23/2025 3:44 AM",
+                                        "dateTimeUTC":  "2025-12-23T09:44:48.542Z",
+                                        "packetId":  "20251223_034455_Gab1_tqj87q",
+                                        "tankLevelFeet":  12.25,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251223_081015_Atlas1_wsipsu":  {
+                                          "bblsTaken":  185,
+                                          "dateTime":  "12/23/2025 8:00 AM",
+                                          "dateTimeUTC":  "2025-12-23T14:00:00.000Z",
+                                          "packetId":  "20251223_081015_Atlas1_wsipsu",
+                                          "tankLevelFeet":  12.75,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251223_083130_Cyclone1_mbgi27":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/23/2025 8:12 AM",
+                                            "packetId":  "20251223_083130_Cyclone1_mbgi27",
+                                            "tankLevelFeet":  9,
+                                            "wellDown":  false,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251223_091916_Dagger1_i9uc3i":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "12/23/2025 9:19 AM",
+                                           "dateTimeUTC":  "2025-12-23T15:19:09.340Z",
+                                           "packetId":  "20251223_091916_Dagger1_i9uc3i",
+                                           "tankLevelFeet":  7,
+                                           "timezone":  "America/Chicago",
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 1"
+                                       },
+    "20251223_103909_Phazor1_xjr1p7":  {
+                                           "bblsTaken":  120,
+                                           "dateTime":  "12/23/2025 10:38 AM",
+                                           "dateTimeUTC":  "2025-12-23T16:38:29.644Z",
+                                           "packetId":  "20251223_103909_Phazor1_xjr1p7",
+                                           "tankLevelFeet":  10.5,
+                                           "timezone":  "America/Chicago",
+                                           "wellDown":  false,
+                                           "wellName":  "Phazor 1"
+                                       },
+    "20251223_111815_Gabriel3_jf71cw":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/23/2025 11:18 AM",
+                                            "dateTimeUTC":  "2025-12-23T17:18:05.638Z",
+                                            "packetId":  "20251223_111815_Gabriel3_jf71cw",
+                                            "tankLevelFeet":  8.583333333333334,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 3"
+                                        },
+    "20251223_113220_Gabriel7_jlwnc2":  {
+                                            "bblsTaken":  120,
+                                            "dateTime":  "12/23/2025 11:18 AM",
+                                            "dateTimeUTC":  "2025-12-23T17:18:00.000Z",
+                                            "packetId":  "20251223_113220_Gabriel7_jlwnc2",
+                                            "tankLevelFeet":  11.5,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251223_123132_Atlas1_0l1v2v":  {
+                                          "bblsTaken":  130,
+                                          "dateTime":  "12/23/2025 12:14 PM",
+                                          "dateTimeUTC":  "2025-12-23T18:14:02.562Z",
+                                          "packetId":  "20251223_123132_Atlas1_0l1v2v",
+                                          "tankLevelFeet":  11.083333333333334,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251223_132932_Gabriel1_ubj8v9":  {
+                                            "bblsTaken":  120,
+                                            "dateTime":  "12/23/2025 1:23 PM",
+                                            "dateTimeUTC":  "2025-12-23T19:23:00.000Z",
+                                            "packetId":  "20251223_132932_Gabriel1_ubj8v9",
+                                            "tankLevelFeet":  9.3,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 1"
+                                        },
+    "20251223_140258_Hatchet1_o8nemg":  {
+                                            "bblsTaken":  130,
+                                            "dateTime":  "12/23/2025 2:02 PM",
+                                            "dateTimeUTC":  "2025-12-23T20:02:42.770Z",
+                                            "packetId":  "20251223_140258_Hatchet1_o8nemg",
+                                            "tankLevelFeet":  9.5,
+                                            "timezone":  "America/Denver",
+                                            "wellDown":  false,
+                                            "wellName":  "Hatchet 1"
+                                        },
+    "20251223_152803_Drone_86l0dx":  {
+                                         "bblsTaken":  170,
+                                         "dateTime":  "12/23/2025 3:04 PM",
+                                         "dateTimeUTC":  "2025-12-23T21:04:54.623Z",
+                                         "packetId":  "20251223_152803_Drone_86l0dx",
+                                         "tankLevelFeet":  6,
+                                         "timezone":  "America/Denver",
+                                         "wellDown":  false,
+                                         "wellName":  "Drone"
+                                     },
+    "20251223_165013_Atlas1_5wi0zn":  {
+                                          "bblsTaken":  130,
+                                          "dateTime":  "12/23/2025 3:33 PM",
+                                          "dateTimeUTC":  "2025-12-23T21:33:59.843Z",
+                                          "packetId":  "20251223_165013_Atlas1_5wi0zn",
+                                          "tankLevelFeet":  10.166666666666666,
+                                          "timezone":  "America/Denver",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251223_165501_Dagger2_0xxuos":  {
+                                           "bblsTaken":  170,
+                                           "dateTime":  "12/23/2025 4:51 PM",
+                                           "dateTimeUTC":  "2025-12-23T22:51:30.063Z",
+                                           "packetId":  "20251223_165501_Dagger2_0xxuos",
+                                           "tankLevelFeet":  6.166666666666667,
+                                           "timezone":  "America/Denver",
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 2"
+                                       },
+    "20251223_171008_Atlas1_aurahq":  {
+                                          "bblsTaken":  130,
+                                          "dateTime":  "12/23/2025 4:55 PM",
+                                          "dateTimeUTC":  "2025-12-23T22:55:25.991Z",
+                                          "packetId":  "20251223_171008_Atlas1_aurahq",
+                                          "tankLevelFeet":  7.916666666666667,
+                                          "timezone":  "America/Denver",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251223_183742_Dagger1_4rfb3n":  {
+                                           "bblsTaken":  170,
+                                           "dateTime":  "12/23/2025 6:36 PM",
+                                           "dateTimeUTC":  "2025-12-24T00:36:56.687Z",
+                                           "packetId":  "20251223_183742_Dagger1_4rfb3n",
+                                           "tankLevelFeet":  7,
+                                           "timezone":  "America/Denver",
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 1"
+                                       },
+    "20251223_210633_Cyclone1_oyf3ze":  {
+                                            "bblsTaken":  130,
+                                            "dateTime":  "12/23/2025 6:39 PM",
+                                            "dateTimeUTC":  "2025-12-24T00:39:00.000Z",
+                                            "packetId":  "20251223_210633_Cyclone1_oyf3ze",
+                                            "tankLevelFeet":  7.416666666666667,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251224_051700_Atlas1_j4j2nl":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/24/2025 5:08 AM",
+                                          "dateTimeUTC":  "2025-12-24T11:08:00.000Z",
+                                          "packetId":  "20251224_051700_Atlas1_j4j2nl",
+                                          "tankLevelFeet":  13.416666666666666,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251224_064422_Atlas1_6ans28":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/24/2025 6:36 AM",
+                                          "dateTimeUTC":  "2025-12-24T12:36:00.000Z",
+                                          "packetId":  "20251224_064422_Atlas1_6ans28",
+                                          "tankLevelFeet":  11.083333333333334,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251224_080829_Dagger2_1qs85r":  {
+                                           "bblsTaken":  170,
+                                           "dateTime":  "12/24/2025 7:43 AM",
+                                           "dateTimeUTC":  "2025-12-24T14:43:16.069Z",
+                                           "packetId":  "20251224_080829_Dagger2_1qs85r",
+                                           "tankLevelFeet":  5,
+                                           "timezone":  "America/Denver",
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 2"
+                                       },
+    "20251224_081703_Dagger1_zalpfj":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "12/24/2025 8:16 AM",
+                                           "dateTimeUTC":  "2025-12-24T15:16:48.212Z",
+                                           "packetId":  "20251224_081703_Dagger1_zalpfj",
+                                           "tankLevelFeet":  3,
+                                           "timezone":  "America/Denver",
+                                           "wellDown":  false,
+                                           "wellName":  "Dagger 1"
+                                       },
+    "20251224_095015_Gabriel7_fgz6mh":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/24/2025 9:46 AM",
+                                            "dateTimeUTC":  "2025-12-24T15:46:00.000Z",
+                                            "packetId":  "20251224_095015_Gabriel7_fgz6mh",
+                                            "tankLevelFeet":  14,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251224_095048_Gabriel3_i1beqb":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/24/2025 9:46 AM",
+                                            "dateTimeUTC":  "2025-12-24T15:46:00.000Z",
+                                            "packetId":  "20251224_095048_Gabriel3_i1beqb",
+                                            "tankLevelFeet":  9.833333333333334,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 3"
+                                        },
+    "20251224_100233_Cyclone1_y8gllb":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/24/2025 10:02 AM",
+                                            "dateTimeUTC":  "2025-12-24T17:02:13.852Z",
+                                            "packetId":  "20251224_100233_Cyclone1_y8gllb",
+                                            "tankLevelFeet":  4.25,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  true,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251224_104001_Atlas1_fz9k72":  {
+                                          "bblsTaken":  130,
+                                          "dateTime":  "12/24/2025 10:20 AM",
+                                          "dateTimeUTC":  "2025-12-24T17:20:39.984Z",
+                                          "packetId":  "20251224_104001_Atlas1_fz9k72",
+                                          "tankLevelFeet":  11,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251224_110802_Gabriel3_epo3kg":  {
+                                            "bblsTaken":  70,
+                                            "dateTime":  "12/24/2025 11:06 AM",
+                                            "dateTimeUTC":  "2025-12-24T17:06:00.000Z",
+                                            "packetId":  "20251224_110802_Gabriel3_epo3kg",
+                                            "tankLevelFeet":  9.916666666666666,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 3"
+                                        },
+    "20251224_110823_Gabriel7_xzszda":  {
+                                            "bblsTaken":  70,
+                                            "dateTime":  "12/24/2025 11:06 AM",
+                                            "dateTimeUTC":  "2025-12-24T17:06:00.000Z",
+                                            "packetId":  "20251224_110823_Gabriel7_xzszda",
+                                            "tankLevelFeet":  7.5,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251224_124219_Gabriel1_fyabi5":  {
+                                            "bblsTaken":  130,
+                                            "dateTime":  "12/24/2025 12:33 PM",
+                                            "dateTimeUTC":  "2025-12-24T18:33:00.000Z",
+                                            "packetId":  "20251224_124219_Gabriel1_fyabi5",
+                                            "tankLevelFeet":  9.5,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 1"
+                                        },
+    "20251224_131401_Atlas1_ev7o53":  {
+                                          "bblsTaken":  130,
+                                          "dateTime":  "12/24/2025 12:52 PM",
+                                          "dateTimeUTC":  "2025-12-24T18:52:24.774Z",
+                                          "packetId":  "20251224_131401_Atlas1_ev7o53",
+                                          "tankLevelFeet":  8.75,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251224_135829_Thor1_jct5ln":  {
+                                         "bblsTaken":  185,
+                                         "dateTime":  "12/24/2025 1:55 PM",
+                                         "dateTimeUTC":  "2025-12-24T19:55:00.000Z",
+                                         "packetId":  "20251224_135829_Thor1_jct5ln",
+                                         "tankLevelFeet":  11.333333333333334,
+                                         "timezone":  "America/Chicago",
+                                         "wellDown":  false,
+                                         "wellName":  "Thor 1"
+                                     },
+    "20251224_142942_Crossbow1_t164o7":  {
+                                             "bblsTaken":  0,
+                                             "dateTime":  "12/24/2025 2:29 PM",
+                                             "dateTimeUTC":  "2025-12-24T20:29:27.954Z",
+                                             "packetId":  "20251224_142942_Crossbow1_t164o7",
+                                             "tankLevelFeet":  8.333333333333334,
+                                             "timezone":  "America/Chicago",
+                                             "wellDown":  false,
+                                             "wellName":  "Crossbow 1"
+                                         },
+    "20251224_153212_Atlas1_bh1o6g":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/24/2025 3:04 PM",
+                                          "dateTimeUTC":  "2025-12-24T21:04:38.182Z",
+                                          "packetId":  "20251224_153212_Atlas1_bh1o6g",
+                                          "tankLevelFeet":  7.25,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251224_214821_Gab1_90zj0u":  {
+                                        "bblsTaken":  500,
+                                        "dateTime":  "12/24/2025 9:48 PM",
+                                        "dateTimeUTC":  "2025-12-25T03:48:08.117Z",
+                                        "driverId":  "33dd7267-2cd5-4706-8f1d-b492b22075fd",
+                                        "driverName":  "Admin",
+                                        "packetId":  "20251224_214821_Gab1_90zj0u",
+                                        "tankLevelFeet":  25.416666666666668,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251224_222232_Atlas1_671a53":  {
+                                          "bblsTaken":  0,
+                                          "dateTime":  "12/24/2025 10:22 PM",
+                                          "dateTimeUTC":  "2025-12-25T04:22:24.221Z",
+                                          "driverId":  "33dd7267-2cd5-4706-8f1d-b492b22075fd",
+                                          "driverName":  "Admin",
+                                          "packetId":  "20251224_222232_Atlas1_671a53",
+                                          "tankLevelFeet":  9.083333333333334,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251225_060850_Atlas1_evqgte":  {
+                                          "bblsTaken":  185,
+                                          "dateTime":  "12/25/2025 5:56 AM",
+                                          "dateTimeUTC":  "2025-12-25T11:56:00.000Z",
+                                          "driverId":  "d30151061ad8ac2ef7bac01e97c74239e8accf0e1e66ae99eb7b15af54963e9f_4d4e7bff64942074a7dbd79e343782a1",
+                                          "driverName":  "MBurger",
+                                          "packetId":  "20251225_060850_Atlas1_evqgte",
+                                          "tankLevelFeet":  14.083333333333334,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251225_082937_Atlas1_s0zds2":  {
+                                          "bblsTaken":  185,
+                                          "dateTime":  "12/25/2025 8:15 AM",
+                                          "dateTimeUTC":  "2025-12-25T14:15:26.206Z",
+                                          "driverId":  "d30151061ad8ac2ef7bac01e97c74239e8accf0e1e66ae99eb7b15af54963e9f_4d4e7bff64942074a7dbd79e343782a1",
+                                          "driverName":  "MBurger",
+                                          "packetId":  "20251225_082937_Atlas1_s0zds2",
+                                          "tankLevelFeet":  11.166666666666666,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251225_085816_Gab1_l7j959":  {
+                                        "bblsTaken":  140,
+                                        "dateTime":  "12/25/2025 8:58 AM",
+                                        "dateTimeUTC":  "2025-12-25T14:58:05.973Z",
+                                        "driverId":  "d30151061ad8ac2ef7bac01e97c74239e8accf0e1e66ae99eb7b15af54963e9f_4d4e7bff64942074a7dbd79e343782a1",
+                                        "driverName":  "MBurger",
+                                        "packetId":  "20251225_085816_Gab1_l7j959",
+                                        "tankLevelFeet":  16.333333333333332,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251225_133657_Gabriel7_ygwy9s":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/25/2025 1:36 PM",
+                                            "dateTimeUTC":  "2025-12-25T19:36:50.251Z",
+                                            "driverId":  "d30151061ad8ac2ef7bac01e97c74239e8accf0e1e66ae99eb7b15af54963e9f_4d4e7bff64942074a7dbd79e343782a1",
+                                            "driverName":  "MBurger",
+                                            "packetId":  "20251225_133657_Gabriel7_ygwy9s",
+                                            "tankLevelFeet":  14,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251225_153634_Gab1_r41nm1":  {
+                                        "bblsTaken":  250,
+                                        "dateTime":  "12/25/2025 3:36 PM",
+                                        "dateTimeUTC":  "2025-12-25T21:36:25.984Z",
+                                        "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                        "driverName":  "MBurger",
+                                        "packetId":  "20251225_153634_Gab1_r41nm1",
+                                        "tankLevelFeet":  14.833333333333334,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251225_164105_Atlas1_6udqan":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/25/2025 4:40 PM",
+                                          "dateTimeUTC":  "2025-12-25T22:40:19.552Z",
+                                          "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                          "driverName":  "MBurger",
+                                          "packetId":  "20251225_164105_Atlas1_6udqan",
+                                          "tankLevelFeet":  12.666666666666666,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251225_190058_Atlas1_2lfgpm":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/25/2025 6:57 PM",
+                                          "dateTimeUTC":  "2025-12-26T00:57:00.000Z",
+                                          "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                          "driverName":  "MBurger",
+                                          "packetId":  "20251225_190058_Atlas1_2lfgpm",
+                                          "tankLevelFeet":  10.833333333333334,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251225_204618_Atlas1_295d6e":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/25/2025 8:46 PM",
+                                          "dateTimeUTC":  "2025-12-26T02:46:06.024Z",
+                                          "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                          "driverName":  "MBurger",
+                                          "packetId":  "20251225_204618_Atlas1_295d6e",
+                                          "tankLevelFeet":  8.75,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251225_222048_Gab1_ytagr2":  {
+                                        "bblsTaken":  140,
+                                        "dateTime":  "12/25/2025 10:20 PM",
+                                        "dateTimeUTC":  "2025-12-26T04:20:31.322Z",
+                                        "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                        "driverName":  "MBurger",
+                                        "packetId":  "20251225_222048_Gab1_ytagr2",
+                                        "tankLevelFeet":  10.583333333333334,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251225_223040_Gab1_lqfrk2":  {
+                                        "bblsTaken":  50,
+                                        "dateTime":  "12/25/2025 10:30 PM",
+                                        "dateTimeUTC":  "2025-12-26T04:30:28.081Z",
+                                        "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                        "driverName":  "MBurger",
+                                        "packetId":  "20251225_223040_Gab1_lqfrk2",
+                                        "tankLevelFeet":  7.083333333333333,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251225_230852_Gabriel1_ka41vv":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/25/2025 11:08 PM",
+                                            "dateTimeUTC":  "2025-12-26T05:08:32.287Z",
+                                            "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                            "driverName":  "MBurger",
+                                            "packetId":  "20251225_230852_Gabriel1_ka41vv",
+                                            "tankLevelFeet":  12,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 1"
+                                        },
+    "20251225_231711_Gab1_5s8avp":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/25/2025 11:16 PM",
+                                        "dateTimeUTC":  "2025-12-26T05:16:58.271Z",
+                                        "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                        "driverName":  "MBurger",
+                                        "packetId":  "20251225_231711_Gab1_5s8avp",
+                                        "tankLevelFeet":  5.833333333333333,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251226_013042_Gab1_iijmuc":  {
+                                        "bblsTaken":  20,
+                                        "dateTime":  "12/26/2025 1:30 AM",
+                                        "dateTimeUTC":  "2025-12-26T07:30:35.704Z",
+                                        "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                        "driverName":  "MBurger",
+                                        "packetId":  "20251226_013042_Gab1_iijmuc",
+                                        "tankLevelFeet":  10.416666666666666,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251226_033554_Dagger1_pcnyzu":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "12/26/2025 3:34 AM",
+                                           "packetId":  "20251226_033554_Dagger1_pcnyzu",
+                                           "tankLevelFeet":  0,
+                                           "wellDown":  true,
+                                           "wellName":  "Dagger 1"
+                                       },
+    "20251226_085328_Gab1_xqgli7":  {
+                                        "bblsTaken":  50,
+                                        "dateTime":  "12/26/2025 8:53 AM",
+                                        "dateTimeUTC":  "2025-12-26T14:53:18.410Z",
+                                        "driverId":  "3f467738dce3c0d5d8c0cd668e51b475bf7f1fcc8c3fa4d8ede087347ed85f7d_f4e03d969ca842dd3c85ea1c4cb44c59",
+                                        "driverName":  "Iphone",
+                                        "packetId":  "20251226_085328_Gab1_xqgli7",
+                                        "tankLevelFeet":  11.833333333333334,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251226_100617_Thor1_f75ohn":  {
+                                         "bblsTaken":  0,
+                                         "dateTime":  "12/26/2025 10:06 AM",
+                                         "dateTimeUTC":  "2025-12-26T16:06:01.716Z",
+                                         "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                         "driverName":  "MBurger",
+                                         "packetId":  "20251226_100617_Thor1_f75ohn",
+                                         "tankLevelFeet":  7.25,
+                                         "timezone":  "America/Chicago",
+                                         "wellDown":  false,
+                                         "wellName":  "Thor 1"
+                                     },
+    "20251226_102313_Atlas1_1a9ra0":  {
+                                          "bblsTaken":  170,
+                                          "dateTime":  "12/26/2025 10:06 AM",
+                                          "dateTimeUTC":  "2025-12-26T16:06:23.560Z",
+                                          "packetId":  "20251226_102313_Atlas1_1a9ra0",
+                                          "tankLevelFeet":  13.833333333333334,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251226_111007_Gabriel7_rd7jat":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/26/2025 11:10 AM",
+                                            "dateTimeUTC":  "2025-12-26T17:10:01.008Z",
+                                            "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                            "driverName":  "MBurger",
+                                            "packetId":  "20251226_111007_Gabriel7_rd7jat",
+                                            "tankLevelFeet":  16.166666666666668,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251226_111504_Gabriel3_yj30v4":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/26/2025 11:10 AM",
+                                            "dateTimeUTC":  "2025-12-26T17:10:00.000Z",
+                                            "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                            "driverName":  "MBurger",
+                                            "packetId":  "20251226_111504_Gabriel3_yj30v4",
+                                            "tankLevelFeet":  8.083333333333334,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 3"
+                                        },
+    "20251226_134155_Phazor1_5ejwu3":  {
+                                           "bblsTaken":  140,
+                                           "dateTime":  "12/26/2025 12:15 PM",
+                                           "dateTimeUTC":  "2025-12-26T18:15:00.000Z",
+                                           "packetId":  "20251226_134155_Phazor1_5ejwu3",
+                                           "tankLevelFeet":  12.416666666666666,
+                                           "timezone":  "America/Chicago",
+                                           "wellDown":  false,
+                                           "wellName":  "Phazor 1"
+                                       },
+    "20251226_135549_Atlas1_0u7hvc":  {
+                                          "bblsTaken":  130,
+                                          "dateTime":  "12/26/2025 1:42 PM",
+                                          "dateTimeUTC":  "2025-12-26T19:42:07.432Z",
+                                          "packetId":  "20251226_135549_Atlas1_0u7hvc",
+                                          "tankLevelFeet":  12.166666666666666,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251226_154031_Crossbow1_hmz1eb":  {
+                                             "bblsTaken":  140,
+                                             "dateTime":  "12/26/2025 3:16 PM",
+                                             "dateTimeUTC":  "2025-12-26T21:16:01.871Z",
+                                             "packetId":  "20251226_154031_Crossbow1_hmz1eb",
+                                             "tankLevelFeet":  11.416666666666666,
+                                             "timezone":  "America/Chicago",
+                                             "wellDown":  false,
+                                             "wellName":  "Crossbow 1"
+                                         },
+    "20251226_161714_Gab1_4d8hz4":  {
+                                        "bblsTaken":  140,
+                                        "dateTime":  "12/26/2025 4:13 PM",
+                                        "dateTimeUTC":  "2025-12-26T22:13:00.000Z",
+                                        "packetId":  "20251226_161714_Gab1_4d8hz4",
+                                        "tankLevelFeet":  12.666666666666666,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Gab 1"
+                                    },
+    "20251226_164417_Gabriel7_xrlw61":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/26/2025 4:44 PM",
+                                            "dateTimeUTC":  "2025-12-26T22:44:07.115Z",
+                                            "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                            "driverName":  "MBurger",
+                                            "packetId":  "20251226_164417_Gabriel7_xrlw61",
+                                            "tankLevelFeet":  11.25,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Gabriel 7"
+                                        },
+    "20251226_170104_Cyclone1_mvpitp":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/26/2025 2:00 PM",
+                                            "dateTimeUTC":  "2025-12-26T20:00:00.000Z",
+                                            "packetId":  "20251226_170104_Cyclone1_mvpitp",
+                                            "tankLevelFeet":  6,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251226_173051_Cyclone1_glrkig":  {
+                                            "bblsTaken":  140,
+                                            "dateTime":  "12/26/2025 5:01 PM",
+                                            "dateTimeUTC":  "2025-12-26T23:01:16.181Z",
+                                            "packetId":  "20251226_173051_Cyclone1_glrkig",
+                                            "tankLevelFeet":  7.833333333333333,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  true,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251226_183105_Cyclone1_rk2h1b":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/26/2025 6:29 PM",
+                                            "dateTimeUTC":  "2025-12-27T00:29:00.000Z",
+                                            "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                            "driverName":  "MBurger",
+                                            "packetId":  "20251226_183105_Cyclone1_rk2h1b",
+                                            "tankLevelFeet":  4.583333333333333,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251226_184949_Atlas1_12jchx":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/26/2025 6:35 PM",
+                                          "dateTimeUTC":  "2025-12-27T00:35:00.000Z",
+                                          "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                          "driverName":  "MBurger",
+                                          "packetId":  "20251226_184949_Atlas1_12jchx",
+                                          "tankLevelFeet":  12.416666666666666,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251226_203603_Atlas1_pimf2b":  {
+                                          "bblsTaken":  140,
+                                          "dateTime":  "12/26/2025 8:28 PM",
+                                          "dateTimeUTC":  "2025-12-27T02:28:00.000Z",
+                                          "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                          "driverName":  "MBurger",
+                                          "packetId":  "20251226_203603_Atlas1_pimf2b",
+                                          "tankLevelFeet":  9.916666666666666,
+                                          "timezone":  "America/Chicago",
+                                          "wellDown":  false,
+                                          "wellName":  "Atlas 1"
+                                      },
+    "20251226_203907_Cyclone1_wwkhs1":  {
+                                            "bblsTaken":  0,
+                                            "dateTime":  "12/26/2025 8:38 PM",
+                                            "dateTimeUTC":  "2025-12-27T02:38:31.463Z",
+                                            "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                            "driverName":  "MBurger",
+                                            "packetId":  "20251226_203907_Cyclone1_wwkhs1",
+                                            "tankLevelFeet":  4.75,
+                                            "timezone":  "America/Chicago",
+                                            "wellDown":  false,
+                                            "wellName":  "Cyclone 1"
+                                        },
+    "20251227_081832_Dagger1_2dlsvw":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "12/27/2025 8:18 AM",
+                                           "dateTimeUTC":  "2025-12-27T00:18:24.331Z",
+                                           "packetId":  "20251227_081832_Dagger1_2dlsvw",
+                                           "tankLevelFeet":  0,
+                                           "timezone":  "Asia/Shanghai",
+                                           "wellDown":  true,
+                                           "wellName":  "Dagger 1"
+                                       },
+    "20251227_081858_Dagger1_cvzhgp":  {
+                                           "bblsTaken":  0,
+                                           "dateTime":  "8/27/2025 8:18 AM",
+                                           "dateTimeUTC":  "2025-08-27T00:18:37.083Z",
+                                           "packetId":  "20251227_081858_Dagger1_cvzhgp",
+                                           "tankLevelFeet":  0,
+                                           "timezone":  "Asia/Shanghai",
+                                           "wellDown":  true,
+                                           "wellName":  "Dagger 1"
+                                       },
+    "edit_20251221_140028_Dagger1":  {
+                                         "bblsTaken":  0,
+                                         "dateTime":  "12/21/2025 1:59 PM",
+                                         "dateTimeUTC":  "2025-12-21T19:59:00.000Z",
+                                         "packetId":  "20251221_140028_Dagger1_2zhr81",
+                                         "requestType":  "edit",
+                                         "tankLevelFeet":  6.25,
+                                         "timezone":  "America/Chicago",
+                                         "wellDown":  false,
+                                         "wellName":  "Dagger 1"
+                                     },
+    "edit_20251222_110535_Kahuna1":  {
+                                         "bblsTaken":  0,
+                                         "dateTime":  "12/22/2025 11:05 AM",
+                                         "dateTimeUTC":  "2025-12-22T17:05:00.000Z",
+                                         "packetId":  "20251222_110535_Kahuna1_0nx6wi",
+                                         "requestType":  "edit",
+                                         "tankLevelFeet":  8,
+                                         "timezone":  "America/Chicago",
+                                         "wellDown":  false,
+                                         "wellName":  "Kahuna 1"
+                                     },
+    "edit_20251223_023541_Dagger1":  {
+                                         "bblsTaken":  0,
+                                         "dateTime":  "12/23/2025 2:35 AM",
+                                         "dateTimeUTC":  "2025-12-23T10:35:00.000Z",
+                                         "packetId":  "20251223_023541_Dagger1_f7p3lu",
+                                         "requestType":  "edit",
+                                         "tankLevelFeet":  0,
+                                         "timezone":  "America/Los_Angeles",
+                                         "wellDown":  true,
+                                         "wellName":  "Dagger 1"
+                                     },
+    "edit_20251225_231711_Gab1":  {
+                                      "bblsTaken":  40,
+                                      "dateTime":  "12/25/2025 11:16 PM",
+                                      "dateTimeUTC":  "2025-12-26T05:16:00.000Z",
+                                      "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                      "driverName":  "MBurger",
+                                      "packetId":  "20251225_231711_Gab1_5s8avp",
+                                      "requestType":  "edit",
+                                      "tankLevelFeet":  5.833333333333333,
+                                      "timezone":  "America/Chicago",
+                                      "wellDown":  false,
+                                      "wellName":  "Gab 1"
+                                  },
+    "edit_20251226_161714_Gab1":  {
+                                      "bblsTaken":  165,
+                                      "dateTime":  "12/26/2025 4:13 PM",
+                                      "dateTimeUTC":  "2025-12-26T22:13:00.000Z",
+                                      "packetId":  "20251226_161714_Gab1_4d8hz4",
+                                      "requestType":  "edit",
+                                      "tankLevelFeet":  12.666666666666666,
+                                      "timezone":  "America/Chicago",
+                                      "wellDown":  false,
+                                      "wellName":  "Gab 1"
+                                  },
+    "edit_20251226_184949_Atlas1":  {
+                                        "bblsTaken":  150,
+                                        "dateTime":  "12/26/2025 6:35 PM",
+                                        "dateTimeUTC":  "2025-12-27T00:35:00.000Z",
+                                        "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                        "driverName":  "MBurger",
+                                        "packetId":  "20251226_184949_Atlas1_12jchx",
+                                        "requestType":  "edit",
+                                        "tankLevelFeet":  12.416666666666666,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Atlas 1"
+                                    },
+    "edit_20251226_203603_Atlas1":  {
+                                        "bblsTaken":  150,
+                                        "dateTime":  "12/26/2025 8:28 PM",
+                                        "dateTimeUTC":  "2025-12-27T02:28:00.000Z",
+                                        "driverId":  "6230e8821ebee751ca4371bb1fe640cb713dd2fc4d6d974ede1e0cefe430e430_admin",
+                                        "driverName":  "MBurger",
+                                        "packetId":  "20251226_203603_Atlas1_pimf2b",
+                                        "requestType":  "edit",
+                                        "tankLevelFeet":  9.916666666666666,
+                                        "timezone":  "America/Chicago",
+                                        "wellDown":  false,
+                                        "wellName":  "Atlas 1"
+                                    },
+    "edit_20251227_081858_Dagger1":  {
+                                         "bblsTaken":  0,
+                                         "dateTime":  "8/27/2025 8:18 AM",
+                                         "dateTimeUTC":  "2025-08-27T00:18:00.000Z",
+                                         "packetId":  "20251227_081858_Dagger1_cvzhgp",
+                                         "requestType":  "edit",
+                                         "tankLevelFeet":  0,
+                                         "timezone":  "Asia/Shanghai",
+                                         "wellDown":  true,
+                                         "wellName":  "Dagger 1"
+                                     },
+    "history_20251225_192201_Gab1_77dc2z":  {
+                                                "limit":  20,
+                                                "requestType":  "wellHistory",
+                                                "timestamp":  "2025-12-26T01:22:01.525Z",
+                                                "wellName":  "Gab 1"
+                                            },
+    "history_20251225_192239_Gab1_9u46nj":  {
+                                                "limit":  35,
+                                                "requestType":  "wellHistory",
+                                                "timestamp":  "2025-12-26T01:22:39.169Z",
+                                                "wellName":  "Gab 1"
+                                            },
+    "history_20251225_192408_Gabriel7_b8a6gk":  {
+                                                    "limit":  20,
+                                                    "requestType":  "wellHistory",
+                                                    "timestamp":  "2025-12-26T01:24:08.955Z",
+                                                    "wellName":  "Gabriel 7"
+                                                },
+    "history_20251226_084026_Atlas1_zu11w6":  {
+                                                  "limit":  20,
+                                                  "requestType":  "wellHistory",
+                                                  "timestamp":  "2025-12-26T14:40:26.526Z",
+                                                  "wellName":  "Atlas 1"
+                                              },
+    "history_20251226_085509_Gab1_bi6go0":  {
+                                                "limit":  20,
+                                                "requestType":  "wellHistory",
+                                                "timestamp":  "2025-12-26T14:55:09.729Z",
+                                                "wellName":  "Gab 1"
+                                            },
+    "history_20251226_085800_Atlas1_ehkmrv":  {
+                                                  "limit":  20,
+                                                  "requestType":  "wellHistory",
+                                                  "timestamp":  "2025-12-26T14:58:00.443Z",
+                                                  "wellName":  "Atlas 1"
+                                              },
+    "history_20251226_111028_Gabriel7_qdc961":  {
+                                                    "limit":  20,
+                                                    "requestType":  "wellHistory",
+                                                    "timestamp":  "2025-12-26T17:10:28.508Z",
+                                                    "wellName":  "Gabriel 7"
+                                                },
+    "history_20251226_113417_Gabriel7_3u09c2":  {
+                                                    "limit":  20,
+                                                    "requestType":  "wellHistory",
+                                                    "timestamp":  "2025-12-26T17:34:17.175Z",
+                                                    "wellName":  "Gabriel 7"
+                                                },
+    "history_20251226_164546_Gabriel7_3dpcub":  {
+                                                    "limit":  20,
+                                                    "requestType":  "wellHistory",
+                                                    "timestamp":  "2025-12-26T22:45:46.063Z",
+                                                    "wellName":  "Gabriel 7"
+                                                },
+    "history_20251226_183715_Cyclone1_vwiepj":  {
+                                                    "limit":  20,
+                                                    "requestType":  "wellHistory",
+                                                    "timestamp":  "2025-12-27T00:37:15.564Z",
+                                                    "wellName":  "Cyclone 1"
+                                                },
+    "history_20251226_204017_Cyclone1_b3jafp":  {
+                                                    "limit":  20,
+                                                    "requestType":  "wellHistory",
+                                                    "timestamp":  "2025-12-27T02:40:17.916Z",
+                                                    "wellName":  "Cyclone 1"
+                                                }
+}

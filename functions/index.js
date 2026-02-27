@@ -1,22 +1,21 @@
 /**
- * WellBuilt Firebase Cloud Functions
+ * WellBuilt Firebase Cloud Functions — LOCAL MIRROR
  *
- * PRIMARY processing for all incoming packets:
- * - Monitors packets/incoming for new pull/edit packets
- * - Calculates response immediately using full AFR algorithm
+ * ⚠️  WARNING: DO NOT deploy functions from this directory.
+ * ⚠️  The CANONICAL deployed functions live in:
+ * ⚠️  C:\wellbuilt-dashboard\functions\src\index.ts
+ * ⚠️  Deploying from here would overwrite the live Dashboard functions.
+ *
+ * This file is kept as a reference mirror of the packet processing logic.
+ * The algorithm code (AFR, flow rates, bbls/day, enrichment) is shared
+ * with the Dashboard version and should be kept in sync.
+ *
+ * Processing pipeline:
+ * - Triggers on packets/incoming/{packetId} onCreate
+ * - Calculates response using full AFR algorithm
  * - Writes response to packets/outgoing so app gets instant data
- * - Moves packet to packets/processed for VBA to read
- * - Increments packets/processed_version so VBA knows to check
- *
- * VBA's role is now:
- * - Poll processed_version (not incoming_version)
- * - Read packets from processed/ to update Excel sheets
- * - Write performance data for analytics
- * - Handle wellHistory requests (needs Excel data)
- *
- * Excel heartbeat (status/excel_heartbeat) is still used to:
- * - Let app know if Excel-dependent features are available
- * - Show "WellBuilt down for maintenance" when Excel is offline
+ * - Moves enriched packet to packets/processed
+ * - Updates well_config with latest AFR
  */
 
 const functions = require("firebase-functions");
@@ -31,15 +30,13 @@ const BBL_PER_TANK = 20; // 20 bbl per foot per tank
 
 // AFR Algorithm constants
 const AFR_WINDOW_SIZES = [3, 4, 5, 6, 7]; // Test these window sizes
-const STEP_THRESHOLD = 0.10; // 10% deviation triggers step detection (matches VBA)
+const STEP_THRESHOLD = 0.10; // 10% deviation triggers step detection
 const STEP_PULLS = 3; // Number of consecutive pulls to check for step
-const ANOMALY_RATIO = 5.0; // >5x or <0.2x median is anomaly (matches VBA)
+const ANOMALY_RATIO = 5.0; // >5x or <0.2x median is anomaly
 const TREND_THRESHOLD = 0.05; // 5% deviation for trend detection
 const TREND_PULLS = 5; // Number of pulls to check for trend
 const TREND_MIN_COUNT = 4; // At least 4 of 5 must be in same direction
 
-// VBA heartbeat timeout (2 minutes)
-const VBA_HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
 
 /**
  * Parse packet timestamp consistently - handles both UTC and local time strings
@@ -90,34 +87,6 @@ function parsePacketTimestamp(packet) {
   return NaN;
 }
 
-/**
- * Check if VBA/Excel is online by checking heartbeat timestamp
- * Returns true if heartbeat is within timeout, false otherwise
- */
-async function isVbaOnline() {
-  try {
-    const snapshot = await db.ref("status/excel_heartbeat").once("value");
-    const heartbeat = snapshot.val();
-
-    if (!heartbeat || !heartbeat.timestamp) {
-      console.log("No VBA heartbeat found - VBA is offline");
-      return false;
-    }
-
-    // Parse the ISO timestamp
-    const heartbeatTime = new Date(heartbeat.timestamp).getTime();
-    const now = Date.now();
-    const age = now - heartbeatTime;
-
-    const isOnline = age < VBA_HEARTBEAT_TIMEOUT_MS;
-    console.log(`VBA heartbeat age: ${Math.round(age / 1000)}s - ${isOnline ? "ONLINE" : "OFFLINE"}`);
-
-    return isOnline;
-  } catch (error) {
-    console.error("Error checking VBA heartbeat:", error);
-    return false; // Assume offline if we can't check
-  }
-}
 
 /**
  * Get well config from Firebase /well_config
@@ -272,7 +241,7 @@ async function getHistoricalPulls(wellName, limit = 50) {
 
 /**
  * Calculate flow rate data from historical pulls
- * This mimics VBA's Column H calculation: (timeDiff / recoveryInches) * 12 = days per foot
+ * Flow rate calculation: (timeDiff / recoveryInches) * 12 = days per foot
  */
 function calculateFlowRates(pulls, bblPerFoot) {
   const flowData = [];
@@ -314,9 +283,9 @@ function calculateFlowRates(pulls, bblPerFoot) {
 }
 
 /**
- * Get Adaptive Flow Rate (AFR) - ports VBA's GetAverageFlowRate
+ * Get Adaptive Flow Rate (AFR)
  *
- * Algorithm (matches VBA):
+ * Algorithm:
  * 1. ANOMALY FILTERING: Calculate median, filter out rates >5x or <0.2x median
  * 2. Test window sizes 3-7 to find the one with lowest prediction error
  * 3. STEP DETECTION: If last 3 pulls ALL >10% off in same direction, use median of last 3
@@ -336,7 +305,7 @@ function getAdaptiveFlowRate(flowData, wellName = "unknown") {
     return 0;
   }
 
-  // ===== PHASE 1: ANOMALY FILTERING (like VBA) =====
+  // ===== PHASE 1: ANOMALY FILTERING =====
   // Calculate median of all flow rates
   const allRates = flowData.map(d => d.flowRateDays).sort((a, b) => a - b);
   const midIdx = Math.floor(allRates.length / 2);
@@ -476,7 +445,7 @@ function getAdaptiveFlowRate(flowData, wellName = "unknown") {
     }
   }
 
-  // ===== PHASE 3B: TREND DETECTION (like VBA) =====
+  // ===== PHASE 3B: TREND DETECTION =====
   // If 4 of 5 last pulls are >5% off in same direction, use median of last 3
   if (pullCount >= TREND_PULLS + bestWindowSize) {
     // Calculate base AFR from pulls BEFORE the trend window
@@ -586,7 +555,7 @@ function formatTimeTillPull(days) {
 
 /**
  * Calculate raw flow rate enrichment data for a processed packet
- * This adds the same fields VBA used to add: flowRate, flowRateDays, recoveryInches, etc.
+ * Adds enrichment fields: flowRate, flowRateDays, recoveryInches, etc.
  * These are the RAW values for THIS pull (not AFR averages)
  *
  * @param packet - The current pull packet
@@ -689,7 +658,7 @@ function calculatePacketEnrichment(packet, wellConfig, historicalPulls, response
 
 /**
  * Write performance data for a pull to Firebase
- * This allows the Performance screen to show data without VBA dependency
+ * Writes performance data for the Performance screen
  *
  * Format: performance/{wellKey}/rows/{timestamp} = { d: "yyyy-mm-dd", a: actual_inches, p: predicted_inches }
  * - d = date in yyyy-mm-dd format
@@ -1249,35 +1218,14 @@ async function incrementIncomingVersion() {
 }
 
 /**
- * Increment the processed_version counter to notify VBA/Excel
- * VBA polls this to know when new packets are in processed/ for Excel update
- */
-async function incrementProcessedVersion() {
-  try {
-    const snapshot = await db.ref("packets/processed_version").once("value");
-    const currentVersion = parseInt(snapshot.val(), 10) || 0;
-    await db.ref("packets/processed_version").set(currentVersion + 1);
-    console.log(`Incremented processed_version to ${currentVersion + 1}`);
-  } catch (error) {
-    console.error("Error incrementing processed_version:", error);
-  }
-}
-
-/**
- * Process packet: copy to processed, notify watchers
- * Cloud Functions calculate response and write to outgoing/
- * VBA reads from incoming/, processes, and deletes when done
- * Tags packet with vbaWasDown: true if VBA heartbeat is stale
+ * Copy packet to processed, clean up incoming, notify watchers.
  *
  * @param packetId - The packet ID
  * @param packet - The original packet data
  * @param enrichment - Extra fields to add to processed packet (raw flow rate data, etc.)
  */
-async function copyToProcessedAndNotifyVBA(packetId, packet, enrichment = {}) {
+async function copyToProcessedAndCleanup(packetId, packet, enrichment = {}) {
   try {
-    // Check if VBA is online
-    const vbaOnline = await isVbaOnline();
-
     // Build enriched packet with all extra fields
     const enrichedPacket = {
       ...packet,
@@ -1285,21 +1233,14 @@ async function copyToProcessedAndNotifyVBA(packetId, packet, enrichment = {}) {
       processedAt: new Date().toISOString()
     };
 
-    if (!vbaOnline) {
-      enrichedPacket.vbaWasDown = true;
-      console.log(`Tagging packet ${packetId} with vbaWasDown=true`);
-    }
-
     // Write to processed
     await db.ref(`packets/processed/${packetId}`).set(enrichedPacket);
 
-    // Always delete from incoming after processing
-    // Cloud Function handles everything now - no longer waiting for Excel/VBA
+    // Delete from incoming after processing
     await db.ref(`packets/incoming/${packetId}`).remove();
     console.log(`Packet processed: ${packetId} - deleted from incoming`);
 
-    // Increment incoming_version so VBA knows to check incoming/
-    // App also watches this to fetch updated responses from outgoing/
+    // Increment incoming_version so app knows to check for updated responses
     await incrementIncomingVersion();
   } catch (error) {
     console.error(`Error processing packet: ${packetId}`, error);
@@ -1309,9 +1250,9 @@ async function copyToProcessedAndNotifyVBA(packetId, packet, enrichment = {}) {
 /**
  * Firebase Function: Process incoming pull packets - PRIMARY handler
  * Triggers when any data is written to packets/incoming/{packetId}
- * Always processes immediately - no longer waits for Excel
+ * Processes immediately on packet arrival
  */
-exports.processPacket = functions.database
+exports.processIncomingPull = functions.database
   .ref("/packets/incoming/{packetId}")
   .onCreate(async (snapshot, context) => {
     const startTime = Date.now();
@@ -1353,7 +1294,7 @@ exports.processPacket = functions.database
       };
       await db.ref(`packets/outgoing/${errorResponseId}`).set(errorResponse);
       // Still move to processed so it doesn't get re-processed
-      await copyToProcessedAndNotifyVBA(packetId, packet);
+      await copyToProcessedAndCleanup(packetId, packet);
       return null;
     }
 
@@ -1415,7 +1356,7 @@ exports.processPacket = functions.database
     await db.ref(`packets/outgoing/${responseId}`).set(response);
     console.log(`Response written: ${responseId}`);
 
-    // Write performance data for this pull (for Performance screen - VBA independent)
+    // Write performance data for this pull (for Performance screen)
     // Uses PREVIOUS response (captured above) to get predicted level (what driver saw on screen)
     await writePerformanceData(packet, wellConfig, prevResponse);
 
@@ -1427,11 +1368,11 @@ exports.processPacket = functions.database
     console.log(`[ProdLog] ${wellName}: bbls24hrs="${response.bbls24hrs}" windowBblsDay="${response.windowBblsDay}" overnightBblsDay="${response.overnightBblsDay}" → afr=${afrVal} win=${winVal} on=${onVal}`);
     await writeProductionLog(wellName, pullTimeMs, afrVal, winVal, onVal);
 
-    // Calculate enrichment data (raw flow rate, etc.) like VBA used to add
+    // Calculate enrichment data (raw flow rate, etc.)
     const enrichment = calculatePacketEnrichment(packet, wellConfig, historicalPulls, response);
 
-    // Move packet to processed and notify VBA
-    await copyToProcessedAndNotifyVBA(packetId, packet, enrichment);
+    // Move packet to processed and clean up incoming
+    await copyToProcessedAndCleanup(packetId, packet, enrichment);
 
     const totalTime = Date.now() - startTime;
     console.log(`✅ [${new Date().toISOString()}] DONE processing ${packetId} in ${totalTime}ms`);
@@ -1439,25 +1380,15 @@ exports.processPacket = functions.database
     return null;
   });
 
-/**
- * Firebase Function: processEditPacket (DEPRECATED)
- * Edits are now handled directly by processPacket — same flow as a new pull.
- * This function is kept as a no-op so the deployed function doesn't error.
- */
-exports.processEditPacket = functions.database
-  .ref("/packets/incoming/{packetId}")
-  .onCreate(async (snapshot, context) => {
-    // Edits are now handled by processPacket — nothing to do here
-    return null;
-  });
+// processEditPacket REMOVED — edits are handled by processIncomingPull.
+// Do not re-add. The Dashboard version (processEditRequest) is the canonical edit handler.
 
 /**
- * Firebase Function: Handle delete packets from Excel
- * When IT deletes a row in Excel, VBA sends a delete packet here
- * We clean up:
- *   1. packets/outgoing/response_{timestamp}_{wellName} - IF it matches this pull
- *   2. packets/processed/{packetId} - the backup
- *   3. performance/{wellName}/rows/{timestamp} - the performance data
+ * Firebase Function: Handle delete packets
+ * Triggered when a delete request arrives. Cleans up:
+ *   1. packets/processed/{packetId}
+ *   2. performance/{wellName}/rows/{timestamp}
+ *   3. packets/outgoing response for this well (then rebuilds from remaining data)
  */
 exports.processDeletePacket = functions.database
   .ref("/packets/incoming/{deletePacketId}")
@@ -1552,7 +1483,7 @@ exports.processDeletePacket = functions.database
     }
 
     // 4. Find the now-most-recent pull and create a new response
-    // This ensures the app and Excel get updated with the correct current state
+    // This ensures the app gets updated with the correct current state
     let newResponseCreated = false;
     try {
       const mostRecentPacket = await getMostRecentPullPacket(wellName);
@@ -1614,50 +1545,3 @@ exports.processDeletePacket = functions.database
     return null;
   });
 
-/**
- * Firebase Function: Handle wellHistory requests
- * These still need VBA since they read from the Excel database
- * We just move them to processed so VBA can see them
- */
-exports.processWellHistoryRequest = functions.database
-  .ref("/packets/incoming/{packetId}")
-  .onCreate(async (snapshot, context) => {
-    const packetId = context.params.packetId;
-    const packet = snapshot.val();
-
-    // Only handle wellHistory requests
-    if (packet.requestType !== "wellHistory") {
-      return null;
-    }
-
-    console.log(`WellHistory request received: ${packetId}`);
-
-    // These still need VBA - it has the full historical data in Excel
-    // Don't move to processed - leave in incoming for VBA to handle
-    // VBA will move it when done
-
-    return null;
-  });
-
-/**
- * Firebase Function: Handle performanceReport requests
- * These still need VBA since they rebuild from Excel data
- */
-exports.processPerformanceRequest = functions.database
-  .ref("/packets/incoming/{packetId}")
-  .onCreate(async (snapshot, context) => {
-    const packetId = context.params.packetId;
-    const packet = snapshot.val();
-
-    // Only handle performanceReport requests
-    if (packet.requestType !== "performanceReport") {
-      return null;
-    }
-
-    console.log(`Performance report request received: ${packetId}`);
-
-    // These still need VBA - it rebuilds from Excel sheet data
-    // Don't move to processed - leave in incoming for VBA to handle
-
-    return null;
-  });

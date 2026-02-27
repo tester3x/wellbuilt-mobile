@@ -19,6 +19,7 @@ const INCOMING_VERSION_PATH = "packets/incoming_version";
 // Reuse existing interfaces from onedrive.ts
 export interface TankPacket {
   packetId: string;
+  requestType: 'pull';        // Required by Dashboard processIncomingPull — packets without this are skipped
   wellName: string;
   dateTimeUTC: string;        // ISO 8601 UTC timestamp for calculations (e.g., "2025-12-21T23:36:42.000Z")
   dateTime: string;           // Local display string for legacy/display (e.g., "12/21/2025 5:36 PM")
@@ -262,6 +263,7 @@ export const uploadTankPacket = async (params: {
 
   const packet: TankPacket = {
     packetId,
+    requestType: 'pull',      // Required by Dashboard processIncomingPull
     wellName,
     dateTimeUTC,              // ISO 8601 UTC - use for ALL calculations
     dateTime,                 // Local display string - for legacy/display only
@@ -1359,6 +1361,9 @@ const extractPullsByWell = (processedData: any): {
     if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
     if (p.wasEdited === true) continue;
     if (!p.wellName || !p.tankLevelFeet) continue;
+    // Skip legacy Excel import duplicates — they have near-identical timestamps
+    // to real driver packets and poison the rolling growth rate calculation
+    if (p.driverName === "Excel Export") continue;
 
     const dateTimeStr = p.dateTimeUTC || p.dateTime || "";
     if (!dateTimeStr) continue;
@@ -1394,65 +1399,60 @@ const extractPullsByWell = (processedData: any): {
 };
 
 /**
- * Get performance data by reading directly from packets/processed
- * Same data source as well history — no separate cache needed.
- *
- * For newer packets: uses predictedLevelInches (what driver saw on screen).
- * For older packets: calculates prediction from previous bottom level + rolling flow rate.
- * Supports all date ranges: 30D, 90D, 1Y, All.
+ * Get performance data for all wells
+ * Reads from packets/processed — uses predictedLevelInches written by Firebase Cloud Function
+ * No rolling growth rate calculation — just reads what Firebase already computed
  */
 export const getPerformanceData = async (
   fromDate?: Date,
   toDate?: Date
 ): Promise<PerformanceResponse> => {
   try {
-    console.log("[Performance] Reading from packets/processed...");
+    console.log("[Performance] Reading from performance/ folder...");
 
-    // Fetch processed packets (cached 1min) AND well config in parallel
-    const [processedData, wellConfig] = await Promise.all([
-      getCachedProcessedData(),
+    // performance/ has tiny {d,a,p} rows — way less bandwidth than packets/processed
+    // DECISION 2/23/2026: performance/ is the source of truth for prediction data
+    const [perfData, wellConfig] = await Promise.all([
+      firebaseGet("performance"),
       loadWellConfig(),
     ]);
 
-    if (!processedData) {
+    if (!perfData) {
       return {
         wellCount: 0,
         wells: [],
         status: "error",
-        errorMessage: "No processed packets found. Pull data will appear here after drivers submit pulls.",
+        errorMessage: "No performance data found. Pull data will appear here after drivers submit pulls.",
       };
     }
 
-    // Extract and group packets by well
-    const { wellPulls, latestProcessedAt } = extractPullsByWell(processedData);
-
-    // Build WellPerformance for each well
     const wells: WellPerformance[] = [];
 
-    for (const [wellName, pulls] of wellPulls) {
-      // Get bblPerFoot from well config (tanks * 20)
+    for (const [wellKey, wellData] of Object.entries(perfData)) {
+      const wd = wellData as any;
+      if (!wd || !wd.rows) continue;
+
+      const wellName = wd.wellName || wellKey.replace(/_/g, " ");
       const config = wellConfig?.[wellName];
-      const numTanks = (config as any)?.numTanks || (config as any)?.tanks || 1;
-      const bblPerFoot = numTanks * 20;
       const route = config?.route || undefined;
 
-      // Build performance rows (handles both old and new packets)
-      const rawRows = buildPerformanceRows(pulls, bblPerFoot);
-      const allRows = processRawPulls(rawRows);
+      const rawRows: RawPullData[] = [];
+      for (const [, row] of Object.entries(wd.rows)) {
+        const r = row as any;
+        if (r && r.d && r.a > 0 && r.p > 0) {
+          rawRows.push({ d: r.d, a: r.a, p: r.p });
+        }
+      }
 
-      // Sort by date (oldest first for trend calc)
+      if (rawRows.length === 0) continue;
+
+      const allRows = processRawPulls(rawRows);
       allRows.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
 
-      // Apply date filter
       const filteredRows = filterRowsByDate(allRows, fromDate, toDate);
-
-      // Skip wells with no data in range
       if (filteredRows.length === 0) continue;
 
-      // Calculate stats from filtered rows
       const stats = calculateStats(filteredRows);
-
-      // Reverse for display (newest first)
       const displayRows = [...filteredRows].reverse();
 
       wells.push({
@@ -1473,14 +1473,13 @@ export const getPerformanceData = async (
       });
     }
 
-    console.log("[Performance] Built from packets/processed:", wells.length, "wells,",
+    console.log("[Performance] Read from performance/:", wells.length, "wells,",
       wells.reduce((sum, w) => sum + w.filteredPulls, 0), "total pulls");
 
     return {
       wellCount: wells.length,
       wells,
       status: "success",
-      lastUpdated: latestProcessedAt,
     };
   } catch (error) {
     console.error("[Performance] Error reading data:", error);
@@ -1509,64 +1508,34 @@ export const getWellNameList = async (): Promise<{ name: string; route?: string 
 
 /**
  * Get raw performance data for a single well
- * Reads from packets/processed, calculates predictions for old packets
+ * Reads from performance/{wellKey} — tiny {d,a,p} rows written by Firebase Cloud Function
+ * DECISION 2/23/2026: Read from performance/ not packets/processed because:
+ *   - performance/ rows are ~30 bytes each ({d,a,p})
+ *   - processed packets are 30+ fields each (huge waste for 3 values)
+ *   - Firebase Cloud Function is the single source of truth for predictions
  */
 export const getRawWellData = async (wellName: string): Promise<RawWellData | null> => {
   try {
-    console.log("[Performance] Querying packets/processed for:", wellName);
+    const wellKey = wellName.replace(/\s+/g, "_");
+    console.log("[Performance] Reading performance/", wellKey);
 
-    // Server-side query: only fetch this well's packets (not all wells)
-    const [processedData, wellConfig] = await Promise.all([
-      firebaseQuery("packets/processed", "wellName", wellName),
-      loadWellConfig(),
-    ]);
-    if (!processedData || Object.keys(processedData).length === 0) return null;
+    const perfData = await firebaseGet(`performance/${wellKey}`);
+    if (!perfData || !perfData.rows) return null;
 
-    // Extract pulls from query-filtered data (all packets are already for this well)
-    const pulls: PullPacket[] = [];
-    let latestProcessedAt = "";
-
-    for (const [, packet] of Object.entries(processedData)) {
-      const p = packet as any;
-      if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
-      if (p.wasEdited === true) continue;
-      if (!p.tankLevelFeet) continue;
-
-      const dateTimeStr = p.dateTimeUTC || p.dateTime || "";
-      if (!dateTimeStr) continue;
-      const ts = new Date(dateTimeStr).getTime();
-      if (isNaN(ts)) continue;
-
-      pulls.push({
-        dateTimeUTC: dateTimeStr,
-        timestampMs: ts,
-        topLevelFeet: parseFloat(p.tankLevelFeet) || 0,
-        bblsTaken: parseFloat(p.bblsTaken) || 0,
-        predictedLevelInches: p.predictedLevelInches,
-      });
-
-      if (p.processedAt && p.processedAt > latestProcessedAt) {
-        latestProcessedAt = p.processedAt;
+    const rows: RawPullData[] = [];
+    for (const [, row] of Object.entries(perfData.rows)) {
+      const r = row as any;
+      if (r && r.d && r.a > 0 && r.p > 0) {
+        rows.push({ d: r.d, a: r.a, p: r.p });
       }
     }
 
-    // Sort chronologically
-    pulls.sort((a, b) => a.timestampMs - b.timestampMs);
-
-    if (pulls.length < 2) return null;
-
-    // Get bblPerFoot
-    const config = wellConfig?.[wellName];
-    const numTanks = (config as any)?.numTanks || (config as any)?.tanks || 1;
-    const bblPerFoot = numTanks * 20;
-
-    const rows = buildPerformanceRows(pulls, bblPerFoot);
     if (rows.length === 0) return null;
 
     return {
-      wellName,
+      wellName: perfData.wellName || wellName,
       totalPulls: rows.length,
-      updated: latestProcessedAt,
+      updated: perfData.updated || "",
       rows,
     };
   } catch (error) {

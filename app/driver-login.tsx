@@ -71,6 +71,7 @@ export default function DriverLoginScreen() {
   const [showPasscode, setShowPasscode] = useState(false);
   const legalNameRef = useRef<TextInput>(null);
   const companyRef = useRef<TextInput>(null);
+  const passcodeRef = useRef<TextInput>(null);
   const [passcodeError, setPasscodeError] = useState('');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -315,6 +316,7 @@ export default function DriverLoginScreen() {
   const renderPasscodeInput = (placeholder: string, autoFocus: boolean = false) => (
     <View style={styles.inputContainer}>
       <TextInput
+        ref={passcodeRef}
         style={[
           styles.input,
           styles.inputWithIcon,
@@ -327,7 +329,8 @@ export default function DriverLoginScreen() {
         secureTextEntry={!showPasscode}
         autoCapitalize="none"
         autoFocus={autoFocus}
-        onSubmitEditing={mode === 'login' ? handleLogin : undefined}
+        returnKeyType="go"
+        onSubmitEditing={mode === 'login' ? handleLogin : handleRegister}
       />
       <TouchableOpacity
         style={styles.eyeButton}
@@ -425,7 +428,6 @@ export default function DriverLoginScreen() {
               placeholder={t('driverLogin.displayNamePlaceholder')}
               placeholderTextColor="#6B7280"
               autoCapitalize="words"
-              autoFocus
               returnKeyType="next"
               onSubmitEditing={() => legalNameRef.current?.focus()}
             />
@@ -454,6 +456,7 @@ export default function DriverLoginScreen() {
               autoCapitalize="words"
               autoCorrect={false}
               returnKeyType="next"
+              onSubmitEditing={() => passcodeRef.current?.focus()}
             />
             <Text style={styles.passcodeHint}>
               {t('driverLogin.companyHint', 'Enter the company name your employer gave you')}

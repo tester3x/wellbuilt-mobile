@@ -21,7 +21,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
 import { useAppAlert } from "../components/AppAlert";
-import { loadWellConfig, WellConfigMap } from "../src/services/wellConfig";
+import { loadWellConfig, WellConfigMap, fetchDriverRouteAssignment, filterWellConfigByAssignment } from "../src/services/wellConfig";
 import { getLevelSnapshot, loadLevelSnapshots } from "../src/services/wellHistory";
 import {
   DispatchRecipient,
@@ -209,7 +209,7 @@ export default function SettingsScreen() {
   const inchesData = Array.from({ length: 12 }, (_, i) => i); // 0-11
   const ITEM_HEIGHT = 50;
 
-  // Load settings on mount
+  // Load settings on mount (route assignment checked on each load/refresh)
   useEffect(() => {
     loadRoutesAndSelections();
     loadHistorySettings();
@@ -502,10 +502,13 @@ export default function SettingsScreen() {
     // Load level snapshots for DOWN status
     await loadLevelSnapshots();
 
-    // Fetch well config
-    const config = await fetchWellConfig();
+    // Fetch well config and filter by driver's assigned routes
+    let config = await fetchWellConfig();
 
     if (config) {
+      const { routes: assignedRoutes, wells: assignedWells } = await fetchDriverRouteAssignment();
+      config = filterWellConfigByAssignment(config, assignedRoutes, assignedWells);
+
       // Group wells by route and track colors from config
       const routeMap: { [route: string]: { wells: string[], color: string } } = {};
 
@@ -1244,7 +1247,7 @@ export default function SettingsScreen() {
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.recipientModalContent}>
             <ScrollView
@@ -1395,7 +1398,7 @@ export default function SettingsScreen() {
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.recipientModalContent}>
             <ScrollView

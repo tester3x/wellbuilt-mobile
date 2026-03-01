@@ -640,7 +640,7 @@ export default function HistoryScreen() {
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <TouchableOpacity
             style={styles.modalOverlayTouchable}

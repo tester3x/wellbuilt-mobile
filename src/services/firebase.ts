@@ -52,7 +52,8 @@ export interface TankResponse {
 }
 
 export interface EditPacket {
-  packetId: string;
+  packetId: string;              // Original packet ID (legacy field name)
+  originalPacketId: string;      // Original packet ID (cloud function reads this)
   requestType: "edit";
   wellName: string;
   dateTimeUTC: string;        // ISO 8601 UTC timestamp for calculations
@@ -477,6 +478,7 @@ export const uploadEditPacket = async (params: {
 
   const packet: EditPacket = {
     packetId: originalPacketId,
+    originalPacketId,              // Cloud function reads this field name
     requestType: "edit",
     wellName,
     dateTimeUTC,              // ISO 8601 UTC - use for ALL calculations

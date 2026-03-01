@@ -64,10 +64,12 @@ export default function DriverLoginScreen() {
   const [mode, setMode] = useState<Mode>('checking');
   const [passcode, setPasscode] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [legalName, setLegalName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [error, setError] = useState('');
   const [pendingName, setPendingName] = useState('');
   const [showPasscode, setShowPasscode] = useState(false);
+  const legalNameRef = useRef<TextInput>(null);
   const companyRef = useRef<TextInput>(null);
   const [passcodeError, setPasscodeError] = useState('');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -218,12 +220,17 @@ export default function DriverLoginScreen() {
       return;
     }
 
+    if (!legalName.trim() || legalName.trim().length < 2) {
+      setError('Enter your full legal name');
+      return;
+    }
+
     setMode('registering');
     setError('');
 
     try {
       // Check if passcode is available
-      const available = await isPasscodeAvailable(passcode.trim());
+      const available = await isPasscodeAvailable(passcode.trim(), displayName.trim());
       if (!available.available) {
         setMode('register');
         setError(available.reason || t('driverLogin.passcodeNotAvailable'));
@@ -235,6 +242,7 @@ export default function DriverLoginScreen() {
         passcode: passcode.trim(),
         displayName: displayName.trim(),
         companyName: companyName.trim(),
+        legalName: legalName.trim(),
       });
 
       if (result.success) {
@@ -419,8 +427,22 @@ export default function DriverLoginScreen() {
               autoCapitalize="words"
               autoFocus
               returnKeyType="next"
+              onSubmitEditing={() => legalNameRef.current?.focus()}
+            />
+
+            <TextInput
+              ref={legalNameRef}
+              style={styles.input}
+              value={legalName}
+              onChangeText={setLegalName}
+              placeholder="Full legal name (e.g., Mike Burger)"
+              placeholderTextColor="#6B7280"
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
               onSubmitEditing={() => companyRef.current?.focus()}
             />
+            <Text style={styles.passcodeHint}>Used on printed tickets, invoices, and payroll</Text>
 
             <TextInput
               ref={companyRef}
@@ -452,10 +474,10 @@ export default function DriverLoginScreen() {
             <TouchableOpacity
               style={[
                 styles.button,
-                (!passcode.trim() || !displayName.trim() || !!passcodeError) && styles.buttonDisabled,
+                (!passcode.trim() || !displayName.trim() || !legalName.trim() || !!passcodeError) && styles.buttonDisabled,
               ]}
               onPress={handleRegister}
-              disabled={!passcode.trim() || !displayName.trim() || !!passcodeError}
+              disabled={!passcode.trim() || !displayName.trim() || !legalName.trim() || !!passcodeError}
             >
               <Text style={styles.buttonText}>{t('driverLogin.submitRegistration')}</Text>
             </TouchableOpacity>

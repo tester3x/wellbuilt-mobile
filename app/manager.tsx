@@ -663,11 +663,13 @@ export default function ManagerScreen() {
     setProcessing(pendingApproval.key);
 
     try {
-      // Write to {passcodeHash}/{deviceId} path
+      // Write flat format to {passcodeHash}/
       const driverData: any = {
         displayName: pendingApproval.displayName,
-        approvedAt: new Date().toISOString(),
+        approvedAt: Date.now(),
         active: true,
+        isAdmin: false,
+        isViewer: false,
       };
 
       // Set role flags based on selection
@@ -678,7 +680,7 @@ export default function ManagerScreen() {
       }
       // 'user' role = no special flags (default driver)
 
-      await firebasePut(`${DRIVERS_APPROVED}/${pendingApproval.passcodeHash}/${pendingApproval.deviceId}`, driverData);
+      await firebasePut(`${DRIVERS_APPROVED}/${pendingApproval.passcodeHash}`, driverData);
 
       // Delete from pending
       await firebaseDelete(`${DRIVERS_PENDING}/${pendingApproval.key}`);

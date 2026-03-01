@@ -345,7 +345,7 @@ export default function DriverLoginScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingTop: hp('10%'),
-    paddingBottom: hp('5%'),
+    paddingBottom: hp('40%'),
     paddingHorizontal: wp('8%'),
     alignItems: 'center',
   },

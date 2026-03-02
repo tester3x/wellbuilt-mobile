@@ -432,6 +432,7 @@ export default function DriverLoginScreen() {
               placeholderTextColor="#6B7280"
               autoCapitalize="words"
               returnKeyType="next"
+              blurOnSubmit={false}
               onSubmitEditing={() => legalNameRef.current?.focus()}
             />
 
@@ -445,6 +446,7 @@ export default function DriverLoginScreen() {
               autoCapitalize="words"
               autoCorrect={false}
               returnKeyType="next"
+              blurOnSubmit={false}
               onSubmitEditing={() => companyRef.current?.focus()}
             />
             <Text style={styles.passcodeHint}>Used on printed tickets, invoices, and payroll</Text>
@@ -459,6 +461,7 @@ export default function DriverLoginScreen() {
               autoCapitalize="words"
               autoCorrect={false}
               returnKeyType="next"
+              blurOnSubmit={false}
               onSubmitEditing={() => passcodeRef.current?.focus()}
             />
             <Text style={styles.passcodeHint}>

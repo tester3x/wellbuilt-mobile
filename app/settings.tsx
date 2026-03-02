@@ -190,9 +190,10 @@ export default function SettingsScreen() {
   // Well alert settings state
   const [alertSettings, setAlertSettings] = useState<WellAlertSettings | null>(null);
 
-  // Admin/Viewer status from session
+  // Admin/Viewer/Tier status from session
   const [isAdmin, setIsAdmin] = useState(false);
   const [isViewer, setIsViewer] = useState(false);
+  const [tier, setTier] = useState<string | undefined>(undefined);
 
   // Route edit mode for reordering
   const [isRouteEditMode, setIsRouteEditMode] = useState(false);
@@ -224,6 +225,7 @@ export default function SettingsScreen() {
     if (session) {
       setIsAdmin(session.isAdmin || false);
       setIsViewer(session.isViewer || false);
+      setTier(session.tier);
     }
   };
 
@@ -782,6 +784,18 @@ export default function SettingsScreen() {
         <Text style={styles.cardSubtitle}>
           {t("settings.routesSubtitle")}
         </Text>
+
+        {/* Tier badge + well count */}
+        {tier === 'free' && (
+          <View style={styles.tierBadgeRow}>
+            <View style={styles.tierBadgeFree}>
+              <Text style={styles.tierBadgeText}>FREE TIER</Text>
+            </View>
+            <Text style={styles.tierWellCount}>
+              {routeGroups.reduce((sum, r) => sum + r.wells.length, 0)} / 5 wells
+            </Text>
+          </View>
+        )}
 
         {isLoadingRoutes ? (
           <Text style={styles.loadingText}>{t("settings.routesLoading")}</Text>
@@ -1552,6 +1566,30 @@ const styles = StyleSheet.create({
     fontSize: hp("1.6%"),
     color: "#9CA3AF",
     marginBottom: spacing.sm,
+  },
+  tierBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: spacing.sm,
+    paddingVertical: 4,
+  },
+  tierBadgeFree: {
+    backgroundColor: "#374151",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  tierBadgeText: {
+    color: "#D1D5DB",
+    fontSize: hp("1.3%"),
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  tierWellCount: {
+    color: "#F59E0B",
+    fontSize: hp("1.5%"),
+    fontWeight: "600",
   },
   cardHeaderRow: {
     flexDirection: "row",

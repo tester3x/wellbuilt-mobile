@@ -38,6 +38,8 @@ export interface DriverInfo {
   active: boolean;
 }
 
+export type CompanyTier = 'free' | 'field' | 'god';
+
 export interface DriverSession {
   driverId: string;
   displayName: string;
@@ -46,6 +48,7 @@ export interface DriverSession {
   isViewer: boolean;
   companyId?: string;
   companyName?: string;
+  tier?: CompanyTier;
 }
 
 // --- Firebase helpers ---
@@ -158,6 +161,7 @@ export const verifyLogin = async (
   isViewer?: boolean;
   companyId?: string;
   companyName?: string;
+  tier?: CompanyTier;
   error?: string;
 }> => {
   console.log("[DriverAuth] Verifying login for:", displayName);
@@ -200,6 +204,7 @@ export const verifyLogin = async (
         isViewer: driverData.isViewer === true,
         companyId: driverData.companyId || undefined,
         companyName: driverData.companyName || undefined,
+        tier: driverData.tier || undefined,
       };
     }
 
@@ -225,6 +230,7 @@ export const verifyLogin = async (
           isViewer: entry.isViewer === true,
           companyId: entry.companyId || undefined,
           companyName: entry.companyName || undefined,
+          tier: entry.tier || undefined,
         };
       }
     }
@@ -399,7 +405,8 @@ export const saveDriverSession = async (
   isAdmin: boolean = false,
   isViewer: boolean = false,
   companyId?: string,
-  companyName?: string
+  companyName?: string,
+  tier?: CompanyTier
 ): Promise<void> => {
   await SecureStore.setItemAsync("driverId", driverId);
   await SecureStore.setItemAsync("driverName", displayName);
@@ -411,6 +418,8 @@ export const saveDriverSession = async (
   else await SecureStore.deleteItemAsync("companyId");
   if (companyName) await SecureStore.setItemAsync("companyName", companyName);
   else await SecureStore.deleteItemAsync("companyName");
+  if (tier) await SecureStore.setItemAsync("tier", tier);
+  else await SecureStore.deleteItemAsync("tier");
 
   // Clear any pending registration data
   await clearPendingRegistration();
@@ -427,6 +436,7 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
   const isViewerStr = await SecureStore.getItemAsync("isViewer");
   const companyId = await SecureStore.getItemAsync("companyId");
   const companyName = await SecureStore.getItemAsync("companyName");
+  const tier = await SecureStore.getItemAsync("tier");
 
   if (driverId && displayName && passcodeHash) {
     return {
@@ -437,6 +447,7 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
       isViewer: isViewerStr === "true",
       companyId: companyId || undefined,
       companyName: companyName || undefined,
+      tier: (tier as CompanyTier) || undefined,
     };
   }
   return null;
@@ -701,7 +712,7 @@ export const completeRegistration = async (): Promise<{
     const isAdmin = driverData.isAdmin === true;
     const isViewer = driverData.isViewer === true;
 
-    await saveDriverSession(pending.passcodeHash, displayName, pending.passcodeHash, isAdmin, isViewer, driverData.companyId, driverData.companyName);
+    await saveDriverSession(pending.passcodeHash, displayName, pending.passcodeHash, isAdmin, isViewer, driverData.companyId, driverData.companyName, driverData.tier);
     return {
       success: true,
       driverId: pending.passcodeHash,

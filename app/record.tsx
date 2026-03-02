@@ -203,6 +203,13 @@ export default function RecordScreen() {
   const [lastPullInfo, setLastPullInfo] = useState<string | null>(null);
   const [bblPerFoot, setBblPerFoot] = useState<number>(20); // Default to 1 tank
 
+  // Base data for time-adjusted level estimation (backward flow rate)
+  // Stored on load, recalculated when driver changes time picker
+  const baseTimestampRef = useRef<number>(0);
+  const baseLevelFeetRef = useRef<number>(0);
+  const loadLineRef = useRef<number>(0);
+  const wellIsDownRef = useRef<boolean>(false);
+
   const levelRef = useRef<TextInput>(null);
   const barrelsRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -413,31 +420,36 @@ export default function RecordScreen() {
         setFlowRate(config.avgFlowRate);
       }
 
-      // Calculate estimated current level
-      let baseLevelFeet = 0;
-      let baseTimestamp = 0;
+      // Store base data for time-adjusted level estimation
+      const loadLine = config?.loadLine ?? 0;
+      loadLineRef.current = loadLine;
+      wellIsDownRef.current = !!snapshot?.isDown;
 
-      if (snapshot && snapshot.timestamp > baseTimestamp) {
-        baseLevelFeet = snapshot.levelFeet;
-        baseTimestamp = snapshot.timestamp;
+      let baseLvl = 0;
+      let baseTs = 0;
+
+      if (snapshot && snapshot.timestamp > 0) {
+        baseLvl = snapshot.levelFeet;
+        baseTs = snapshot.timestamp;
       }
 
-      if (baseTimestamp > 0 && flowMins > 0 && !snapshot?.isDown) {
-        const minutesElapsed = (Date.now() - baseTimestamp) / (1000 * 60);
-        let estimatedLevel = baseLevelFeet + (minutesElapsed / flowMins);
-        estimatedLevel = Math.min(estimatedLevel, FULL_TANK_FEET);
-        setEstLevel(formatFeetInches(estimatedLevel));
-        setEstLevelFeet(estimatedLevel); // Keep raw value for packet
+      baseLevelFeetRef.current = baseLvl;
+      baseTimestampRef.current = baseTs;
 
-        // Calculate BBLs
-        const loadLine = config?.loadLine ?? 0;
+      // Calculate initial estimated level (for current time = now)
+      if (baseTs > 0 && flowMins > 0 && !snapshot?.isDown) {
+        const minutesElapsed = (dateTime.getTime() - baseTs) / (1000 * 60);
+        let estimatedLevel = baseLvl + (minutesElapsed / flowMins);
+        estimatedLevel = Math.max(0, Math.min(estimatedLevel, FULL_TANK_FEET));
+        setEstLevel(formatFeetInches(estimatedLevel));
+        setEstLevelFeet(estimatedLevel);
+
         const bbls = Math.max(Math.round((estimatedLevel - loadLine) * bblPerFt), 0);
         setEstBbls(bbls);
-      } else if (baseLevelFeet > 0) {
-        setEstLevel(formatFeetInches(baseLevelFeet));
-        setEstLevelFeet(baseLevelFeet); // Keep raw value for packet
-        const loadLine = config?.loadLine ?? 0;
-        const bbls = Math.max(Math.round((baseLevelFeet - loadLine) * bblPerFt), 0);
+      } else if (baseLvl > 0) {
+        setEstLevel(formatFeetInches(baseLvl));
+        setEstLevelFeet(baseLvl);
+        const bbls = Math.max(Math.round((baseLvl - loadLine) * bblPerFt), 0);
         setEstBbls(bbls);
       }
 
@@ -452,6 +464,24 @@ export default function RecordScreen() {
 
     loadWellData();
   }, [wellName, isEditMode]);
+
+  // Recalculate estimated level when driver changes date/time picker (backward flow rate)
+  // Uses stored base data + flow rate to estimate tank level at any selected time
+  useEffect(() => {
+    if (isEditMode) return;
+    const baseTs = baseTimestampRef.current;
+    const baseLvl = baseLevelFeetRef.current;
+    if (baseTs === 0 || flowRateMinutes === 0 || wellIsDownRef.current) return;
+
+    const minutesElapsed = (dateTime.getTime() - baseTs) / (1000 * 60);
+    let estimatedLevel = baseLvl + (minutesElapsed / flowRateMinutes);
+    estimatedLevel = Math.max(0, Math.min(estimatedLevel, FULL_TANK_FEET));
+    setEstLevel(formatFeetInches(estimatedLevel));
+    setEstLevelFeet(estimatedLevel);
+
+    const bbls = Math.max(Math.round((estimatedLevel - loadLineRef.current) * bblPerFoot), 0);
+    setEstBbls(bbls);
+  }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode]);
 
   const formatDateLabel = (d: Date) => d.toLocaleDateString('en-US');
   const formatTimeLabel = (d: Date) => {

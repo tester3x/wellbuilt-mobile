@@ -2,9 +2,12 @@
 // Loads and caches well configuration from Firebase
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 
 const STORAGE_KEY = "@wellbuilt_well_config";
 const LAST_FETCH_KEY = "@wellbuilt_config_last_fetch";
+const ASSIGNED_ROUTES_KEY = "@wellbuilt_assigned_routes";
+const ASSIGNED_WELLS_KEY = "@wellbuilt_assigned_wells";
 const REFRESH_INTERVAL_DAYS = 3;
 
 // Firebase config
@@ -168,4 +171,93 @@ export async function getAllWellNames(): Promise<string[]> {
   }
 
   return [];
+}
+
+// ── Driver Route Assignment ──
+
+let cachedAssignedRoutes: string[] | null = null;
+let cachedAssignedWells: string[] | null = null;
+
+/**
+ * Fetch driver's assignedRoutes and assignedWells from Firebase.
+ * Returns { routes, wells } arrays. Empty arrays = no restriction (sees all).
+ */
+export async function fetchDriverRouteAssignment(): Promise<{ routes: string[]; wells: string[] }> {
+  try {
+    const passcodeHash = await SecureStore.getItemAsync("passcodeHash");
+    if (!passcodeHash) {
+      console.log("[WellConfig] No passcodeHash, skipping route assignment fetch");
+      return { routes: [], wells: [] };
+    }
+
+    const url = `${FIREBASE_DATABASE_URL}/drivers/approved/${passcodeHash}.json?auth=${FIREBASE_API_KEY}`;
+    const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
+
+    if (!response.ok) {
+      console.error("[WellConfig] Route assignment fetch failed:", response.status);
+      return { routes: cachedAssignedRoutes || [], wells: cachedAssignedWells || [] };
+    }
+
+    const data = await response.json();
+    const routes = Array.isArray(data?.assignedRoutes) ? data.assignedRoutes : [];
+    const wells = Array.isArray(data?.assignedWells) ? data.assignedWells : [];
+
+    // Cache locally
+    cachedAssignedRoutes = routes;
+    cachedAssignedWells = wells;
+    await AsyncStorage.setItem(ASSIGNED_ROUTES_KEY, JSON.stringify(routes));
+    await AsyncStorage.setItem(ASSIGNED_WELLS_KEY, JSON.stringify(wells));
+
+    console.log(`[WellConfig] Route assignment: ${routes.length} routes, ${wells.length} wells`);
+    return { routes, wells };
+  } catch (error) {
+    console.error("[WellConfig] Route assignment fetch error:", error);
+    return { routes: cachedAssignedRoutes || [], wells: cachedAssignedWells || [] };
+  }
+}
+
+/**
+ * Get cached route assignment (synchronous, from memory or AsyncStorage).
+ */
+export async function getDriverRouteAssignment(): Promise<{ routes: string[]; wells: string[] }> {
+  if (cachedAssignedRoutes !== null) {
+    return { routes: cachedAssignedRoutes, wells: cachedAssignedWells || [] };
+  }
+
+  try {
+    const storedRoutes = await AsyncStorage.getItem(ASSIGNED_ROUTES_KEY);
+    const storedWells = await AsyncStorage.getItem(ASSIGNED_WELLS_KEY);
+    cachedAssignedRoutes = storedRoutes ? JSON.parse(storedRoutes) : [];
+    cachedAssignedWells = storedWells ? JSON.parse(storedWells) : [];
+    return { routes: cachedAssignedRoutes || [], wells: cachedAssignedWells || [] };
+  } catch {
+    return { routes: [], wells: [] };
+  }
+}
+
+/**
+ * Filter well_config to only include wells matching driver's assigned routes/wells.
+ * If no assignments (empty arrays), returns ALL wells (no restriction).
+ */
+export function filterWellConfigByAssignment(
+  config: WellConfigMap,
+  assignedRoutes: string[],
+  assignedWells: string[]
+): WellConfigMap {
+  // No assignments = see everything (WB admin or unassigned driver)
+  if (assignedRoutes.length === 0 && assignedWells.length === 0) {
+    return config;
+  }
+
+  const filtered: WellConfigMap = {};
+  for (const [wellName, wellConfig] of Object.entries(config)) {
+    const routeMatch = assignedRoutes.includes(wellConfig.route || '');
+    const wellMatch = assignedWells.includes(wellName);
+    if (routeMatch || wellMatch) {
+      filtered[wellName] = wellConfig;
+    }
+  }
+
+  console.log(`[WellConfig] Filtered: ${Object.keys(filtered).length}/${Object.keys(config).length} wells`);
+  return filtered;
 }

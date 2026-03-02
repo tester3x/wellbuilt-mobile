@@ -189,7 +189,7 @@ export default function DriverLoginScreen() {
       const result = await verifyLogin(displayName.trim(), passcode.trim());
 
       if (result.valid && result.driverId && result.displayName && result.passcodeHash) {
-        await saveDriverSession(result.driverId, result.displayName, result.passcodeHash, result.isAdmin || false, result.isViewer || false, result.companyId, result.companyName);
+        await saveDriverSession(result.driverId, result.displayName, result.passcodeHash, result.isAdmin || false, result.isViewer || false, result.companyId, result.companyName, result.tier);
         router.replace('/welcome');
       } else {
         setMode('login');
@@ -391,6 +391,9 @@ export default function DriverLoginScreen() {
               placeholderTextColor="#6B7280"
               autoCapitalize="words"
               autoFocus
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => passcodeRef.current?.focus()}
             />
 
             {renderPasscodeInput(t('driverLogin.passcodePlaceholder'))}

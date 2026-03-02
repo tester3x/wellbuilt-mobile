@@ -100,6 +100,7 @@ export default function SSOLoginScreen() {
           driverData.isViewer === true,
           driverData.companyId,
           driverData.companyName,
+          driverData.tier,
         );
 
         router.replace('/welcome');
@@ -122,6 +123,7 @@ export default function SSOLoginScreen() {
             entry.isViewer === true,
             entry.companyId,
             entry.companyName,
+            entry.tier,
           );
 
           router.replace('/welcome');

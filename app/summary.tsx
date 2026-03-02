@@ -143,6 +143,27 @@ function formatDateTime(date: Date): string {
   }
 }
 
+// Split datetime into time + date for two-line column display
+function formatDateTimeSplit(date: Date): { time: string; date: string } {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm = hours >= 12 ? 'p' : 'a';
+  const displayHours = hours % 12 || 12;
+  const timeStr = `${displayHours}:${minutes.toString().padStart(2, '0')}${ampm}`;
+
+  if (date.toDateString() === now.toDateString()) {
+    return { time: timeStr, date: '' };
+  } else if (date.toDateString() === tomorrow.toDateString()) {
+    return { time: timeStr, date: 'Tm' };
+  } else {
+    return { time: timeStr, date: `${date.getMonth() + 1}/${date.getDate()}` };
+  }
+}
+
 // Calculate current estimated level based on snapshot and flow rate
 // CRITICAL: Cap at 20' (full tank) to prevent insane values from bad timestamps
 const FULL_TANK_FEET = 20;
@@ -571,16 +592,27 @@ export default function SummaryScreen() {
       readyTime = getTimeAtLevel(well, readyLevel);
     }
 
-    let atValue: string;
+    let atParts: { time: string; date: string };
     if (sliderMode === 'feet') {
       const targetTime = getTimeAtLevel(well, sliderFeet);
-      atValue = well.isDown ? '--' : (targetTime ? formatDateTime(targetTime) : '--');
+      if (well.isDown || !targetTime) {
+        atParts = { time: '--', date: '' };
+      } else {
+        atParts = formatDateTimeSplit(targetTime);
+      }
     } else {
       const levelAtTime = getLevelAtTime(well, sliderHours);
-      atValue = well.isDown ? '--' : formatFeetInches(levelAtTime);
+      atParts = { time: well.isDown ? '--' : formatFeetInches(levelAtTime), date: '' };
     }
 
-    const readyDisplay = well.isDown ? t('summary.down') : (readyTime ? formatDateTime(readyTime) : '--');
+    let readyParts: { time: string; date: string };
+    if (well.isDown) {
+      readyParts = { time: t('summary.down'), date: '' };
+    } else if (readyTime) {
+      readyParts = formatDateTimeSplit(readyTime);
+    } else {
+      readyParts = { time: '--', date: '' };
+    }
 
     // Detail row values
     const tanksText = `${well.numTanks} tank${well.numTanks !== 1 ? 's' : ''}`;
@@ -610,23 +642,31 @@ export default function SummaryScreen() {
           <Text style={[styles.wellText, styles.colLevel, well.isDown && styles.textDown]}>
             {formatFeetInches(currentLevel)}
           </Text>
-          <Text
-            style={[styles.wellText, styles.colAt, well.isDown && styles.textDown]}
-            numberOfLines={1}
-          >
-            {atValue}
-          </Text>
-          <Text
-            style={[
-              styles.wellText,
-              styles.colReady,
-              well.isDown && styles.textDown,
-              isReady && !well.isDown && styles.textReady,
-            ]}
-            numberOfLines={1}
-          >
-            {readyDisplay}
-          </Text>
+          <View style={[styles.colAt, styles.colTwoLine]}>
+            <Text style={[styles.wellText, well.isDown && styles.textDown]} numberOfLines={1}>
+              {atParts.time}
+            </Text>
+            {atParts.date ? (
+              <Text style={[styles.dateSubText, well.isDown && styles.textDown]}>{atParts.date}</Text>
+            ) : null}
+          </View>
+          <View style={[styles.colReady, styles.colTwoLine, { alignItems: 'flex-end' }]}>
+            <Text
+              style={[
+                styles.wellText,
+                well.isDown && styles.textDown,
+                isReady && !well.isDown && styles.textReady,
+              ]}
+              numberOfLines={1}
+            >
+              {readyParts.time}
+            </Text>
+            {readyParts.date ? (
+              <Text style={[styles.dateSubText, well.isDown && styles.textDown, isReady && !well.isDown && styles.textReady]}>
+                {readyParts.date}
+              </Text>
+            ) : null}
+          </View>
         </View>
         {/* Compact detail row (always visible) */}
         <View style={styles.wellRowDetail}>
@@ -878,7 +918,12 @@ export default function SummaryScreen() {
                     <View style={styles.tableHeader}>
                       <Text style={[styles.tableHeaderText, styles.colWell]}>{t('summary.columnWell')}</Text>
                       <Text style={[styles.tableHeaderText, styles.colLevel]}>{t('summary.columnLevel')}</Text>
-                      <Text style={[styles.tableHeaderText, styles.colAt]}>{t('summary.columnAt')}</Text>
+                      <Text style={[styles.tableHeaderText, styles.colAt]}>
+                        @ {sliderMode === 'feet'
+                          ? formatFeetInches(sliderFeet)
+                          : formatDateTime(new Date(Date.now() + sliderHours * 60 * 60 * 1000))
+                        }
+                      </Text>
                       <Text style={[styles.tableHeaderText, styles.colReady]}>{t('summary.columnReady')}</Text>
                     </View>
                     {getSortedWells(route.wells).map(renderWellRow)}
@@ -1167,12 +1212,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   colAt: {
-    flex: 1.4,
+    flex: 1.5,
     textAlign: "center",
   },
   colReady: {
-    flex: 1.4,
+    flex: 1.5,
     textAlign: "right",
+  },
+  colTwoLine: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateSubText: {
+    fontSize: hp("1.1%"),
+    color: "#9CA3AF",
+    marginTop: 1,
   },
   wellRow: {
     flexDirection: "column",

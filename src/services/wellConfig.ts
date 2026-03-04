@@ -251,7 +251,12 @@ export function filterWellConfigByAssignment(
 
   const filtered: WellConfigMap = {};
   for (const [wellName, wellConfig] of Object.entries(config)) {
-    const routeMatch = assignedRoutes.includes(wellConfig.route || '');
+    const wellRoute = wellConfig.route || '';
+    const routeMatch = assignedRoutes.some(assignedRoute => {
+      // "Unrouted" matches "Unrouted", "Unrouted 2", "Unrouted 3", etc.
+      if (assignedRoute === 'Unrouted') return wellRoute.startsWith('Unrouted');
+      return assignedRoute === wellRoute;
+    });
     const wellMatch = assignedWells.includes(wellName);
     if (routeMatch || wellMatch) {
       filtered[wellName] = wellConfig;
@@ -260,4 +265,19 @@ export function filterWellConfigByAssignment(
 
   console.log(`[WellConfig] Filtered: ${Object.keys(filtered).length}/${Object.keys(config).length} wells`);
   return filtered;
+}
+
+/**
+ * Check if a driver has "real" routes (not just Unrouted* variants).
+ * Used to gate WB M access — Unrouted-only drivers use WB T, not WB M.
+ *
+ * - undefined = legacy driver, routes never assigned → allow access
+ * - [] = explicitly no routes → no access
+ * - ["Unrouted"] = unrouted only → no access
+ * - ["North Loop", "Unrouted"] = has real route → allow access
+ */
+export function driverHasRealRoutes(assignedRoutes: string[] | undefined | null): boolean {
+  if (assignedRoutes === undefined || assignedRoutes === null) return true;
+  if (assignedRoutes.length === 0) return false;
+  return assignedRoutes.some(r => !r.startsWith('Unrouted'));
 }

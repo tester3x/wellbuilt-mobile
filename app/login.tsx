@@ -15,6 +15,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import {
   saveDriverSession,
 } from '../src/services/driverAuth';
+import { driverHasRealRoutes } from '../src/services/wellConfig';
 
 const FIREBASE_DATABASE_URL = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
 const FIREBASE_API_KEY = 'AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI';
@@ -103,6 +104,16 @@ export default function SSOLoginScreen() {
           driverData.tier,
         );
 
+        // Route-based gate: unrouted drivers can't use WB M
+        if (driverData.companyId) {
+          const routes = Array.isArray(driverData.assignedRoutes) ? driverData.assignedRoutes : undefined;
+          if (!driverHasRealRoutes(routes)) {
+            console.log('[SSO] Driver has no real routes — redirecting to no-access');
+            router.replace('/no-access');
+            return;
+          }
+        }
+
         router.replace('/welcome');
         return;
       }
@@ -125,6 +136,15 @@ export default function SSOLoginScreen() {
             entry.companyName,
             entry.tier,
           );
+
+          // Route-based gate for legacy drivers too
+          if (entry.companyId) {
+            const routes = Array.isArray(entry.assignedRoutes) ? entry.assignedRoutes : undefined;
+            if (!driverHasRealRoutes(routes)) {
+              router.replace('/no-access');
+              return;
+            }
+          }
 
           router.replace('/welcome');
           return;

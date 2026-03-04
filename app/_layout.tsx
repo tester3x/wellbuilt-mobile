@@ -99,6 +99,7 @@ export default function RootLayout() {
             <Stack.Screen name="summary" />
             <Stack.Screen name="about" />
             <Stack.Screen name="manager" />
+            <Stack.Screen name="no-access" />
           </Stack>
           {/* Global dispatch button - appears when there are pending sends */}
           {appIsReady && <DispatchButton />}

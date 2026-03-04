@@ -1,11 +1,13 @@
 import { Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { isDriverVerified, revalidateDriverSession, clearDriverSession } from '../src/services/driverAuth';
+import { isDriverVerified, revalidateDriverSession, clearDriverSession, getDriverSession } from '../src/services/driverAuth';
+import { fetchDriverRouteAssignment, driverHasRealRoutes } from '../src/services/wellConfig';
 
 export default function Index() {
   const [checking, setChecking] = useState(true);
   const [isVerified, setIsVerified] = useState(false);
+  const [blockedNoRoutes, setBlockedNoRoutes] = useState(false);
 
   useEffect(() => {
     const check = async () => {
@@ -26,6 +28,24 @@ export default function Index() {
           setIsVerified(false);
         } else {
           console.log("[Index] Session revalidated successfully");
+
+          // Route-based access gate: unrouted drivers can't use WB M
+          const session = await getDriverSession();
+          if (session?.companyId) {
+            try {
+              const { routes } = await fetchDriverRouteAssignment();
+              if (!driverHasRealRoutes(routes)) {
+                console.log("[Index] Driver has no real routes — blocking WB M access");
+                setBlockedNoRoutes(true);
+                setChecking(false);
+                return;
+              }
+            } catch (err) {
+              // Network error — allow access (offline-friendly)
+              console.log("[Index] Route check failed, allowing access:", err);
+            }
+          }
+          // WB admin (no companyId) always gets through
           setIsVerified(true);
         }
       } else {
@@ -43,6 +63,10 @@ export default function Index() {
         <ActivityIndicator size="large" color="#2563EB" />
       </View>
     );
+  }
+
+  if (blockedNoRoutes) {
+    return <Redirect href="/no-access" />;
   }
 
   // If driver is verified, go to welcome screen

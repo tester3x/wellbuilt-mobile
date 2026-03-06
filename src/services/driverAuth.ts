@@ -19,6 +19,7 @@
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
+import { recordShiftEvent } from "./shiftTracking";
 
 // Firebase configuration (same as firebase.ts)
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
@@ -195,6 +196,9 @@ export const verifyLogin = async (
       // Update device tracking (fire and forget)
       updateDeviceTracking(hash, driverData.displayName);
 
+      // Record login GPS for DOT drive time (fire-and-forget)
+      recordShiftEvent('login', hash, driverData.displayName, driverData.companyId || undefined);
+
       return {
         valid: true,
         driverId: hash,
@@ -220,6 +224,9 @@ export const verifyLogin = async (
 
         // Update device tracking (fire and forget)
         updateDeviceTracking(hash, entry.displayName);
+
+        // Record login GPS for DOT drive time (fire-and-forget)
+        recordShiftEvent('login', hash, entry.displayName, entry.companyId || undefined);
 
         return {
           valid: true,
@@ -538,6 +545,13 @@ export const revalidateDriverSession = async (): Promise<boolean> => {
  * Clear driver session (logout)
  */
 export const clearDriverSession = async (): Promise<void> => {
+  // Record logout GPS BEFORE clearing session
+  const driverId = await SecureStore.getItemAsync("driverId");
+  const driverName = await SecureStore.getItemAsync("driverName");
+  if (driverId && driverName) {
+    recordShiftEvent('logout', driverId, driverName);
+  }
+
   await SecureStore.deleteItemAsync("driverId");
   await SecureStore.deleteItemAsync("driverName");
   await SecureStore.deleteItemAsync("passcodeHash");

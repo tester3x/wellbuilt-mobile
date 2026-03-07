@@ -54,6 +54,8 @@ export interface DriverSession {
 
 // --- Firebase helpers ---
 
+const FETCH_TIMEOUT_MS = 10000; // 10s timeout prevents indefinite hangs
+
 const buildFirebaseUrl = (path: string): string => {
   let url = `${FIREBASE_DATABASE_URL}/${path}.json`;
   if (FIREBASE_API_KEY) {
@@ -62,9 +64,24 @@ const buildFirebaseUrl = (path: string): string => {
   return url;
 };
 
+/** fetch() with AbortController timeout — prevents app hang on slow/dead network. */
+const fetchWithTimeout = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, { ...options, signal: controller.signal });
+    return resp;
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw new Error('Request timed out');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const firebaseGet = async (path: string): Promise<any> => {
   const url = buildFirebaseUrl(path);
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });
@@ -78,7 +95,7 @@ const firebaseGet = async (path: string): Promise<any> => {
 
 const firebasePost = async (path: string, data: any): Promise<string> => {
   const url = buildFirebaseUrl(path);
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -94,7 +111,7 @@ const firebasePost = async (path: string, data: any): Promise<string> => {
 
 const firebasePatch = async (path: string, data: any): Promise<void> => {
   const url = buildFirebaseUrl(path);
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -348,7 +365,7 @@ export const registerCompanyDevice = async (nickname?: string): Promise<{ succes
     };
 
     const url = buildFirebaseUrl(`devices/company/${deviceId}`);
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(deviceData),
@@ -393,7 +410,7 @@ export const getCompanyDevices = async (): Promise<Record<string, {
 export const removeCompanyDevice = async (deviceId: string): Promise<{ success: boolean }> => {
   try {
     const url = buildFirebaseUrl(`devices/company/${deviceId}`);
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "DELETE",
     });
     return { success: response.ok };

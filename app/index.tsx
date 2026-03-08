@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { isDriverVerified, revalidateDriverSession, clearDriverSession, getDriverSession } from '../src/services/driverAuth';
 import { fetchDriverRouteAssignment, driverHasRealRoutes } from '../src/services/wellConfig';
-import { checkShiftOnResume } from '../src/services/shiftTracking';
 
 export default function Index() {
   const [checking, setChecking] = useState(true);
@@ -29,12 +28,6 @@ export default function Index() {
           setIsVerified(false);
         } else {
           console.log("[Index] Session revalidated successfully");
-
-          // Ensure today's shift is tracked + close stale shifts (fire-and-forget)
-          const session0 = await getDriverSession();
-          if (session0) {
-            checkShiftOnResume(session0.driverId, session0.displayName, session0.companyId).catch(() => {});
-          }
 
           // Route-based access gate: unrouted drivers can't use WB M
           const session = await getDriverSession();

@@ -226,9 +226,11 @@ interface WellViewProps {
   loadBbls?: number; // Load size in bbls for "next load ready" calculation
   onTankDoubleTap?: () => void; // Navigate to performance screen on tank double-tap
   onTankLongPress?: () => void; // Long press to hide well from My Wells
+  showOvernightBbls?: boolean; // Global toggle for overnight vs segment bbls/day
+  onToggleOvernightBbls?: () => void; // Toggle handler (persists to AsyncStorage)
 }
 
-const WellView = React.memo(function WellView({ wellName, isActive, getPreviousLevel, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress }: WellViewProps) {
+const WellView = React.memo(function WellView({ wellName, isActive, getPreviousLevel, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
@@ -244,7 +246,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const [sliderUIActive, setSliderUIActive] = useState(false); // Controls slider level/datetime visibility
   const [sliderLocked, setSliderLocked] = useState(true); // Slider locked state
   const [sliderPeeking, setSliderPeeking] = useState(false); // Tap to peek values without unlocking
-  const [showOvernightBbls, setShowOvernightBbls] = useState(false); // Easter egg: toggle overnight bbls/day (persisted)
+  // showOvernightBbls is now a prop from MainScreen (global toggle)
   const hasAnimated = useRef(false);
   const prevIsActive = useRef(isActive);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -438,20 +440,27 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         const elapsedMs = Date.now() - pending.timestamp;
         const remainingMs = Math.max(DROP_ANIMATION_MS - elapsedMs, 500);
 
-        // Calculate current interpolated level based on elapsed time
-        const animationProgress = Math.min(elapsedMs / DROP_ANIMATION_MS, 1);
-        const currentAnimatedLevel = topLevel - (animationProgress * (topLevel - targetLevel));
-
         // Track animation start time for drain duration calculation
         animationStartTimeRef.current = pending.timestamp;
         drainAnimationActive.current = true;
 
-        // Set to current interpolated position and continue animating to estimated bottom
-        waterFraction.value = clampFraction(currentAnimatedLevel / FULL_TANK_FEET);
-        waterFraction.value = withTiming(
-          clampFraction(targetLevel / FULL_TANK_FEET),
-          { duration: remainingMs, easing: Easing.linear }
-        );
+        if (pending.bblsTaken === 0) {
+          // Zero-BBL check pull: animate FROM current displayed level TO new read level
+          // Don't reset waterFraction — keep old level as starting point
+          waterFraction.value = withTiming(
+            clampFraction(topLevel / FULL_TANK_FEET),
+            { duration: remainingMs, easing: Easing.linear }
+          );
+        } else {
+          // Normal pull: animate drain from top level down to estimated bottom
+          const animationProgress = Math.min(elapsedMs / DROP_ANIMATION_MS, 1);
+          const currentAnimatedLevel = topLevel - (animationProgress * (topLevel - targetLevel));
+          waterFraction.value = clampFraction(currentAnimatedLevel / FULL_TANK_FEET);
+          waterFraction.value = withTiming(
+            clampFraction(targetLevel / FULL_TANK_FEET),
+            { duration: remainingMs, easing: Easing.linear }
+          );
+        }
 
         hasAnimated.current = true;
         setIsLoadingInitial(false);
@@ -916,11 +925,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowOvernightBbls(prev => {
-              const next = !prev;
-              AsyncStorage.setItem('@wellbuilt_show_overnight_bbls', next ? 'true' : 'false');
-              return next;
-            });
+            onToggleOvernightBbls?.();
           }}
         >
           <View style={styles.statsRow}>
@@ -1122,6 +1127,7 @@ export default function MainScreen() {
   const [currentWellHasDraft, setCurrentWellHasDraft] = useState(false); // Draft indicator for Pull button
   const [isViewer, setIsViewer] = useState(false); // Viewer-only mode (can't submit pulls)
   const [appForegroundCount, setAppForegroundCount] = useState(0); // Bumps when app returns to foreground
+  const [showOvernightBbls, setShowOvernightBbls] = useState(false); // Global overnight vs segment bbls/day toggle
   const lastTickIndex = useRef(0);
   const wellRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wellRetryCount = useRef(0);
@@ -1158,6 +1164,19 @@ export default function MainScreen() {
       setIsReady(true);
     };
     loadLastWell();
+    // Load overnight bbls/day preference
+    AsyncStorage.getItem('@wellbuilt_show_overnight_bbls').then(v => {
+      if (v === 'true') setShowOvernightBbls(true);
+    }).catch(() => {});
+  }, []);
+
+  // Toggle handler for overnight bbls/day (persists + updates all wells)
+  const handleToggleOvernightBbls = useCallback(() => {
+    setShowOvernightBbls(prev => {
+      const next = !prev;
+      AsyncStorage.setItem('@wellbuilt_show_overnight_bbls', next ? 'true' : 'false');
+      return next;
+    });
   }, []);
 
   // Save current well index when it changes
@@ -1382,16 +1401,6 @@ export default function MainScreen() {
             }
           } catch (e) {
             console.log('[Main] Error loading load size:', e);
-          }
-
-          // Load saved overnight bbls/day preference
-          try {
-            const savedOvernightPref = await AsyncStorage.getItem('@wellbuilt_show_overnight_bbls');
-            if (savedOvernightPref === 'true') {
-              setShowOvernightBbls(true);
-            }
-          } catch (e) {
-            console.log('[Main] Error loading overnight pref:', e);
           }
 
           // Fetch well config - uses cache (no Firebase call unless cache is stale)
@@ -1804,9 +1813,11 @@ export default function MainScreen() {
         loadBbls={loadBbls}
         onTankDoubleTap={handleTankDoubleTap}
         onTankLongPress={handleTankLongPress}
+        showOvernightBbls={showOvernightBbls}
+        onToggleOvernightBbls={handleToggleOvernightBbls}
       />
     </View>
-  ), [currentIndex, getPreviousLevel, handleLevelChange, refreshTrigger, loadBbls, handleTankDoubleTap, handleTankLongPress]);
+  ), [currentIndex, getPreviousLevel, handleLevelChange, refreshTrigger, loadBbls, handleTankDoubleTap, handleTankLongPress, showOvernightBbls, handleToggleOvernightBbls]);
 
   const getItemLayout = (_: any, index: number) => ({
     length: SCREEN_WIDTH,

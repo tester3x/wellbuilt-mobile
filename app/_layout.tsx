@@ -1,7 +1,8 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as NavigationBar from 'expo-navigation-bar';
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Platform, StatusBar, View, StyleSheet } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../src/i18n';
 import { DispatchProvider } from '../src/contexts/DispatchContext';
@@ -35,6 +36,15 @@ export default function RootLayout() {
   const { showWhatsNew, changelog, dismissWhatsNew } = useWhatsNew();
 
   useEffect(() => {
+    // Full-screen immersive mode — hide Android navigation bar
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('overlay-swipe');
+      NavigationBar.setBackgroundColorAsync('#00000000');
+      StatusBar.setHidden(true);
+      StatusBar.setTranslucent(true);
+    }
+
     async function prepare() {
       try {
         // Run cleanup operations BEFORE showing UI to prevent AsyncStorage race conditions

@@ -34,7 +34,7 @@ import Animated, {
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
-import { getWellConfig, WellConfig, loadWellConfig } from '../../src/services/wellConfig';
+import { getWellConfig, WellConfig, loadWellConfig, fetchDriverRouteAssignment, filterWellConfigByAssignment } from '../../src/services/wellConfig';
 import {
   getLevelSnapshot,
   getPendingPull,
@@ -1243,14 +1243,17 @@ export default function MainScreen() {
       setSetupSteps(s => ({ ...s, config: 'active' }));
       const config = await fetchWellConfigMap();
 
-      // Save default well selections during initial setup
+      // Save default well selections during initial setup — filtered by driver's assigned routes
       if (config) {
-        const allWellNames = Object.keys(config);
-        console.log('[Main] Saving default well selections:', allWellNames.length, 'wells');
-        await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(allWellNames));
+        // Fetch driver's route/well assignments so fresh install only shows assigned wells
+        const assignment = await fetchDriverRouteAssignment();
+        const filteredConfig = filterWellConfigByAssignment(config, assignment.routes, assignment.wells);
+        const wellNames = Object.keys(filteredConfig);
+        console.log('[Main] Saving default well selections:', wellNames.length, 'wells (from', Object.keys(config).length, 'total, assigned routes:', assignment.routes.length, ')');
+        await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(wellNames));
 
-        // Also save default route order based on config
-        const routes = [...new Set(allWellNames.map(w => config[w]?.route || 'Unknown'))];
+        // Also save default route order based on filtered config
+        const routes = [...new Set(wellNames.map(w => filteredConfig[w]?.route || 'Unknown'))];
         routes.sort();
         console.log('[Main] Saving default route order:', routes);
         await AsyncStorage.setItem(STORAGE_KEY_ROUTE_ORDER, JSON.stringify(routes));
@@ -1415,9 +1418,12 @@ export default function MainScreen() {
             setWellConfigMap(config);
             allWellNames = config ? Object.keys(config) : [];
             if (allWellNames.length > 0) {
-              // Reset selected wells to all (cache was likely corrupted)
-              console.log('[Main] Recovery: selecting all', allWellNames.length, 'wells');
-              await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(allWellNames));
+              // Reset selected wells filtered by assignment (not all wells)
+              const assignment = await fetchDriverRouteAssignment();
+              const filteredConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells);
+              const assignedWellNames = Object.keys(filteredConfig);
+              console.log('[Main] Recovery: selecting', assignedWellNames.length, 'assigned wells (from', allWellNames.length, 'total)');
+              await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
             }
           }
 
@@ -1441,11 +1447,13 @@ export default function MainScreen() {
           }
 
           // RECOVERY: If filtering resulted in 0 wells but config has wells,
-          // the selectedWells list is stale/corrupt — reset to all
+          // the selectedWells list is stale/corrupt — reset to assigned wells
           if (filteredWells.length === 0 && allWellNames.length > 0) {
-            console.log('[Main] No wells after filtering — selectedWells stale, resetting to all');
-            filteredWells = allWellNames;
-            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(allWellNames));
+            console.log('[Main] No wells after filtering — selectedWells stale, resetting to assigned');
+            const assignment = await fetchDriverRouteAssignment();
+            const assignedConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells);
+            filteredWells = Object.keys(assignedConfig);
+            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(filteredWells));
           }
 
           // Load saved route order and sort wells accordingly

@@ -91,6 +91,7 @@ interface PendingRegistration {
   passcodeHash: string;
   deviceId: string;
   requestedAt: string;
+  status?: string;
 }
 
 interface Driver {
@@ -495,7 +496,10 @@ export default function ManagerScreen() {
       const pending: PendingRegistration[] = [];
       if (data) {
         for (const key of Object.keys(data)) {
-          pending.push({ key, ...data[key] });
+          const entry = data[key];
+          // Skip already-processed registrations (approved/rejected from Dashboard)
+          if (entry.status === 'approved' || entry.status === 'rejected') continue;
+          pending.push({ key, ...entry });
         }
       }
       // Sort by requestedAt (newest first)

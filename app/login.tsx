@@ -14,6 +14,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import {
   saveDriverSession,
+  getDriverSession,
 } from '../src/services/driverAuth';
 import { driverHasRealRoutes } from '../src/services/wellConfig';
 
@@ -38,6 +39,20 @@ export default function SSOLoginScreen() {
       console.log('[SSO] Missing params — hash:', !!hash, 'name:', !!name);
       // No SSO params — just go to normal login
       router.replace('/driver-login');
+      return;
+    }
+
+    // Already logged in with same identity — don't disrupt current state.
+    // This fixes the bug where launching WB M from WB S resets to welcome
+    // screen instead of keeping the user where they were.
+    const existingSession = await getDriverSession();
+    if (existingSession && existingSession.passcodeHash === hash) {
+      console.log('[SSO] Already logged in as', existingSession.displayName, '— resuming');
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)');
+      }
       return;
     }
 

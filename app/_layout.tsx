@@ -101,6 +101,7 @@ export default function RootLayout() {
           >
             <Stack.Screen name="index" />
             <Stack.Screen name="login" />
+            <Stack.Screen name="logout" />
             <Stack.Screen name="driver-login" />
             <Stack.Screen name="welcome" />
             <Stack.Screen name="(tabs)" />

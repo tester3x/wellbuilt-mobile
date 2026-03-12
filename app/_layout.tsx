@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as NavigationBar from 'expo-navigation-bar';
 import React, { useEffect, useState } from 'react';
-import { Platform, StatusBar, View, StyleSheet } from 'react-native';
+import { AppState, Platform, StatusBar, View, StyleSheet } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../src/i18n';
 import { DispatchProvider } from '../src/contexts/DispatchContext';
@@ -37,13 +37,20 @@ export default function RootLayout() {
 
   useEffect(() => {
     // Full-screen immersive mode — hide Android navigation bar
-    if (Platform.OS === 'android') {
-      NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('overlay-swipe');
-      NavigationBar.setBackgroundColorAsync('#00000000');
-      StatusBar.setHidden(true);
-      StatusBar.setTranslucent(true);
-    }
+    const hideNavBar = () => {
+      if (Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('hidden');
+        NavigationBar.setBehaviorAsync('overlay-swipe');
+        NavigationBar.setBackgroundColorAsync('#00000000');
+        StatusBar.setHidden(true);
+        StatusBar.setTranslucent(true);
+      }
+    };
+    hideNavBar();
+    // Re-hide nav bar when app returns to foreground (deep links from WB S can re-show it)
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') hideNavBar();
+    });
 
     async function prepare() {
       try {
@@ -79,6 +86,7 @@ export default function RootLayout() {
 
     // Flush any packets that were queued while app was closed
     flushQueue();
+    return () => appStateSub.remove();
   }, []);
 
   // IMPORTANT: Always render the Stack — even during loading.

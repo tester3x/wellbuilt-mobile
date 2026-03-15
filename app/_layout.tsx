@@ -1,6 +1,7 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as NavigationBar from 'expo-navigation-bar';
+import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import { AppState, Platform, StatusBar, View, StyleSheet } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
@@ -16,6 +17,38 @@ import { useWhatsNew } from '../hooks/use-whats-new';
 import { SyncConfirmation } from '../src/components/OfflineStatusBar';
 import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/services/wellHistory';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
+import { clearDriverSession } from '../src/services/driverAuth';
+
+const FIREBASE_DB = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
+
+/**
+ * Check if WB S wrote a logoutAt signal to RTDB that's newer than our session.
+ * Returns true if the driver should be auto-logged out.
+ */
+async function checkRtdbLogoutSignal(): Promise<boolean> {
+  try {
+    const hash = await SecureStore.getItemAsync('passcodeHash');
+    const verifiedAt = await SecureStore.getItemAsync('driverVerifiedAt');
+    if (!hash || !verifiedAt) return false;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const resp = await fetch(`${FIREBASE_DB}/drivers/approved/${hash}/logoutAt.json`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return false;
+
+    const logoutAt = await resp.json();
+    if (!logoutAt) return false;
+
+    const logoutTime = new Date(logoutAt).getTime();
+    const sessionTime = parseInt(verifiedAt, 10);
+    return logoutTime > sessionTime;
+  } catch {
+    return false;
+  }
+}
 
 // Lazy import to avoid expo-notifications warning in Expo Go
 // Notifications only work in development builds anyway
@@ -48,8 +81,19 @@ export default function RootLayout() {
     };
     hideNavBar();
     // Re-hide nav bar when app returns to foreground (deep links from WB S can re-show it)
+    // Also check for RTDB logoutAt signal from WB S (silent cascade logout)
     const appStateSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') hideNavBar();
+      if (state === 'active') {
+        hideNavBar();
+        checkRtdbLogoutSignal().then((shouldLogout) => {
+          if (shouldLogout) {
+            console.log('[WBM] RTDB logoutAt signal detected — auto-logging out');
+            clearDriverSession().then(() => {
+              router.replace('/driver-login');
+            });
+          }
+        }).catch(() => {});
+      }
     });
 
     async function prepare() {

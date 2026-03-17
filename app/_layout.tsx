@@ -24,9 +24,14 @@ const FIREBASE_DB = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
 /**
  * Check if WB S wrote a logoutAt signal to RTDB that's newer than our session.
  * Returns true if the driver should be auto-logged out.
+ * Only applies to SSO sessions — manual logins are owned by the driver, not WB S.
  */
 async function checkRtdbLogoutSignal(): Promise<boolean> {
   try {
+    // Only SSO sessions respond to WB S cascade logout
+    const authMethod = await SecureStore.getItemAsync('authMethod');
+    if (authMethod !== 'sso') return false;
+
     const hash = await SecureStore.getItemAsync('passcodeHash');
     const verifiedAt = await SecureStore.getItemAsync('driverVerifiedAt');
     if (!hash || !verifiedAt) return false;

@@ -189,7 +189,7 @@ export default function DriverLoginScreen() {
       const result = await verifyLogin(displayName.trim(), passcode.trim());
 
       if (result.valid && result.driverId && result.displayName && result.passcodeHash) {
-        await saveDriverSession(result.driverId, result.displayName, result.passcodeHash, result.isAdmin || false, result.isViewer || false, result.companyId, result.companyName, result.tier);
+        await saveDriverSession(result.driverId, result.displayName, result.passcodeHash, result.isAdmin || false, result.isViewer || false, result.companyId, result.companyName, result.tier, 'manual');
         router.replace('/welcome');
       } else {
         setMode('login');

@@ -12,6 +12,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import {
   saveDriverSession,
   getDriverSession,
@@ -47,7 +48,9 @@ export default function SSOLoginScreen() {
     // screen instead of keeping the user where they were.
     const existingSession = await getDriverSession();
     if (existingSession && existingSession.passcodeHash === hash) {
-      console.log('[SSO] Already logged in as', existingSession.displayName, '— resuming');
+      console.log('[SSO] Already logged in as', existingSession.displayName, '— resuming, updating authMethod to sso');
+      // Last login method wins: opened from WB S = WB S now owns this session
+      await SecureStore.setItemAsync('authMethod', 'sso');
       if (router.canGoBack()) {
         router.back();
       } else {
@@ -117,6 +120,7 @@ export default function SSOLoginScreen() {
           driverData.companyId,
           driverData.companyName,
           driverData.tier,
+          'sso',
         );
 
         // Route-based gate: unrouted drivers can't use WB M
@@ -150,6 +154,7 @@ export default function SSOLoginScreen() {
             entry.companyId,
             entry.companyName,
             entry.tier,
+            'sso',
           );
 
           // Route-based gate for legacy drivers too

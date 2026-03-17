@@ -423,7 +423,8 @@ export const saveDriverSession = async (
   isViewer: boolean = false,
   companyId?: string,
   companyName?: string,
-  tier?: CompanyTier
+  tier?: CompanyTier,
+  authMethod?: 'sso' | 'manual'
 ): Promise<void> => {
   await SecureStore.setItemAsync("driverId", driverId);
   await SecureStore.setItemAsync("driverName", displayName);
@@ -437,6 +438,9 @@ export const saveDriverSession = async (
   else await SecureStore.deleteItemAsync("companyName");
   if (tier) await SecureStore.setItemAsync("tier", tier);
   else await SecureStore.deleteItemAsync("tier");
+  // Track how driver logged in — SSO sessions are owned by WB S (cascade logout applies),
+  // manual sessions are owned by the driver (WB S logout is ignored).
+  if (authMethod) await SecureStore.setItemAsync("authMethod", authMethod);
 
   // Clear any pending registration data
   await clearPendingRegistration();
@@ -559,6 +563,7 @@ export const clearDriverSession = async (): Promise<void> => {
   await SecureStore.deleteItemAsync("driverName");
   await SecureStore.deleteItemAsync("passcodeHash");
   await SecureStore.deleteItemAsync("driverVerifiedAt");
+  await SecureStore.deleteItemAsync("authMethod");
   // Legacy cleanup
   await SecureStore.deleteItemAsync("driverPin");
   await SecureStore.deleteItemAsync("driverEmail");

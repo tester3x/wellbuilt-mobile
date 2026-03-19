@@ -109,6 +109,32 @@ const scaledFont = (phoneSize: number): number => {
 
 const clampFraction = (n: number) => Math.min(Math.max(n, 0), 1);
 
+// Generate unique color from route name using djb2 hash → HSL → RGB
+function getRouteColor(routeName: string): string {
+  let hash = 5381;
+  for (let i = 0; i < routeName.length; i++) {
+    hash = ((hash << 5) + hash) + routeName.charCodeAt(i);
+    hash = hash & hash;
+  }
+  hash = Math.abs(hash);
+  const hue = hash % 360;
+  const sat = 0.65;
+  const lum = 0.55;
+  const c = (1 - Math.abs(2 * lum - 1)) * sat;
+  const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
+  const m = lum - c / 2;
+  let r1 = 0, g1 = 0, b1 = 0;
+  switch (Math.floor(hue / 60)) {
+    case 0: r1 = c; g1 = x; break;
+    case 1: r1 = x; g1 = c; break;
+    case 2: g1 = c; b1 = x; break;
+    case 3: g1 = x; b1 = c; break;
+    case 4: r1 = x; b1 = c; break;
+    default: r1 = c; b1 = x; break;
+  }
+  return `rgb(${Math.round((r1 + m) * 255)}, ${Math.round((g1 + m) * 255)}, ${Math.round((b1 + m) * 255)})`;
+}
+
 const isWellDown = (raw: unknown): boolean => {
   const str = String(raw ?? '').trim().toLowerCase();
   return str === 'down' || str === 'offline' || str === 'shut in';
@@ -1968,7 +1994,7 @@ export default function MainScreen() {
           {wellConfigMap && wells[currentIndex] && wellConfigMap[wells[currentIndex]]?.route && (
             <Text style={[
               styles.routeName,
-              { color: wellConfigMap[wells[currentIndex]]?.routeColor || '#9CA3AF' }
+              { color: wellConfigMap[wells[currentIndex]]?.routeColor || getRouteColor(wellConfigMap[wells[currentIndex]]?.route || '') }
             ]}>
               {wellConfigMap[wells[currentIndex]]?.route}
             </Text>
@@ -2105,7 +2131,7 @@ export default function MainScreen() {
                   renderItem={({ item, index }) => {
                     // Check if this is first well in a new route
                     const route = wellConfigMap?.[item]?.route || '';
-                    const routeColor = wellConfigMap?.[item]?.routeColor || '#9CA3AF';
+                    const routeColor = wellConfigMap?.[item]?.routeColor || getRouteColor(route);
                     const prevWell = index > 0 ? wells[index - 1] : null;
                     const prevRoute = prevWell ? (wellConfigMap?.[prevWell]?.route || '') : '';
                     const isFirstInRoute = route !== prevRoute;

@@ -4,7 +4,7 @@
 // Falls back to Firebase packets/processed if local data is missing (e.g. after reinstall)
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getDriverId } from "./driverAuth";
+import { getDriverId, getDriverName } from "./driverAuth";
 
 const STORAGE_KEY = "@wellbuilt_pull_history";
 const SETTINGS_KEY = "@wellbuilt_pull_history_days";
@@ -89,7 +89,9 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
       return [];
     }
 
-    console.log("[PullHistory] Backfilling from Firebase for driver:", driverId.slice(0, 8) + "...");
+    // Get driver name for fallback matching (WB T packets before driverId fix)
+    const driverName = await getDriverName();
+    console.log("[PullHistory] Backfilling from Firebase for driver:", driverId.slice(0, 8) + "...", "name:", driverName);
 
     const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}`;
     const response = await fetch(url, {
@@ -119,8 +121,10 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
       // Skip superseded packets (the original before an edit)
       if (p.wasEdited === true) continue;
 
-      // Only include this driver's pulls
-      if (p.driverId !== driverId) continue;
+      // Only include this driver's pulls (driverId match, or driverName fallback for WB T packets without driverId)
+      if (p.driverId !== driverId) {
+        if (!driverName || p.driverName !== driverName) continue;
+      }
 
       // Parse timestamp for cutoff check
       let sentAt = 0;

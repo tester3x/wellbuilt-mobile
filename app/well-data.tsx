@@ -22,7 +22,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Format date as M/D/YY H:MM AM (shorter format)
 const formatShortDate = (dateStr: string): string => {
   if (!dateStr) return "-";
-  const date = new Date(dateStr);
+  // Strip commas — WB T formats as "3/19/2026, 9:30:00 AM" which Hermes can't parse
+  const date = new Date(dateStr.replace(/,/g, ''));
   if (isNaN(date.getTime())) return dateStr;
   const month = date.getMonth() + 1;
   const day = date.getDate();
@@ -170,13 +171,16 @@ export default function WellDataScreen() {
   // Format: "M/D/YYYY H:MM:SS AM/PM" or "M/D/YYYY H:MM AM/PM"
   const parseDateTimeToMs = (dateTime: string): number => {
     if (!dateTime) return 0;
+    // Strip commas — WB T formats as "3/19/2026, 9:30:00 AM" (comma after year)
+    // while WB M formats as "3/19/2026 10:42 AM" (no comma). Hermes can't parse the comma format.
+    const cleaned = dateTime.replace(/,/g, '');
     // Try native Date parsing first (works for most formats)
-    const parsed = new Date(dateTime);
+    const parsed = new Date(cleaned);
     if (!isNaN(parsed.getTime())) {
       return parsed.getTime();
     }
     // Fallback: manual parsing for "M/D/YYYY H:MM AM/PM"
-    const match = dateTime.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)(?::(\d+))?\s*(AM|PM)?/i);
+    const match = cleaned.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)(?::(\d+))?\s*(AM|PM)?/i);
     if (match) {
       let [, month, day, year, hours, minutes, seconds, ampm] = match;
       let h = parseInt(hours);

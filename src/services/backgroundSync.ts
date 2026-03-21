@@ -79,6 +79,9 @@ interface ResponsePacket {
   originalPacketId?: string;  // The packet that was edited
   windowBblsDay?: string;    // Window-averaged bbls/day from Cloud Function
   overnightBblsDay?: string; // Longest-gap bbls/day from Cloud Function
+  lastPullDriverId?: string; // Driver hash of who did the last pull
+  lastPullDriverName?: string; // Driver name of who did the last pull
+  lastPullPacketId?: string; // PacketId of the last pull (for pull history dedup)
 }
 
 // Parse feet/inches string to decimal feet
@@ -182,6 +185,31 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
           false
         );
       }
+    }
+  }
+
+  // Cross-app pull history: if this response's last pull was by the current driver
+  // (e.g. from WB T), add it to pull history so it shows up alongside WB M pulls
+  if (packet.lastPullDriverId && packet.lastPullPacketId) {
+    try {
+      const { getDriverId } = await import("./driverAuth");
+      const myDriverId = await getDriverId();
+      if (myDriverId && packet.lastPullDriverId === myDriverId) {
+        const { addPullToHistoryIfNew } = await import("./pullHistory");
+        const topFeet = parseFeet(packet.lastPullTopLevel || '');
+        const packetTimestamp = packet.lastPullPacketId.match(/^(\d{8}_\d{6})/)?.[1] || '';
+        await addPullToHistoryIfNew(
+          packet.wellName,
+          packet.lastPullDateTime || '',
+          topFeet,
+          lastPullBbls || 0,
+          false,
+          packetTimestamp,
+          packet.lastPullPacketId
+        );
+      }
+    } catch (err) {
+      console.error("[BackgroundSync] Cross-app pull history error:", err);
     }
   }
 

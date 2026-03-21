@@ -77,9 +77,9 @@ export function getHistoryDays(): number {
 }
 
 /**
- * Backfill pull history from Firebase packets/processed.
- * Called when local history is empty (e.g. after reinstall or data corruption).
- * Fetches ALL processed packets, filters to current driver's pulls within retention window.
+ * Backfill pull history from Firebase driver_pulls/{driverId}/.
+ * This is a small, driver-scoped node — no more downloading ALL processed packets.
+ * Falls back to packets/processed with server-side orderBy if driver_pulls is empty.
  */
 async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
   try {
@@ -89,77 +89,156 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
       return [];
     }
 
-    // Get driver name for fallback matching (WB T packets before driverId fix)
-    const driverName = await getDriverName();
-    console.log("[PullHistory] Backfilling from Firebase for driver:", driverId.slice(0, 8) + "...", "name:", driverName);
-
-    const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}`;
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    if (!response.ok) {
-      console.error("[PullHistory] Firebase fetch failed:", response.status);
-      return [];
-    }
-
-    const data = await response.json();
-    if (!data) {
-      console.log("[PullHistory] No processed packets in Firebase");
-      return [];
-    }
+    console.log("[PullHistory] Backfilling from driver_pulls for driver:", driverId.slice(0, 8) + "...");
 
     const cutoff = Date.now() - (historyDays * 24 * 60 * 60 * 1000);
     const entries: PullHistoryEntry[] = [];
 
-    for (const [packetId, packet] of Object.entries(data)) {
-      const p = packet as any;
+    // PRIMARY: Read from driver_pulls/{driverId}/ — small, fast, driver-scoped
+    const dpUrl = `${FIREBASE_DATABASE_URL}/driver_pulls/${driverId}.json?auth=${FIREBASE_API_KEY}`;
+    const dpResponse = await fetch(dpUrl, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
 
-      // Skip non-pull packets
-      if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
-      // Skip superseded packets (the original before an edit)
-      if (p.wasEdited === true) continue;
+    if (dpResponse.ok) {
+      const dpData = await dpResponse.json();
+      if (dpData && typeof dpData === "object") {
+        for (const [packetId, pull] of Object.entries(dpData)) {
+          const p = pull as any;
 
-      // Only include this driver's pulls (driverId match, or driverName fallback for WB T packets without driverId)
-      if (p.driverId !== driverId) {
-        if (!driverName || p.driverName !== driverName) continue;
+          // Parse timestamp for cutoff
+          let sentAt = 0;
+          if (p.dateTimeUTC) {
+            const parsed = new Date(p.dateTimeUTC);
+            if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
+          }
+          if (sentAt === 0 && p.dateTime) {
+            const parsed = new Date(p.dateTime);
+            if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
+          }
+          if (sentAt === 0 && p.processedAt) {
+            const parsed = new Date(p.processedAt);
+            if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
+          }
+          if (sentAt === 0) sentAt = Date.now();
+
+          if (sentAt < cutoff) continue;
+
+          const timestampMatch = packetId.match(/^(\d{8}_\d{6})/);
+          const packetTimestamp = timestampMatch ? timestampMatch[1] : packetId;
+
+          entries.push({
+            id: packetId,
+            wellName: p.wellName || "Unknown",
+            dateTime: p.dateTime || new Date(sentAt).toLocaleString(),
+            tankLevelFeet: typeof p.tankLevelFeet === "number" ? p.tankLevelFeet : 0,
+            bblsTaken: typeof p.bblsTaken === "number" ? p.bblsTaken : 0,
+            wellDown: p.wellDown === true,
+            sentAt,
+            packetTimestamp,
+            packetId,
+            status: p.editedAt ? "edited" : "sent",
+          });
+        }
       }
+    }
 
-      // Parse timestamp for cutoff check
-      let sentAt = 0;
-      if (p.dateTimeUTC) {
-        const parsed = new Date(p.dateTimeUTC);
-        if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
-      }
-      if (sentAt === 0 && p.dateTime) {
-        const parsed = new Date(p.dateTime);
-        if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
-      }
-      if (sentAt === 0) sentAt = Date.now(); // Fallback
+    // FALLBACK: If driver_pulls was empty, try packets/processed with server-side filter
+    // This catches historical pulls from before driver_pulls was added
+    if (entries.length === 0) {
+      console.log("[PullHistory] driver_pulls empty, falling back to packets/processed");
+      const driverName = await getDriverName();
 
-      // Skip entries outside retention window
-      if (sentAt < cutoff) continue;
-
-      // Build packetTimestamp from packetId (format: "20260209_143045_WellName_abc123")
-      const timestampMatch = packetId.match(/^(\d{8}_\d{6})/);
-      const packetTimestamp = timestampMatch ? timestampMatch[1] : packetId;
-
-      // Determine if this is an edit packet (requestType === "edit")
-      const isEdit = p.requestType === "edit";
-
-      entries.push({
-        id: packetId,
-        wellName: p.wellName || "Unknown",
-        dateTime: p.dateTime || new Date(sentAt).toLocaleString(),
-        tankLevelFeet: typeof p.tankLevelFeet === "number" ? p.tankLevelFeet : 0,
-        bblsTaken: typeof p.bblsTaken === "number" ? p.bblsTaken : 0,
-        wellDown: p.wellDown === true,
-        sentAt,
-        packetTimestamp,
-        packetId,
-        status: isEdit ? "edited" : "sent",
+      const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}&orderBy="driverId"&equalTo="${driverId}"`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
       });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && typeof data === "object") {
+          for (const [packetId, packet] of Object.entries(data)) {
+            const p = packet as any;
+            if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
+            if (p.wasEdited === true) continue;
+
+            let sentAt = 0;
+            if (p.dateTimeUTC) {
+              const parsed = new Date(p.dateTimeUTC);
+              if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
+            }
+            if (sentAt === 0 && p.dateTime) {
+              const parsed = new Date(p.dateTime);
+              if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
+            }
+            if (sentAt === 0) sentAt = Date.now();
+            if (sentAt < cutoff) continue;
+
+            const timestampMatch = packetId.match(/^(\d{8}_\d{6})/);
+            const packetTimestamp = timestampMatch ? timestampMatch[1] : packetId;
+
+            entries.push({
+              id: packetId,
+              wellName: p.wellName || "Unknown",
+              dateTime: p.dateTime || new Date(sentAt).toLocaleString(),
+              tankLevelFeet: typeof p.tankLevelFeet === "number" ? p.tankLevelFeet : 0,
+              bblsTaken: typeof p.bblsTaken === "number" ? p.bblsTaken : 0,
+              wellDown: p.wellDown === true,
+              sentAt,
+              packetTimestamp,
+              packetId,
+              status: p.requestType === "edit" ? "edited" : "sent",
+            });
+          }
+        }
+      }
+
+      // Also try driverName fallback for old WB T packets without driverId
+      if (entries.length === 0 && driverName) {
+        console.log("[PullHistory] No driverId matches, trying driverName fallback:", driverName);
+        const nameUrl = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}&orderBy="driverName"&equalTo="${encodeURIComponent(driverName)}"`;
+        const nameResponse = await fetch(nameUrl, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (nameResponse.ok) {
+          const nameData = await nameResponse.json();
+          if (nameData && typeof nameData === "object") {
+            for (const [packetId, packet] of Object.entries(nameData)) {
+              const p = packet as any;
+              if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
+              if (p.wasEdited === true) continue;
+
+              let sentAt = 0;
+              if (p.dateTimeUTC) {
+                const parsed = new Date(p.dateTimeUTC);
+                if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
+              }
+              if (sentAt === 0) sentAt = Date.now();
+              if (sentAt < cutoff) continue;
+
+              const timestampMatch = packetId.match(/^(\d{8}_\d{6})/);
+              const packetTimestamp = timestampMatch ? timestampMatch[1] : packetId;
+
+              entries.push({
+                id: packetId,
+                wellName: p.wellName || "Unknown",
+                dateTime: p.dateTime || new Date(sentAt).toLocaleString(),
+                tankLevelFeet: typeof p.tankLevelFeet === "number" ? p.tankLevelFeet : 0,
+                bblsTaken: typeof p.bblsTaken === "number" ? p.bblsTaken : 0,
+                wellDown: p.wellDown === true,
+                sentAt,
+                packetTimestamp,
+                packetId,
+                status: "sent",
+              });
+            }
+          }
+        }
+      }
     }
 
     // Sort newest first
@@ -238,29 +317,11 @@ export async function loadPullHistory(): Promise<PullHistoryEntry[]> {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
     }
 
-    // BACKFILL: Recover from Firebase if local data is missing or incomplete
-    // Case 1: Empty history (reinstall, corruption) — always backfill (once per session)
-    // Case 2: Retention expanded beyond what we've previously fetched — backfill the gap
+    // BACKFILL: Merge from Firebase every session to pick up cross-app pulls (WB T → WB M).
+    // Deduplicates by packetId so safe to run every time. Once per session to avoid hammering Firebase.
     if (!backfillAttempted) {
-      let needsBackfill = false;
-
-      if (cachedHistory.length === 0) {
-        console.log('[PullHistory] Empty history — will backfill from Firebase');
-        needsBackfill = true;
-      } else {
-        // Check if current retention window is larger than what we last backfilled
-        const backfilledDaysStr = await AsyncStorage.getItem(BACKFILLED_DAYS_KEY);
-        const previouslyBackfilledDays = backfilledDaysStr ? parseInt(backfilledDaysStr, 10) : 0;
-        if (historyDays > previouslyBackfilledDays) {
-          console.log(`[PullHistory] Retention (${historyDays}d) > last backfill (${previouslyBackfilledDays}d) — will backfill`);
-          needsBackfill = true;
-        }
-      }
-
-      if (needsBackfill) {
-        backfillAttempted = true;
-        await backfillAndMerge();
-      }
+      backfillAttempted = true;
+      await backfillAndMerge();
     }
 
     return cachedHistory;
@@ -308,6 +369,34 @@ export async function addPullToHistory(
     console.log("[PullHistory] Added:", wellName, dateTime, "packetId:", packetId);
   } catch (error) {
     console.error("[PullHistory] Error adding:", error);
+  }
+}
+
+/**
+ * Add a pull to history only if not already present (dedup by packetId).
+ * Used by backgroundSync to capture cross-app pulls (e.g. WB T pulls appearing in WB M).
+ */
+export async function addPullToHistoryIfNew(
+  wellName: string,
+  dateTime: string,
+  tankLevelFeet: number,
+  bblsTaken: number,
+  wellDown: boolean,
+  packetTimestamp: string,
+  packetId: string
+): Promise<void> {
+  try {
+    if (cachedHistory.length === 0) {
+      await loadPullHistory();
+    }
+
+    // Already have this pull? Skip.
+    if (cachedHistory.some(e => e.packetId === packetId || e.id === packetId)) return;
+
+    await addPullToHistory(wellName, dateTime, tankLevelFeet, bblsTaken, wellDown, packetTimestamp, packetId);
+    console.log("[PullHistory] Cross-app pull captured:", wellName, packetId);
+  } catch (error) {
+    console.error("[PullHistory] Error adding cross-app pull:", error);
   }
 }
 

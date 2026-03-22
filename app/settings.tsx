@@ -100,45 +100,7 @@ interface RouteGroup {
   expanded: boolean;
 }
 
-// Generate unique color from route name using HSL color space
-// Uses djb2 hash to pick a hue, then converts to RGB
-// Matches VBA implementation in modRecolorRoutes.bas
-function getRouteColor(routeName: string): string {
-  // djb2 hash - good distribution
-  let hash = 5381;
-  for (let i = 0; i < routeName.length; i++) {
-    hash = ((hash << 5) + hash) + routeName.charCodeAt(i);
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  hash = Math.abs(hash);
-
-  // Use hash to pick Hue (0-360), keep Saturation and Lightness fixed
-  const hue = hash % 360;
-  const sat = 0.65;  // 65% saturation - vibrant but not neon
-  const lum = 0.55;  // 55% lightness - visible on dark background
-
-  // Convert HSL to RGB
-  const c = (1 - Math.abs(2 * lum - 1)) * sat;
-  const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
-  const m = lum - c / 2;
-
-  let r1 = 0, g1 = 0, b1 = 0;
-  const hueSection = Math.floor(hue / 60);
-  switch (hueSection) {
-    case 0: r1 = c; g1 = x; b1 = 0; break;
-    case 1: r1 = x; g1 = c; b1 = 0; break;
-    case 2: r1 = 0; g1 = c; b1 = x; break;
-    case 3: r1 = 0; g1 = x; b1 = c; break;
-    case 4: r1 = x; g1 = 0; b1 = c; break;
-    default: r1 = c; g1 = 0; b1 = x; break;
-  }
-
-  const r = Math.round((r1 + m) * 255);
-  const g = Math.round((g1 + m) * 255);
-  const b = Math.round((b1 + m) * 255);
-
-  return `rgb(${r}, ${g}, ${b})`;
-}
+import { getRouteColor } from '../src/services/routeColor';
 
 // Fetch well_config from Firebase (via wellConfig service)
 async function fetchWellConfig(): Promise<WellConfigMap | null> {
@@ -517,10 +479,9 @@ export default function SettingsScreen() {
       Object.entries(config).forEach(([wellName, wellConfig]) => {
         const route = wellConfig.route || "Unknown";
         if (!routeMap[route]) {
-          // Use routeColor from config if available, fallback to calculated
           routeMap[route] = {
             wells: [],
-            color: wellConfig.routeColor || getRouteColor(route)
+            color: getRouteColor(route)
           };
         }
         routeMap[route].wells.push(wellName);

@@ -109,31 +109,7 @@ const scaledFont = (phoneSize: number): number => {
 
 const clampFraction = (n: number) => Math.min(Math.max(n, 0), 1);
 
-// Generate unique color from route name using djb2 hash → HSL → RGB
-function getRouteColor(routeName: string): string {
-  let hash = 5381;
-  for (let i = 0; i < routeName.length; i++) {
-    hash = ((hash << 5) + hash) + routeName.charCodeAt(i);
-    hash = hash & hash;
-  }
-  hash = Math.abs(hash);
-  const hue = hash % 360;
-  const sat = 0.65;
-  const lum = 0.55;
-  const c = (1 - Math.abs(2 * lum - 1)) * sat;
-  const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
-  const m = lum - c / 2;
-  let r1 = 0, g1 = 0, b1 = 0;
-  switch (Math.floor(hue / 60)) {
-    case 0: r1 = c; g1 = x; break;
-    case 1: r1 = x; g1 = c; break;
-    case 2: g1 = c; b1 = x; break;
-    case 3: g1 = x; b1 = c; break;
-    case 4: r1 = x; b1 = c; break;
-    default: r1 = c; b1 = x; break;
-  }
-  return `rgb(${Math.round((r1 + m) * 255)}, ${Math.round((g1 + m) * 255)}, ${Math.round((b1 + m) * 255)})`;
-}
+import { getRouteColor } from '../../src/services/routeColor';
 
 const isWellDown = (raw: unknown): boolean => {
   const str = String(raw ?? '').trim().toLowerCase();
@@ -1453,33 +1429,45 @@ export default function MainScreen() {
             }
           }
 
-          // Load user's selected wells from Settings
-          filteredWells = allWellNames;
+          // Filter wells by driver's route assignment FIRST, then by user selections
+          const assignment = await fetchDriverRouteAssignment();
+          let assignedWellNames = allWellNames;
+          if (assignment.routes.length > 0 || assignment.wells.length > 0) {
+            const assignedConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells);
+            assignedWellNames = Object.keys(assignedConfig);
+            console.log('[Main] Route assignment filter:', assignedWellNames.length, 'of', allWellNames.length, 'wells');
+          }
+
+          // Load user's selected wells from Settings, intersected with assigned wells
+          filteredWells = assignedWellNames;
           try {
             const savedSelections = await AsyncStorage.getItem(STORAGE_KEY_SELECTED_WELLS);
             if (savedSelections) {
               const selected = JSON.parse(savedSelections) as string[];
               if (selected.length > 0) {
+                const assignedSet = new Set(assignedWellNames);
                 const selectedSet = new Set(selected);
-                // Filter to only selected wells
-                filteredWells = allWellNames.filter(w => selectedSet.has(w));
+                // Only show wells that are BOTH selected AND assigned
+                filteredWells = assignedWellNames.filter(w => selectedSet.has(w));
+                // If saved selections had stale wells, clean them up
+                const cleanedSelections = selected.filter(w => assignedSet.has(w));
+                if (cleanedSelections.length !== selected.length) {
+                  console.log('[Main] Cleaned', selected.length - cleanedSelections.length, 'stale wells from selections');
+                  await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(cleanedSelections));
+                }
               }
             }
           } catch (e) {
-            // Corrupted JSON in selected wells — reset to all
-            console.log('[Main] Corrupted selectedWells JSON, resetting to all wells:', e);
-            filteredWells = allWellNames;
-            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(allWellNames));
+            console.log('[Main] Corrupted selectedWells JSON, resetting to assigned wells:', e);
+            filteredWells = assignedWellNames;
+            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
           }
 
-          // RECOVERY: If filtering resulted in 0 wells but config has wells,
-          // the selectedWells list is stale/corrupt — reset to assigned wells
-          if (filteredWells.length === 0 && allWellNames.length > 0) {
-            console.log('[Main] No wells after filtering — selectedWells stale, resetting to assigned');
-            const assignment = await fetchDriverRouteAssignment();
-            const assignedConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells);
-            filteredWells = Object.keys(assignedConfig);
-            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(filteredWells));
+          // RECOVERY: If filtering resulted in 0 wells, reset to all assigned wells
+          if (filteredWells.length === 0 && assignedWellNames.length > 0) {
+            console.log('[Main] No wells after filtering — resetting to assigned wells');
+            filteredWells = assignedWellNames;
+            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
           }
 
           // Load saved route order and sort wells accordingly
@@ -1994,7 +1982,7 @@ export default function MainScreen() {
           {wellConfigMap && wells[currentIndex] && wellConfigMap[wells[currentIndex]]?.route && (
             <Text style={[
               styles.routeName,
-              { color: wellConfigMap[wells[currentIndex]]?.routeColor || getRouteColor(wellConfigMap[wells[currentIndex]]?.route || '') }
+              { color: getRouteColor(wellConfigMap[wells[currentIndex]]?.route || '') }
             ]}>
               {wellConfigMap[wells[currentIndex]]?.route}
             </Text>
@@ -2131,7 +2119,7 @@ export default function MainScreen() {
                   renderItem={({ item, index }) => {
                     // Check if this is first well in a new route
                     const route = wellConfigMap?.[item]?.route || '';
-                    const routeColor = wellConfigMap?.[item]?.routeColor || getRouteColor(route);
+                    const routeColor = getRouteColor(route);
                     const prevWell = index > 0 ? wells[index - 1] : null;
                     const prevRoute = prevWell ? (wellConfigMap?.[prevWell]?.route || '') : '';
                     const isFirstInRoute = route !== prevRoute;

@@ -70,45 +70,7 @@ interface RouteGroup {
   totalWells: number;  // Total wells in route (from config, not just selected)
 }
 
-// Generate unique color from route name using HSL color space
-// Uses djb2 hash to pick a hue, then converts to RGB
-// Matches VBA implementation in modRouteBuilderAdapter.bas
-function getRouteColor(routeName: string): string {
-  // djb2 hash - good distribution
-  let hash = 5381;
-  for (let i = 0; i < routeName.length; i++) {
-    hash = ((hash << 5) + hash) + routeName.charCodeAt(i);
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  hash = Math.abs(hash);
-
-  // Use hash to pick Hue (0-360), keep Saturation and Lightness fixed
-  const hue = hash % 360;
-  const sat = 0.65;  // 65% saturation - vibrant but not neon
-  const lum = 0.55;  // 55% lightness - visible on dark background
-
-  // Convert HSL to RGB
-  const c = (1 - Math.abs(2 * lum - 1)) * sat;
-  const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
-  const m = lum - c / 2;
-
-  let r1 = 0, g1 = 0, b1 = 0;
-  const hueSection = Math.floor(hue / 60);
-  switch (hueSection) {
-    case 0: r1 = c; g1 = x; b1 = 0; break;
-    case 1: r1 = x; g1 = c; b1 = 0; break;
-    case 2: r1 = 0; g1 = c; b1 = x; break;
-    case 3: r1 = 0; g1 = x; b1 = c; break;
-    case 4: r1 = x; g1 = 0; b1 = c; break;
-    default: r1 = c; g1 = 0; b1 = x; break;
-  }
-
-  const r = Math.round((r1 + m) * 255);
-  const g = Math.round((g1 + m) * 255);
-  const b = Math.round((b1 + m) * 255);
-
-  return `rgb(${r}, ${g}, ${b})`;
-}
+import { getRouteColor } from '../src/services/routeColor';
 
 // Format decimal feet to feet'inches" - omit inches if zero
 // Always floor - matches packet level sent to VBA for consistent display
@@ -316,7 +278,7 @@ export default function SummaryScreen() {
         const snapshot = await getLevelSnapshot(wellName);
 
         const route = config?.route || "Unknown";
-        const routeColor = config?.routeColor || getRouteColor(route);
+        const routeColor = getRouteColor(route);
         const levelFeet = snapshot?.levelFeet || 0;
         const isDown = snapshot?.isDown ?? config?.isDown ?? false;
         // Flow rate now stored in snapshot (not separately cached)
@@ -371,7 +333,7 @@ export default function SummaryScreen() {
       const groups: RouteGroup[] = Object.entries(routeMap)
         .map(([routeName, wells]) => ({
           routeName,
-          color: wells[0]?.routeColor || getRouteColor(routeName),
+          color: getRouteColor(routeName),
           wells,
           expanded: expanded[routeName] ?? true, // Default to expanded
           totalWells: totalWellsPerRoute[routeName] || wells.length,
@@ -677,10 +639,10 @@ export default function SummaryScreen() {
         {/* Expanded details */}
         {isExpanded && (() => {
           // Calculate flow rates
-          // flowRateMinutes = minutes per 1 foot of rise
+          // flowRateMinutes = minutes per 1 foot of rise (AFR - rolling 3-7 pull average)
           // 1" flow = 1' flow / 12
           const oneInchMins = well.flowRateMinutes / 12;
-          const formatOneInchFlow = (mins: number): string => {
+          const formatFlowTime = (mins: number): string => {
             if (mins <= 0) return '--';
             const hours = Math.floor(mins / 60);
             const m = Math.floor(mins % 60);
@@ -689,22 +651,11 @@ export default function SummaryScreen() {
             if (m > 0) return `${m}m ${secs}s`;
             return `${secs}s`;
           };
-          const oneInchFlow = formatOneInchFlow(oneInchMins);
-
-          // Format 1' flow with full h/m/s format
-          const formatOneFootFlow = (mins: number): string => {
-            if (mins <= 0) return '--';
-            const hours = Math.floor(mins / 60);
-            const m = Math.floor(mins % 60);
-            const secs = Math.round((mins % 1) * 60);
-            if (hours > 0) return `${hours}h ${m}m ${secs}s`;
-            if (m > 0) return `${m}m ${secs}s`;
-            return `${secs}s`;
-          };
-          const oneFootFlow = formatOneFootFlow(well.flowRateMinutes);
+          const oneInchFlow = formatFlowTime(oneInchMins);
+          const oneFootFlow = formatFlowTime(well.flowRateMinutes);
 
           // Calculate BBL production rates
-          // Use window-averaged from Cloud Function (matches main screen), fall back to AFR
+          // Use window-averaged from Cloud Function (daily window), fall back to AFR-derived
           const bblPerFoot = 20 * well.numTanks;
           const afrBblPerDay = well.flowRateMinutes > 0
             ? Math.round((60 / well.flowRateMinutes) * bblPerFoot * 24)

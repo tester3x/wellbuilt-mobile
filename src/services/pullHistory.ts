@@ -77,9 +77,9 @@ export function getHistoryDays(): number {
 }
 
 /**
- * Backfill pull history from Firebase driver_pulls/{driverId}/.
- * This is a small, driver-scoped node — no more downloading ALL processed packets.
- * Falls back to packets/processed with server-side orderBy if driver_pulls is empty.
+ * Backfill pull history from packets/processed using driverId index.
+ * Uses server-side orderBy("driverId") query — already indexed in RTDB.
+ * Falls back to driverName query for older packets without driverId.
  */
 async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
   try {
@@ -89,25 +89,26 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
       return [];
     }
 
-    console.log("[PullHistory] Backfilling from driver_pulls for driver:", driverId.slice(0, 8) + "...");
+    console.log("[PullHistory] Backfilling from packets/processed for driver:", driverId.slice(0, 8) + "...");
 
     const cutoff = Date.now() - (historyDays * 24 * 60 * 60 * 1000);
     const entries: PullHistoryEntry[] = [];
 
-    // PRIMARY: Read from driver_pulls/{driverId}/ — small, fast, driver-scoped
-    const dpUrl = `${FIREBASE_DATABASE_URL}/driver_pulls/${driverId}.json?auth=${FIREBASE_API_KEY}`;
-    const dpResponse = await fetch(dpUrl, {
+    // Query packets/processed by driverId (server-side indexed)
+    const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}&orderBy="driverId"&equalTo="${driverId}"`;
+    const response = await fetch(url, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
     });
 
-    if (dpResponse.ok) {
-      const dpData = await dpResponse.json();
-      if (dpData && typeof dpData === "object") {
-        for (const [packetId, pull] of Object.entries(dpData)) {
-          const p = pull as any;
+    if (response.ok) {
+      const data = await response.json();
+      if (data && typeof data === "object") {
+        for (const [packetId, packet] of Object.entries(data)) {
+          const p = packet as any;
+          if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
+          if (p.wasEdited === true) continue;
 
-          // Parse timestamp for cutoff
           let sentAt = 0;
           if (p.dateTimeUTC) {
             const parsed = new Date(p.dateTimeUTC);
@@ -117,12 +118,7 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
             const parsed = new Date(p.dateTime);
             if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
           }
-          if (sentAt === 0 && p.processedAt) {
-            const parsed = new Date(p.processedAt);
-            if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
-          }
           if (sentAt === 0) sentAt = Date.now();
-
           if (sentAt < cutoff) continue;
 
           const timestampMatch = packetId.match(/^(\d{8}_\d{6})/);
@@ -138,65 +134,16 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
             sentAt,
             packetTimestamp,
             packetId,
-            status: p.editedAt ? "edited" : "sent",
+            status: p.requestType === "edit" ? "edited" : "sent",
           });
         }
       }
     }
 
-    // FALLBACK: If driver_pulls was empty, try packets/processed with server-side filter
-    // This catches historical pulls from before driver_pulls was added
+    // Fallback: try driverName for older packets without driverId (e.g. WB T packets)
     if (entries.length === 0) {
-      console.log("[PullHistory] driver_pulls empty, falling back to packets/processed");
       const driverName = await getDriverName();
-
-      const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}&orderBy="driverId"&equalTo="${driverId}"`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data && typeof data === "object") {
-          for (const [packetId, packet] of Object.entries(data)) {
-            const p = packet as any;
-            if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
-            if (p.wasEdited === true) continue;
-
-            let sentAt = 0;
-            if (p.dateTimeUTC) {
-              const parsed = new Date(p.dateTimeUTC);
-              if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
-            }
-            if (sentAt === 0 && p.dateTime) {
-              const parsed = new Date(p.dateTime);
-              if (!isNaN(parsed.getTime())) sentAt = parsed.getTime();
-            }
-            if (sentAt === 0) sentAt = Date.now();
-            if (sentAt < cutoff) continue;
-
-            const timestampMatch = packetId.match(/^(\d{8}_\d{6})/);
-            const packetTimestamp = timestampMatch ? timestampMatch[1] : packetId;
-
-            entries.push({
-              id: packetId,
-              wellName: p.wellName || "Unknown",
-              dateTime: p.dateTime || new Date(sentAt).toLocaleString(),
-              tankLevelFeet: typeof p.tankLevelFeet === "number" ? p.tankLevelFeet : 0,
-              bblsTaken: typeof p.bblsTaken === "number" ? p.bblsTaken : 0,
-              wellDown: p.wellDown === true,
-              sentAt,
-              packetTimestamp,
-              packetId,
-              status: p.requestType === "edit" ? "edited" : "sent",
-            });
-          }
-        }
-      }
-
-      // Also try driverName fallback for old WB T packets without driverId
-      if (entries.length === 0 && driverName) {
+      if (driverName) {
         console.log("[PullHistory] No driverId matches, trying driverName fallback:", driverName);
         const nameUrl = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}&orderBy="driverName"&equalTo="${encodeURIComponent(driverName)}"`;
         const nameResponse = await fetch(nameUrl, {

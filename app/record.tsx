@@ -656,10 +656,10 @@ export default function RecordScreen() {
         setIsSending(false);
 
         if (editResult.queued) {
-          // Offline - show queued message
+          // Offline - show queued message with reason for debugging
           alert.show(
             "Edit Saved Locally",
-            "System is offline. Your edit has been saved and will be submitted when connection is restored.",
+            `System is offline. Your edit has been saved and will be submitted when connection is restored.\n\n(${editResult.error || 'unknown'})`,
             [{ text: "OK", onPress: () => router.back() }]
           );
         } else {
@@ -760,7 +760,7 @@ export default function RecordScreen() {
           const queueCount = await getQueueCount();
           alert.show(
             "Pull Saved Locally",
-            `System is offline. Your pull has been saved and will be submitted when connection is restored.${queueCount > 1 ? ` (${queueCount} pulls queued)` : ''}`,
+            `System is offline. Your pull has been saved and will be submitted when connection is restored.${queueCount > 1 ? ` (${queueCount} pulls queued)` : ''}\n\n(${uploadResult.error || 'unknown'})`,
             [{ text: "OK", onPress: () => router.back() }]
           );
         } else {

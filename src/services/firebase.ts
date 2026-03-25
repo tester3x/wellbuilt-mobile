@@ -159,28 +159,44 @@ const getCachedProcessedData = async (): Promise<any> => {
 const firebasePut = async (path: string, data: any): Promise<void> => {
   const url = buildFirebaseUrl(path);
 
-  const response = await fetch(url, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Firebase PUT failed (${response.status}): ${text}`);
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Firebase PUT failed (${response.status}): ${text}`);
+    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 
 const firebaseDelete = async (path: string): Promise<void> => {
   const url = buildFirebaseUrl(path);
 
-  const response = await fetch(url, {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-  if (!response.ok) {
-    throw new Error(`Firebase DELETE failed (${response.status})`);
+  try {
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Firebase DELETE failed (${response.status})`);
+    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 

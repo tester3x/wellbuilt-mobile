@@ -282,7 +282,7 @@ export async function smartUploadTankPacket(params: {
       return {
         success: false,
         queued: true,
-        error: "Queued for later (network error)",
+        error: `Upload failed: ${error.message || error.name || 'unknown'}`,
       };
     }
   } else {
@@ -325,7 +325,7 @@ export async function smartUploadEditPacket(params: {
       return {
         success: false,
         queued: true,
-        error: "Queued for later (network error)",
+        error: `Edit failed: ${error.message || error.name || 'unknown'}`,
       };
     }
   } else {

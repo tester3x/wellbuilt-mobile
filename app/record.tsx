@@ -180,10 +180,14 @@ export default function RecordScreen() {
   const editWellDown = params.editWellDown === 'true';
   const editPacketTimestamp = String(params.editPacketTimestamp || "");
 
-  const [dateTime, setDateTime] = useState(new Date());
+  const [dateTime, setDateTime] = useState(() =>
+    isEditMode && editDateTime ? parseDateTimeString(editDateTime) : new Date()
+  );
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [tempDateTime, setTempDateTime] = useState(new Date());
+  const [tempDateTime, setTempDateTime] = useState(() =>
+    isEditMode && editDateTime ? parseDateTimeString(editDateTime) : new Date()
+  );
 
   const [level, setLevel] = useState('');
   const [barrels, setBarrels] = useState('');

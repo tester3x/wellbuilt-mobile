@@ -75,9 +75,10 @@ export async function isOnline(): Promise<boolean> {
   try {
     const state = await NetInfo.fetch();
     const online = state.isConnected === true && state.isInternetReachable !== false;
-    console.log(`[PacketQueue] isOnline: ${online ? 'YES' : 'NO'}`);
+    console.log(`[PacketQueue] isOnline: ${online ? 'YES' : 'NO'} (type=${state.type}, connected=${state.isConnected}, reachable=${state.isInternetReachable})`);
     return online;
-  } catch {
+  } catch (err: any) {
+    console.log(`[PacketQueue] isOnline: EXCEPTION ${err.message}`);
     return false;
   }
 }
@@ -276,7 +277,7 @@ export async function smartUploadTankPacket(params: {
       };
     } catch (error: any) {
       // Network error during send - queue it
-      console.log("[PacketQueue] Upload failed, queueing:", error.message);
+      console.log(`[PacketQueue] Upload FAILED for ${params.wellName}: ${error.message} (${error.name})`);
       const queueId = await queuePacket("pull", params);
       return {
         success: false,
@@ -319,7 +320,7 @@ export async function smartUploadEditPacket(params: {
         wellName: result.wellName,
       };
     } catch (error: any) {
-      console.log("[PacketQueue] Edit upload failed, queueing:", error.message);
+      console.log(`[PacketQueue] Edit FAILED for ${params.wellName}: ${error.message} (${error.name})`);
       const queueId = await queuePacket("edit", params);
       return {
         success: false,

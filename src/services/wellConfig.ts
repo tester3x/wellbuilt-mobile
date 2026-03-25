@@ -134,7 +134,8 @@ export async function getWellConfig(wellName: string): Promise<WellConfig> {
 
 export async function getBblPerFoot(wellName: string): Promise<number> {
   const config = await getWellConfig(wellName);
-  return 20 * config.numTanks;
+  // Use stored bblPerFoot from Dashboard if available, else derive from legacy formula
+  return (config as any).bblPerFoot || 20 * config.numTanks;
 }
 
 export function getWellConfigSync(wellName: string): WellConfig {
@@ -146,7 +147,8 @@ export function getWellConfigSync(wellName: string): WellConfig {
 
 export function getBblPerFootSync(wellName: string): number {
   const config = getWellConfigSync(wellName);
-  return 20 * config.numTanks;
+  // Use stored bblPerFoot from Dashboard if available, else derive from legacy formula
+  return (config as any).bblPerFoot || 20 * config.numTanks;
 }
 
 export async function forceRefreshWellConfig(): Promise<boolean> {

@@ -640,9 +640,9 @@ export const requestWellHistory = async (
       };
     }
 
-    // Get bblPerFoot from well config (tanks * 20)
+    // Get bblPerFoot from well config — use stored value if available, else legacy formula
     const numTanks = (wellConfig as any)?.numTanks || (wellConfig as any)?.tanks || 1;
-    const bblPerFoot = numTanks * 20;
+    const bblPerFoot = (wellConfig as any)?.bblPerFoot || numTanks * 20;
     const pullBbls = (wellConfig as any)?.pullBbls || 140;
     const allowedBottom = (wellConfig as any)?.allowedBottom || 3; // feet
 

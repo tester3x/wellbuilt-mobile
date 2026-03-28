@@ -39,21 +39,18 @@ const getDraftKey = (wellName: string) => `${DRAFT_STORAGE_PREFIX}${wellName.rep
 // "6'4.5" → 6' 4.5" (fractional inches)
 // "6" → 6' 0"
 const parseLevel = (input: string): number | null => {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
+  // Keep ONLY digits, dots, and spaces. Everything else (quotes, backticks, primes,
+  // smart quotes, unicode symbols, whatever iOS/OneUI invents next) becomes a space.
+  // This makes parsing immune to any keyboard symbol variation.
+  const stripped = input
+    .replace(/[^\d.\s]/g, ' ')  // anything that isn't a digit, dot, or space → space
+    .replace(/\s+/g, ' ')       // collapse multiple spaces
+    .trim();
 
-  // Check for feet'inches format: 6'4 or 6'4" or 6'4.5 or 6'4.5"
-  // Supports fractional inches like 4.5, 4.25, 4.75
-  const apostropheMatch = trimmed.match(/^(\d+)'(\d+(?:\.\d+)?)"?$/);
-  if (apostropheMatch) {
-    const ft = parseInt(apostropheMatch[1], 10);
-    const inch = parseFloat(apostropheMatch[2]);
-    return ft + inch / 12;
-  }
+  if (!stripped) return null;
 
-  // Check for space-separated: 6 4 or 6 4.5 (fractional inches)
-  // This is the most common format for drivers: "10 5" or "10 5.5"
-  const spaceMatch = trimmed.match(/^(\d+)\s+(\d+(?:\.\d+)?)$/);
+  // Check for space-separated feet and inches: "10 4" or "10 4.5"
+  const spaceMatch = stripped.match(/^(\d+)\s+(\d+(?:\.\d+)?)$/);
   if (spaceMatch) {
     const ft = parseInt(spaceMatch[1], 10);
     const inch = parseFloat(spaceMatch[2]);
@@ -62,14 +59,13 @@ const parseLevel = (input: string): number | null => {
 
   // Check for pure decimal with no space: 6.4 means 6.4 feet (decimal feet)
   // This is different from "6 4" which means 6 feet 4 inches
-  // Only treat as decimal feet if there's NO space in the input
-  if (trimmed.includes('.') && !trimmed.includes(' ')) {
-    const val = parseFloat(trimmed);
+  if (stripped.includes('.') && !stripped.includes(' ')) {
+    const val = parseFloat(stripped);
     return isNaN(val) ? null : val;
   }
 
   // Plain number - treat as feet only: 6 → 6' 0"
-  const val = parseInt(trimmed, 10);
+  const val = parseInt(stripped, 10);
   return isNaN(val) ? null : val;
 };
 

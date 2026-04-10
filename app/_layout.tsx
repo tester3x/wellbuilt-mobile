@@ -8,6 +8,7 @@ import { I18nextProvider } from 'react-i18next';
 import i18n from '../src/i18n';
 import { DispatchProvider } from '../src/contexts/DispatchContext';
 import { DispatchButton } from '../src/components/DispatchButton';
+import AppSwitcher from '../src/components/AppSwitcher';
 // REMOVED: FirebaseStatusProvider + SystemOfflineBanner
 // The offline banner was more annoying than useful — triggered 20+ times/day in dead zones.
 // No other app does this. The underlying firebaseStatus service is kept for packetQueue
@@ -171,6 +172,17 @@ export default function RootLayout() {
           </Stack>
           {/* Global dispatch button - appears when there are pending sends */}
           {appIsReady && <DispatchButton />}
+          {/* AppSwitcher — floating WB ecosystem app launcher */}
+          {appIsReady && (
+            <AppSwitcher
+              selfScheme="wellbuilt-mobile"
+              getIdentity={async () => {
+                const hash = await SecureStore.getItemAsync('passcodeHash');
+                const name = await SecureStore.getItemAsync('driverName');
+                return hash && name ? { hash, name } : null;
+              }}
+            />
+          )}
           {/* What's New modal - shows after app update */}
           {appIsReady && (
             <WhatsNewModal

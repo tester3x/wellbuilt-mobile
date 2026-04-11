@@ -175,6 +175,7 @@ export default function RootLayout() {
           {/* AppSwitcher — floating WB ecosystem app launcher */}
           {appIsReady && (
             <AppSwitcher
+              badgeSource={require('../assets/images/app-switcher-badge.png')}
               selfScheme="wellbuilt-mobile"
               getIdentity={async () => {
                 const hash = await SecureStore.getItemAsync('passcodeHash');

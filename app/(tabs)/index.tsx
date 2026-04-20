@@ -734,7 +734,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const windowBblsDay = levelSnapshot?.windowBblsDay ?? 0;
   const overnightBblsDay = levelSnapshot?.overnightBblsDay ?? 0;
   const afrBblsPerDay = flowMins > 0 ? Math.round((60 / flowMins) * bblsPerFoot * 24) : 0;
-  const bblsPerDay = windowBblsDay > 0 ? windowBblsDay : afrBblsPerDay; // Prefer window-averaged, fall back to AFR
+  const bblsPerDay = afrBblsPerDay; // AFR-based daily value — matches 1"/1' flow rate family on this card
   const bblsPerHour = bblsPerDay > 0 ? Math.round(bblsPerDay / 24 * 10) / 10 : 0;
   // Easter egg: tap bbls/day to toggle overnight formula
   const displayBblsPerDay = showOvernightBbls && overnightBblsDay > 0 ? overnightBblsDay : bblsPerDay;

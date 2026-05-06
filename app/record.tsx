@@ -148,6 +148,15 @@ const parseDateTimeString = (dateTimeStr: string): Date => {
   return new Date();
 };
 
+// Minute-precision key for comparing displayed timestamps. The picker only
+// exposes minute granularity, so two Dates that differ only in seconds/ms
+// represent the same user-intended minute and must compare equal.
+const formatMinuteKey = (d: Date): string => {
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 const FULL_TANK_FEET = 20;
 
 // Draft data structure for persisting form state (per-well)
@@ -216,6 +225,11 @@ export default function RecordScreen() {
   const barrelsInputY = useRef<number>(0);
   const isBarrelsFocused = useRef<boolean>(false);
   const hasDraftLoaded = useRef<boolean>(false);
+  // Original displayed minute when entering edit mode. If the user submits
+  // without changing the displayed minute we suppress dateTimeUTC/dateTime in
+  // the edit packet so the Cloud Function preserves the original timestamp
+  // instead of recomputing flow against a minute-truncated rewrite.
+  const originalEditMinuteRef = useRef<string>('');
 
   // Redirect viewers away - they can't record pulls
   useEffect(() => {
@@ -339,7 +353,9 @@ export default function RecordScreen() {
     if (isEditMode) {
       // Pre-fill with edit values
       if (editDateTime) {
-        setDateTime(parseDateTimeString(editDateTime));
+        const parsed = parseDateTimeString(editDateTime);
+        setDateTime(parsed);
+        originalEditMinuteRef.current = formatMinuteKey(parsed);
       }
       if (editLevel) {
         const levelNum = parseFloat(editLevel);
@@ -581,12 +597,19 @@ export default function RecordScreen() {
 
       if (isEditMode) {
         // --- EDIT MODE: Send edit packet (with offline queueing) ---
+        // Suppress timestamp rewrite when the user did not change the displayed
+        // minute. CF treats empty dateTimeUTC/dateTime as "preserve original"
+        // via `data.dateTimeUTC || origPacket.dateTimeUTC`, so a no-op edit
+        // leaves the original packet timestamp (and all derived flow math) intact.
+        const minuteChanged =
+          formatMinuteKey(dateTime) !== originalEditMinuteRef.current;
+
         const editResult = await smartUploadEditPacket({
           originalPacketTimestamp: editPacketTimestamp,
           originalPacketId: editId,
           wellName,
-          dateTime: dateTimeString,           // Local display (legacy)
-          dateTimeUTC: dateTimeUTCString,     // UTC for calculations
+          dateTime: minuteChanged ? dateTimeString : '',           // Local display (legacy)
+          dateTimeUTC: minuteChanged ? dateTimeUTCString : '',     // UTC for calculations
           tankLevelFeet: topLevel,
           bblsTaken: bblsTakenNum,
           wellDown,

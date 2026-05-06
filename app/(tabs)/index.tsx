@@ -109,27 +109,32 @@ const scaledFont = (phoneSize: number): number => {
 
 const clampFraction = (n: number) => Math.min(Math.max(n, 0), 1);
 
-// Format the Last Pull time as h:mm AM/PM. Prefers the ISO UTC timestamp
-// (full minute/second precision, locale-independent) — falls back to parsing
-// the local display string. Returns the raw dateTime as last resort so a
-// malformed source surfaces instead of silently displaying "" or "Invalid Date".
+// Format the Last Pull date+time as "m/d/yy h:mm AM/PM". Prefers the ISO
+// UTC timestamp (full minute/second precision, locale-independent) — falls
+// back to parsing the local display string. Returns the raw dateTime as
+// last resort so a malformed source surfaces instead of silently displaying
+// "" or "Invalid Date".
 //
-// Display contract per WB M / dashboard parity: 11:01 AM, 11:00 AM, 4:55 PM —
-// minutes always shown, including :00. The dashboard's CF strips seconds via a
-// regex that can also strip minutes when the source already lacks seconds, so
-// the local string we receive may have been over-truncated to "11 AM". This
-// formatter does not trust the upstream string and re-derives from UTC when
-// possible.
+// Display contract per WB M / dashboard parity:
+//   5/6/26 11:01 AM, 5/6/26 11:00 AM, 12/3/26 4:55 PM
+// Minutes always shown, including :00. Date always shown. The dashboard's
+// CF strips seconds via a regex that can also strip minutes when the source
+// already lacks seconds, so the local string we receive may have been over-
+// truncated to "11 AM" or to a date-only fragment. This formatter does not
+// trust the upstream string and re-derives from UTC when possible.
 const formatLastPullTime = (dateTime: string, dateTimeUTC?: string): string => {
   const candidates = [dateTimeUTC, dateTime].filter((s): s is string => !!s);
   for (const s of candidates) {
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
+      const month = d.getMonth() + 1;
+      const day = d.getDate();
+      const yy = d.getFullYear() % 100;
       let h = d.getHours();
       const m = d.getMinutes();
       const ap = h >= 12 ? 'PM' : 'AM';
       h = h % 12 || 12;
-      return `${h}:${String(m).padStart(2, '0')} ${ap}`;
+      return `${month}/${day}/${String(yy).padStart(2, '0')} ${h}:${String(m).padStart(2, '0')} ${ap}`;
     }
   }
   return dateTime;

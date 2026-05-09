@@ -27,6 +27,10 @@ export interface TankPacket {
   tankLevelFeet: number;
   bblsTaken: number;
   wellDown?: boolean;
+  // 5/8/2026 — explicit authority flag for CF wellDown protection. WB M's
+  // explicit Well Down checkbox is driver-asserted, so all WB M pulls set
+  // this true. CF only flips wells/{name}/status/isDown when this is true.
+  wellDownIsAuthoritative?: boolean;
   driverId?: string;          // UUID of the driver who recorded this pull
   driverName?: string;        // Display name of the driver (for quick reference)
   predictedLevelInches?: number;  // What driver saw on pull form card - for performance tracking
@@ -62,6 +66,8 @@ export interface EditPacket {
   tankLevelFeet: number;
   bblsTaken: number;
   wellDown: boolean;
+  // 5/8/2026 — see TankPacket comment above. WB M edits are driver-asserted.
+  wellDownIsAuthoritative?: boolean;
   driverId?: string;          // UUID of the driver who submitted the edit
   driverName?: string;        // Display name of the driver
 }
@@ -272,6 +278,7 @@ export const uploadTankPacket = async (params: {
     tankLevelFeet,
     bblsTaken,
     wellDown: wellDown || false,
+    wellDownIsAuthoritative: true,
     driverId: driverId || undefined,
     driverName: driverName || undefined,
     predictedLevelInches: predictedLevelInches ?? undefined, // What was displayed on pull form card
@@ -487,6 +494,7 @@ export const uploadEditPacket = async (params: {
     tankLevelFeet,
     bblsTaken,
     wellDown,
+    wellDownIsAuthoritative: true,
     driverId: driverId || undefined,
     driverName: driverName || undefined,
   };

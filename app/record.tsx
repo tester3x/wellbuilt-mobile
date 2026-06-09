@@ -932,7 +932,7 @@ export default function RecordScreen() {
         </View>
 
         {/* Date / Time */}
-        <View style={[styles.row, { marginBottom: spacing.md }]}>
+        <View style={[styles.row, { marginBottom: spacing.sm }]}>
           <View style={[styles.section, { flex: 1, marginRight: wp('2%') }]}>
             <Text style={styles.label}>{t('record.dateLabel')}</Text>
             <TouchableOpacity style={styles.input} onPress={() => {
@@ -1003,30 +1003,31 @@ export default function RecordScreen() {
         </View>
       </ScrollView>
 
-      {/* Fixed footer with submit button */}
-      <View style={styles.buttonBlock}>
-        <TouchableOpacity
-          style={[
-            styles.button,
-            isEditMode && styles.buttonEdit,
-            isSending && styles.buttonDisabled
-          ]}
-          onPress={handleSubmit}
-          disabled={isSending}
-        >
-          <Text style={styles.buttonText}>{submitButtonText}</Text>
-        </TouchableOpacity>
+      {/* New pulls submit via the keyboard's Go key — no footer button, which
+          keeps the info box + form visible above the keyboard. Edit mode keeps
+          Submit + Cancel (it has no info box and needs a back-out). */}
+      {isEditMode && (
+        <View style={styles.buttonBlock}>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              styles.buttonEdit,
+              isSending && styles.buttonDisabled
+            ]}
+            onPress={handleSubmit}
+            disabled={isSending}
+          >
+            <Text style={styles.buttonText}>{submitButtonText}</Text>
+          </TouchableOpacity>
 
-        {/* Cancel button for edit mode */}
-        {isEditMode && (
           <TouchableOpacity
             style={styles.cancelButton}
             onPress={() => router.back()}
           >
             <Text style={styles.cancelButtonText}>{t('recordExtra.cancel')}</Text>
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      )}
 
       {/* iOS Date Picker Modal */}
       {Platform.OS === 'ios' && showDatePicker && (
@@ -1173,11 +1174,11 @@ const styles = StyleSheet.create({
     borderRadius: hp('1%'),
     borderWidth: 1,
     borderColor: '#374151',
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
   },
   statusLine: {
-    marginBottom: spacing.xs,
+    marginBottom: spacing.xs / 2,
   },
   statusLabel: {
     color: '#9CA3AF',
@@ -1188,7 +1189,7 @@ const styles = StyleSheet.create({
     fontSize: hp('1.6%'),
     fontWeight: '600',
   },
-  section: { marginBottom: spacing.md },
+  section: { marginBottom: spacing.sm },
   label: {
     fontSize: hp('1.7%'),
     color: '#9CA3AF',

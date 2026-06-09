@@ -640,7 +640,12 @@ export default function HistoryScreen() {
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          // Android needs a real behavior too — `undefined` is a no-op there, so the
+          // bottom-anchored sheet never rose and the keyboard covered the lower
+          // results + Cancel. 'height' shrinks the avoiding view by the keyboard so
+          // the sheet lifts above it.
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
         >
           <TouchableOpacity
             style={styles.modalOverlayTouchable}
@@ -672,7 +677,11 @@ export default function HistoryScreen() {
                 )}
               </View>
 
-              <ScrollView style={styles.allWellsScroll} keyboardShouldPersistTaps="handled">
+              <ScrollView
+                style={styles.allWellsScroll}
+                contentContainerStyle={{ paddingBottom: spacing.md }}
+                keyboardShouldPersistTaps="handled"
+              >
                 {allConfigWells
                   .filter(well =>
                     wellSearchText.length === 0 ||
@@ -1284,7 +1293,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   allWellsScroll: {
-    maxHeight: hp("50%"),
+    maxHeight: hp("40%"),
   },
   allWellsOption: {
     flexDirection: "row",

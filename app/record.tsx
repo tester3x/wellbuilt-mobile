@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -224,6 +225,11 @@ export default function RecordScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const barrelsInputY = useRef<number>(0);
   const isBarrelsFocused = useRef<boolean>(false);
+  // Keyboard-aware scroll: track current offset + which field is focused so we
+  // can scroll by the MEASURED overlap (never a device-specific constant).
+  const scrollYRef = useRef<number>(0);
+  const focusedFieldRef = useRef<TextInput | null>(null);
+  const { height: winHeight } = useWindowDimensions();
   const hasDraftLoaded = useRef<boolean>(false);
   // Original displayed minute when entering edit mode. If the user submits
   // without changing the displayed minute we suppress dateTimeUTC/dateTime in
@@ -370,39 +376,51 @@ export default function RecordScreen() {
     }
   }, [isEditMode, editDateTime, editLevel, editBbls, editWellDown]);
 
-  // Handle barrels input focus - scroll to show it when focused
+  // Record which field is focused so the keyboard-show handler can measure it.
   const handleBarrelsFocus = () => {
-    console.log('[Record] Barrels input focused, Y:', barrelsInputY.current);
     isBarrelsFocused.current = true;
-    // Slight delay to let keyboard animation start
-    setTimeout(() => {
-      // Scroll enough to show barrels section + bottom hint + submit button above keyboard
-      // Need extra scroll to account for the hint appearing when user types
-      const scrollOffset = 180;
-      console.log('[Record] Scrolling to:', scrollOffset);
-      scrollViewRef.current?.scrollTo({ y: scrollOffset, animated: true });
-    }, 100);
+    focusedFieldRef.current = barrelsRef.current;
   };
 
   const handleBarrelsBlur = () => {
-    console.log('[Record] Barrels input blurred');
     isBarrelsFocused.current = false;
   };
 
-  // Handle keyboard hide - scroll back to top
+  const handleLevelFocus = () => {
+    focusedFieldRef.current = levelRef.current;
+  };
+
+  // Keyboard-aware scroll. On show, measure the focused field and scroll up by
+  // EXACTLY the amount it overlaps the keyboard — never more. On a screen with
+  // room (e.g. tall foldable cover) the overlap is <= 0, so nothing moves and
+  // the info box stays put; on a short screen (e.g. iPhone SE) it nudges just
+  // enough to reveal the field. On hide, restore the top so the info box
+  // returns. Per-platform events + real keyboard height → no device constants.
   useEffect(() => {
-    const keyboardDidHide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        console.log('[Record] Keyboard hidden, scrolling to top');
-        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-      }
-    );
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e: any) => {
+      const kbH = e?.endCoordinates?.height || 0;
+      const field = focusedFieldRef.current;
+      if (!kbH || !field) return;
+      setTimeout(() => {
+        field.measureInWindow((_x: number, y: number, _w: number, h: number) => {
+          const overlap = (y + h + 16) - (winHeight - kbH); // field bottom vs keyboard top (+16 margin)
+          if (overlap > 0) {
+            scrollViewRef.current?.scrollTo({ y: scrollYRef.current + overlap, animated: true });
+          }
+        });
+      }, 50);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    });
 
     return () => {
-      keyboardDidHide.remove();
+      showSub.remove();
+      hideSub.remove();
     };
-  }, []);
+  }, [winHeight]);
 
   // Load well status data (only for new pulls, not edits)
   useEffect(() => {
@@ -848,6 +866,8 @@ export default function RecordScreen() {
         contentContainerStyle={styles.contentContainer}
         keyboardShouldPersistTaps="handled"
         bounces={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => { scrollYRef.current = e.nativeEvent.contentOffset.y; }}
       >
         {/* Edit mode banner */}
         {isEditMode && (
@@ -947,6 +967,7 @@ export default function RecordScreen() {
             returnKeyType="next"
             blurOnSubmit={false}
             onSubmitEditing={() => barrelsRef.current?.focus()}
+            onFocus={handleLevelFocus}
             autoCapitalize="none"
             autoCorrect={false}
             selectTextOnFocus={isEditMode}

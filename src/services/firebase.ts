@@ -892,16 +892,25 @@ export const requestWellHistory = async (
       });
     }
 
-    // Apply limit
-    const limitedRows = rows.slice(0, limit);
+    // Reject rows that can't render (empty date / unparseable level / empty bbls)
+    // BEFORE applying the limit, so a bad packet is skipped over instead of eating
+    // a slot — the next good pull backfills it. Drivers always see a full page of
+    // real pulls, and totalRows reflects the count of GOOD pulls (drives the
+    // 20/35/50 button states). Mirrors the validity check in well-data.tsx.
+    const renderableRows = rows.filter((r) =>
+      !!(r.dateTime && r.dateTime.trim()) &&
+      !!(r.topLevel && /\d+'/.test(r.topLevel)) &&
+      !!(r.bbls && String(r.bbls).trim())
+    );
+    const limitedRows = renderableRows.slice(0, limit);
 
-    console.log(`[WellHistory] Found ${rows.length} total rows, returning ${limitedRows.length}`);
+    console.log(`[WellHistory] ${rows.length} built, ${renderableRows.length} renderable, returning ${limitedRows.length}`);
 
     return {
       wellName,
       rows: limitedRows,
       rowCount: limitedRows.length,
-      totalRows: rows.length,
+      totalRows: renderableRows.length,
       status: "success",
       errorMessage: undefined,
       timestamp: new Date().toLocaleString(),

@@ -101,8 +101,11 @@ export default function WellDataScreen() {
       });
       console.log("[WellData] Received", response.rows?.length, "rows, filtered to", validRows.length, "valid rows");
       setCachedRows(validRows);
-      // Track total valid rows for button states
-      setTotalRowsAvailable(validRows.length);
+      // Track total rows AVAILABLE in the DB for button states (20/35/50), not
+      // the count that survived the local validity filter on the fetched page.
+      // response.totalRows is the well's true pull count; gating on validRows
+      // wrongly greyed out 50 on wells with hundreds of pulls (e.g. Atlas = 540).
+      setTotalRowsAvailable(response.totalRows);
       setHasFetched(true);
     } catch (err) {
       console.error("[WellData] Error:", err);

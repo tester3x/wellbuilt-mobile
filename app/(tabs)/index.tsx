@@ -34,7 +34,7 @@ import Animated, {
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
-import { getWellConfig, WellConfig, loadWellConfig, fetchDriverRouteAssignment, filterWellConfigByAssignment } from '../../src/services/wellConfig';
+import { getWellConfig, WellConfig, loadWellConfig, fetchDriverRouteAssignment, filterWellConfigByAssignment, getBblPerFootSync } from '../../src/services/wellConfig';
 import {
   getLevelSnapshot,
   getPendingPull,
@@ -406,8 +406,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       const pull = await getWellPull(wellName);
       setPullRecord(pull);
 
-      // Calculate bblsPerFoot for level calculations
-      const bblsPerFoot = (config?.numTanks ?? 1) * 20;
+      // Calculate bblsPerFoot for level calculations — use the Dashboard-saved
+      // effective bbl/ft (same source of truth as Record Load), not 20×tanks.
+      const bblsPerFoot = getBblPerFootSync(wellName);
 
       // Build lastPullInfo - prefer snapshot data from VBA (has levels directly)
       let lastPullDateTime = '';
@@ -470,7 +471,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         // 2. Clears pending pull (clearPendingPull)
         // 3. Notifies listeners → refreshTrigger bumps → loadData re-runs
         // On re-run, pending is null → falls into else branch below
-        const bblPerFoot = (config?.numTanks ?? 1) * 20;
+        const bblPerFoot = getBblPerFootSync(wellName);
         const topLevel = pending.topLevel || 10;
         const targetLevel = pending.wellDown ? topLevel : Math.max(topLevel - (pending.bblsTaken / bblPerFoot), 0);
 
@@ -753,8 +754,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const numTanks = wellConfig?.numTanks ?? 1;
   const currentLevelDisplay = formatFeetInches(displayFeet);
   
-  // BBLs per foot based on number of tanks (20 bbl/ft per tank)
-  const bblsPerFoot = numTanks * 20;
+  // BBLs per foot — Dashboard-saved effective bbl/ft (override or derived from
+  // capacity/height/activeTanks), same source of truth as Record Load.
+  const bblsPerFoot = getBblPerFootSync(wellName);
   
   // Calculate BBLs available (from current level down to load line)
   const loadLine = wellConfig?.loadLine ?? 0;

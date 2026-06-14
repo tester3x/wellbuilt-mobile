@@ -431,9 +431,13 @@ export default function RecordScreen() {
       const config = await getWellConfig(wellName);
       const snapshot = await getLevelSnapshot(wellName);
 
-      // Set bblPerFoot from config
-      const numTanks = config?.numTanks ?? 1;
-      const bblPerFt = numTanks * 20;
+      // Effective bbl/ft — consume the Dashboard-saved well_config.bblPerFoot
+      // (override if set, else derived from capacity/height/activeTanks) via the
+      // SAME helper the save path uses, so the displayed bottom matches what gets
+      // persisted. Falls back to legacy 20×tanks only when well_config has no
+      // bblPerFoot. Previously hardcoded numTanks×20, which ignored the saved
+      // value (e.g. GS3 showed 40 instead of 60 bbl/ft).
+      const bblPerFt = await getBblPerFoot(wellName);
       setBblPerFoot(bblPerFt);
 
       // Skip status display for edit mode - we're editing existing data

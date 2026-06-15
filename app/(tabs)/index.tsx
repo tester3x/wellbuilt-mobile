@@ -948,12 +948,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Alive-tank cosmetic styles — read waterFraction for ALIGNMENT only; the
   // blue fill height/math is the waterStyle above and is never modified here.
   const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
-  // Surface ripple — a tiny stylized wave-crest texture at the very top of the
-  // water. Two interlocking rows of faint scallops gently offset up/down out of
-  // phase (very small, ~±0.7px). Calm water-top texture, not a moving line.
-  // Float bob stays vertical (floating things bob).
-  const rippleRowAStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 1.4 }] }));
-  const rippleRowBStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(wavePhase.value - 0.5) * 1.4 }] }));
+  // Surface ripple — small BLUE wave crests sitting AT the water surface that
+  // break the flat top edge. Same blue as the fill, so only the part cresting
+  // above the edge shows (against the dark interior). Two interlocking rows
+  // gently rise/fall out of phase (~±1px). Float bob stays vertical.
+  const rippleRowAStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 2 }] }));
+  const rippleRowBStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(wavePhase.value - 0.5) * 2 }] }));
   const floatBobStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 5 }] }));      // ~±2.5px
   // Fish: movement (sine translateX) on the outer wrapper, facing (scaleX, from
   // the sign of the velocity = cos of the same phase) on the inner glyph — so
@@ -1031,15 +1031,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 critter. Overlays the water (bottom-anchored, same height), clipped
                 to the interior, pointer-events off. Never affects tank math. */}
             <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
-              {/* Surface ripple — stylized wave-crest texture clipped to the water top */}
-              <View pointerEvents="none" style={styles.aliveRippleBand}>
-                <Animated.View style={[styles.aliveWaveRow, rippleRowAStyle]}>
-                  {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.aliveWaveHump} />)}
-                </Animated.View>
-                <Animated.View style={[styles.aliveWaveRow, styles.aliveWaveRowB, rippleRowBStyle]}>
-                  {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.aliveWaveHump} />)}
-                </Animated.View>
-              </View>
+              {/* Surface ripple — blue wave crests that break the flat water edge */}
+              <Animated.View style={[styles.aliveWaveRow, rippleRowAStyle]}>
+                {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.aliveWaveHump} />)}
+              </Animated.View>
+              <Animated.View style={[styles.aliveWaveRow, styles.aliveWaveRowB, rippleRowBStyle]}>
+                {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.aliveWaveHump} />)}
+              </Animated.View>
               {showFish && (
                 <>
                   <Animated.View style={[styles.aliveFishWrap, { top: `${fa.topPct}%`, left: `${fa.leftPct}%` }, fishMoveA]}>
@@ -2565,31 +2563,22 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
-  aliveRippleBand: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 9, // top few pixels of the water only
-    overflow: 'hidden',
-  },
   aliveWaveRow: {
     position: 'absolute',
-    top: 0,
+    top: -3,   // base sits at the water surface; crest rises ~3px above the flat edge
     left: 0,
     flexDirection: 'row',
   },
   aliveWaveRowB: {
-    top: 2,
-    left: -6, // half-hump stagger so the two rows interlock
+    top: -2,
+    left: -8,  // half-hump stagger so the two rows interlock
   },
   aliveWaveHump: {
-    width: 12,
-    height: 6,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    borderTopWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.10)', // faint wave-crest scallop
+    width: 16,
+    height: 5,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    backgroundColor: '#2563EB', // SAME blue as the fill — only the crest above the flat edge shows
   },
   aliveFishWrap: {
     position: 'absolute',

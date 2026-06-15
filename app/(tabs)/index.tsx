@@ -964,13 +964,23 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       <View style={styles.statsSection}>
         <Pressable
           onPress={() => {
-            // Single tap peeks effective tank math (bbl/in • bbl/ft) for ~4s,
-            // then auto-reverts to time/in • time/ft. Tapping again while shown
-            // restarts the timer (no flicker). Available on all wells.
+            // Tap to peek effective tank math (bbl/in • bbl/ft); tap again to
+            // switch back immediately. Auto-reverts to time/in • time/ft after
+            // ~4s if left open. Available on all wells.
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowTankMath(true);
-            if (tankMathTimerRef.current) clearTimeout(tankMathTimerRef.current);
-            tankMathTimerRef.current = setTimeout(() => setShowTankMath(false), 4000);
+            // Always clear any pending revert first — no stacked timers.
+            if (tankMathTimerRef.current) {
+              clearTimeout(tankMathTimerRef.current);
+              tankMathTimerRef.current = null;
+            }
+            if (showTankMath) {
+              // Already open → dismiss immediately.
+              setShowTankMath(false);
+            } else {
+              // Open + start a fresh ~4s auto-revert.
+              setShowTankMath(true);
+              tankMathTimerRef.current = setTimeout(() => setShowTankMath(false), 4000);
+            }
           }}
         >
           <View style={styles.statsRow}>

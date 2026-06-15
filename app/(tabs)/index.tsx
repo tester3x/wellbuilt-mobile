@@ -101,6 +101,9 @@ const INTERIOR_WIDTH = TANK_WIDTH - INTERIOR_LEFT - INTERIOR_RIGHT; // for alive
 // DEV ONLY — force a specific alive-tank egg for local Expo testing so rare
 // spawns don't require reopening wells dozens of times. MUST stay null in commits.
 const FORCE_EGG: 'fish' | 'fisherman' | 'duck' | null = null;
+// Stylized water-top ripple texture — number of wave-crest scallops to tile
+// across the interior (clipped to the water). Precomputed once.
+const RIPPLE_HUMPS = Array.from({ length: Math.ceil(INTERIOR_WIDTH / 12) + 3 }, (_, i) => i);
 const NUMBER_OFFSET = isTablet ? TANK_HEIGHT * 0.025 : SCREEN_HEIGHT * 0.015;
 
 // Responsive font sizing - tablets get scaled down to prevent oversized text
@@ -945,10 +948,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Alive-tank cosmetic styles — read waterFraction for ALIGNMENT only; the
   // blue fill height/math is the waterStyle above and is never modified here.
   const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
-  // Surface ripple — two faint glints drift horizontally near the edges (no
-  // vertical "breathing" line). Float bob stays vertical (floating things bob).
-  const rippleStyleA = useAnimatedStyle(() => ({ transform: [{ translateX: wavePhase.value * INTERIOR_WIDTH * 0.28 }] }));
-  const rippleStyleB = useAnimatedStyle(() => ({ transform: [{ translateX: -wavePhase.value * INTERIOR_WIDTH * 0.28 }] }));
+  // Surface ripple — a tiny stylized wave-crest texture at the very top of the
+  // water. Two interlocking rows of faint scallops gently offset up/down out of
+  // phase (very small, ~±0.7px). Calm water-top texture, not a moving line.
+  // Float bob stays vertical (floating things bob).
+  const rippleRowAStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 1.4 }] }));
+  const rippleRowBStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(wavePhase.value - 0.5) * 1.4 }] }));
   const floatBobStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 5 }] }));      // ~±2.5px
   // Fish: movement (sine translateX) on the outer wrapper, facing (scaleX, from
   // the sign of the velocity = cos of the same phase) on the inner glyph — so
@@ -1026,10 +1031,15 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 critter. Overlays the water (bottom-anchored, same height), clipped
                 to the interior, pointer-events off. Never affects tank math. */}
             <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
-              {/* Surface ripple — static water edge + faint glints drifting horizontally */}
-              <View style={styles.aliveSurfaceLine} />
-              <Animated.View style={[styles.aliveRipple, { left: '6%' }, rippleStyleA]} />
-              <Animated.View style={[styles.aliveRipple, { right: '6%' }, rippleStyleB]} />
+              {/* Surface ripple — stylized wave-crest texture clipped to the water top */}
+              <View pointerEvents="none" style={styles.aliveRippleBand}>
+                <Animated.View style={[styles.aliveWaveRow, rippleRowAStyle]}>
+                  {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.aliveWaveHump} />)}
+                </Animated.View>
+                <Animated.View style={[styles.aliveWaveRow, styles.aliveWaveRowB, rippleRowBStyle]}>
+                  {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.aliveWaveHump} />)}
+                </Animated.View>
+              </View>
               {showFish && (
                 <>
                   <Animated.View style={[styles.aliveFishWrap, { top: `${fa.topPct}%`, left: `${fa.leftPct}%` }, fishMoveA]}>
@@ -2555,21 +2565,31 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
-  aliveSurfaceLine: {
+  aliveRippleBand: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.09)', // faint static water edge (no breathing)
+    height: 9, // top few pixels of the water only
+    overflow: 'hidden',
   },
-  aliveRipple: {
+  aliveWaveRow: {
     position: 'absolute',
     top: 0,
-    width: '26%',
-    height: 1.5,
-    borderRadius: 1,
-    backgroundColor: 'rgba(255,255,255,0.11)', // faint glint that drifts horizontally
+    left: 0,
+    flexDirection: 'row',
+  },
+  aliveWaveRowB: {
+    top: 2,
+    left: -6, // half-hump stagger so the two rows interlock
+  },
+  aliveWaveHump: {
+    width: 12,
+    height: 6,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    borderTopWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.10)', // faint wave-crest scallop
   },
   aliveFishWrap: {
     position: 'absolute',

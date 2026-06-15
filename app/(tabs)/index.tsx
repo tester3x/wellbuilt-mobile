@@ -98,6 +98,9 @@ const INTERIOR_TOP = tankDims.interiorTop;
 const INTERIOR_BOTTOM = tankDims.interiorBottom;
 const INTERIOR_HEIGHT = tankDims.interiorHeight;
 const INTERIOR_WIDTH = TANK_WIDTH - INTERIOR_LEFT - INTERIOR_RIGHT; // for alive-tank fish drift
+// DEV ONLY — force a specific alive-tank egg for local Expo testing so rare
+// spawns don't require reopening wells dozens of times. MUST stay null in commits.
+const FORCE_EGG: 'fish' | 'fisherman' | 'duck' | null = null;
 const NUMBER_OFFSET = isTablet ? TANK_HEIGHT * 0.025 : SCREEN_HEIGHT * 0.015;
 
 // Responsive font sizing - tablets get scaled down to prevent oversized text
@@ -319,6 +322,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // per mount and kept stable for the session (no rerolling on refresh).
   const wavePhase = useSharedValue(0); // 0↔1 slow loop → surface bob + float bob
   const swim = useSharedValue(0);      // 0↔1 slow loop → fish horizontal drift
+  const swimDir = useSharedValue(0);   // -1 = swimming left, +1 = right (sign of swim velocity)
   const aliveEggRef = useRef<{ kind: 'none' | 'fish' | 'fisherman' | 'duck'; fishCount: number } | null>(null);
   if (aliveEggRef.current === null) {
     const r = Math.random();
@@ -328,6 +332,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     else if (r < 0.99) kind = 'fisherman';  // 3%
     else if (r < 0.998) kind = 'duck';      // 0.8%
     else kind = 'none';                      // 0.2% ultra-rare → reserved (not built)
+    if (FORCE_EGG) kind = FORCE_EGG;        // dev-only override (null in commits)
     aliveEggRef.current = { kind, fishCount: kind === 'fish' ? 1 + Math.floor(Math.random() * 3) : 0 };
   }
   const aliveEgg = aliveEggRef.current;
@@ -345,6 +350,17 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     swim.value = withRepeat(withTiming(1, { duration: 7000, easing: Easing.inOut(Easing.ease) }), -1, true);
     return () => cancelAnimation(swim);
   }, [isActive, aliveEgg.kind, swim]);
+
+  // Track swim travel direction so fish face the way they move (no moonwalking).
+  useAnimatedReaction(
+    () => swim.value,
+    (cur, prev) => {
+      if (prev == null) return;
+      if (cur > prev) swimDir.value = 1;       // position increasing → traveling right
+      else if (cur < prev) swimDir.value = -1; // decreasing → traveling left
+    },
+    [swim],
+  );
 
   // Handle animation when well becomes active - separate effect to ensure proper ordering
   useEffect(() => {
@@ -916,9 +932,15 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
   const surfaceWaveStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 4 }] }));   // ~±2px
   const floatBobStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 5 }] }));      // ~±2.5px
-  const fishStyleA = useAnimatedStyle(() => ({ transform: [{ translateX: (swim.value - 0.5) * INTERIOR_WIDTH * 0.45 }] }));
-  const fishStyleB = useAnimatedStyle(() => ({ transform: [{ translateX: -(swim.value - 0.5) * INTERIOR_WIDTH * 0.36 }] }));
-  const fishStyleC = useAnimatedStyle(() => ({ transform: [{ translateX: (swim.value - 0.5) * INTERIOR_WIDTH * 0.52 }] }));
+  // Movement (translateX) lives on the outer wrapper; facing (scaleX) on the
+  // inner glyph — so flipping the fish to face its travel direction can never
+  // affect its position. 🐟 faces left by default → flip to -1 when moving right.
+  // Fish A/C drift with +coeff (velocity sign = swimDir); B with −coeff.
+  const fishMoveA = useAnimatedStyle(() => ({ transform: [{ translateX: (swim.value - 0.5) * INTERIOR_WIDTH * 0.45 }] }));
+  const fishMoveB = useAnimatedStyle(() => ({ transform: [{ translateX: -(swim.value - 0.5) * INTERIOR_WIDTH * 0.36 }] }));
+  const fishMoveC = useAnimatedStyle(() => ({ transform: [{ translateX: (swim.value - 0.5) * INTERIOR_WIDTH * 0.52 }] }));
+  const fishFaceFwd = useAnimatedStyle(() => ({ transform: [{ scaleX: swimDir.value > 0 ? -1 : 1 }] }));  // +coeff fish
+  const fishFaceRev = useAnimatedStyle(() => ({ transform: [{ scaleX: swimDir.value > 0 ? 1 : -1 }] }));  // −coeff fish
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
   const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
@@ -987,12 +1009,18 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               <Animated.View style={[styles.aliveSurface, surfaceWaveStyle]} />
               {showFish && (
                 <>
-                  <Animated.Text style={[styles.aliveFish, { top: '36%', left: '14%' }, fishStyleA]}>🐟</Animated.Text>
+                  <Animated.View style={[styles.aliveFishWrap, { top: '36%', left: '14%' }, fishMoveA]}>
+                    <Animated.Text style={[styles.aliveFishGlyph, fishFaceFwd]}>🐟</Animated.Text>
+                  </Animated.View>
                   {aliveEgg.fishCount > 1 && (
-                    <Animated.Text style={[styles.aliveFish, { top: '58%', left: '40%' }, fishStyleB]}>🐟</Animated.Text>
+                    <Animated.View style={[styles.aliveFishWrap, { top: '58%', left: '40%' }, fishMoveB]}>
+                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceRev]}>🐟</Animated.Text>
+                    </Animated.View>
                   )}
                   {aliveEgg.fishCount > 2 && (
-                    <Animated.Text style={[styles.aliveFish, { top: '72%', left: '22%' }, fishStyleC]}>🐟</Animated.Text>
+                    <Animated.View style={[styles.aliveFishWrap, { top: '72%', left: '22%' }, fishMoveC]}>
+                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceFwd]}>🐟</Animated.Text>
+                    </Animated.View>
                   )}
                 </>
               )}
@@ -2512,8 +2540,10 @@ const styles = StyleSheet.create({
     height: 1.5,
     backgroundColor: 'rgba(255,255,255,0.16)', // faint surface shimmer line
   },
-  aliveFish: {
+  aliveFishWrap: {
     position: 'absolute',
+  },
+  aliveFishGlyph: {
     fontSize: 11,
     opacity: 0.3,
   },

@@ -1027,17 +1027,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               <Animated.View style={[styles.tankWater, waterStyle]} />
             </View>
 
-            {/* Alive-tank cosmetic layer — subtle surface motion + a rare hidden
-                critter. Overlays the water (bottom-anchored, same height), clipped
-                to the interior, pointer-events off. Never affects tank math. */}
+            {/* Submerged critters (fish) — clipped to the water region so they
+                stay inside the water. pointer-events off. Never affects tank math. */}
             <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
-              {/* Surface ripple — blue wave crests that break the flat water edge */}
-              <Animated.View style={[styles.aliveWaveRow, rippleRowAStyle]}>
-                {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.aliveWaveHump} />)}
-              </Animated.View>
-              <Animated.View style={[styles.aliveWaveRow, styles.aliveWaveRowB, rippleRowBStyle]}>
-                {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.aliveWaveHump} />)}
-              </Animated.View>
               {showFish && (
                 <>
                   <Animated.View style={[styles.aliveFishWrap, { top: `${fa.topPct}%`, left: `${fa.leftPct}%` }, fishMoveA]}>
@@ -1055,11 +1047,24 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                   )}
                 </>
               )}
+            </Animated.View>
+
+            {/* Surface layer — NOT clipped (so the wave crests show ABOVE the flat
+                blue edge; an overflow-hidden layer was eating them). Holds the
+                ripple crests + any floating critter, placed OFF-CENTRE so it never
+                sits behind the level text. Clipped only by the tank interior. */}
+            <Animated.View pointerEvents="none" style={[styles.aliveSurfaceLayer, aliveLayerStyle]}>
+              <Animated.View style={[styles.aliveWaveRow, rippleRowAStyle]}>
+                {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.aliveWaveHump} />)}
+              </Animated.View>
+              <Animated.View style={[styles.aliveWaveRow, styles.aliveWaveRowB, rippleRowBStyle]}>
+                {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.aliveWaveHump} />)}
+              </Animated.View>
               {showFloat && aliveEgg.kind === 'duck' && (
-                <Animated.Text style={[styles.aliveFloat, { left: '46%' }, floatBobStyle]}>🦆</Animated.Text>
+                <Animated.Text style={[styles.aliveFloat, { left: '22%' }, floatBobStyle]}>🦆</Animated.Text>
               )}
               {showFloat && aliveEgg.kind === 'fisherman' && (
-                <Animated.Text style={[styles.aliveFloat, { left: '44%' }, floatBobStyle]}>🎣</Animated.Text>
+                <Animated.Text style={[styles.aliveFloat, { left: '22%' }, floatBobStyle]}>🎣</Animated.Text>
               )}
             </Animated.View>
 
@@ -2555,13 +2560,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563EB',
     width: '100%',
   },
-  // Alive-tank cosmetic layer — overlays the water (bottom-anchored), clipped.
+  // Alive-tank layers — both overlay the water (bottom-anchored, water height).
+  // aliveLayer CLIPS (submerged fish stay in the water); aliveSurfaceLayer does
+  // NOT clip, so wave crests / floats can sit at and above the surface line.
   aliveLayer: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
     overflow: 'hidden',
+  },
+  aliveSurfaceLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   aliveWaveRow: {
     position: 'absolute',

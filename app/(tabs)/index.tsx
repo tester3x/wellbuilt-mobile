@@ -279,11 +279,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const [sliderUIActive, setSliderUIActive] = useState(false); // Controls slider level/datetime visibility
   const [sliderLocked, setSliderLocked] = useState(true); // Slider locked state
   const [sliderPeeking, setSliderPeeking] = useState(false); // Tap to peek values without unlocking
+  const [showTankMath, setShowTankMath] = useState(false); // Tap first metrics row → peek bbl/in • bbl/ft (~4s, all wells)
   // showOvernightBbls is now a prop from MainScreen (global toggle)
   const hasAnimated = useRef(false);
   const prevIsActive = useRef(isActive);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
   const lastTapTimeRef = useRef<number>(0); // For double-tap detection on slider
   const lastTankTapTimeRef = useRef<number>(0); // For double-tap detection on tank
   const sliderOpacity = useSharedValue(0); // For fade animation
@@ -292,6 +294,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const SLIDER_LOCK_DELAY = 5000; // 5 seconds of inactivity to lock
   const DOUBLE_TAP_DELAY = 300; // Max ms between taps for double-tap
   const PEEK_DURATION = 3000; // 3 seconds to show values on single tap
+
+  // Clear the tank-math peek timer on unmount
+  useEffect(() => () => { if (tankMathTimerRef.current) clearTimeout(tankMathTimerRef.current); }, []);
   
   // Pending pull / waiting state
   const [pendingPull, setPendingPull] = useState<PendingPull | null>(null);
@@ -957,11 +962,33 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
       {/* Quick stats */}
       <View style={styles.statsSection}>
-        <View style={styles.statsRow}>
-          <Text style={styles.statLeft}>{oneInchFlow}{t('units.perInch')}</Text>
-          <Text style={styles.statDivider}>•</Text>
-          <Text style={styles.statRight}>{formatFlowRate(flowRate)}{t('units.perFoot')}</Text>
-        </View>
+        <Pressable
+          onPress={() => {
+            // Single tap peeks effective tank math (bbl/in • bbl/ft) for ~4s,
+            // then auto-reverts to time/in • time/ft. Tapping again while shown
+            // restarts the timer (no flicker). Available on all wells.
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setShowTankMath(true);
+            if (tankMathTimerRef.current) clearTimeout(tankMathTimerRef.current);
+            tankMathTimerRef.current = setTimeout(() => setShowTankMath(false), 4000);
+          }}
+        >
+          <View style={styles.statsRow}>
+            {showTankMath ? (
+              <>
+                <Text style={styles.statLeft}>{(bblsPerFoot / 12).toFixed(2)} {t('units.bbl')}{t('units.perInch')}</Text>
+                <Text style={styles.statDivider}>•</Text>
+                <Text style={styles.statRight}>{bblsPerFoot.toFixed(1)} {t('units.bbl')}{t('units.perFoot')}</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.statLeft}>{oneInchFlow}{t('units.perInch')}</Text>
+                <Text style={styles.statDivider}>•</Text>
+                <Text style={styles.statRight}>{formatFlowRate(flowRate)}{t('units.perFoot')}</Text>
+              </>
+            )}
+          </View>
+        </Pressable>
         <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

@@ -29,6 +29,7 @@ import Animated, {
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
@@ -96,6 +97,7 @@ const INTERIOR_RIGHT = tankDims.interiorRight;
 const INTERIOR_TOP = tankDims.interiorTop;
 const INTERIOR_BOTTOM = tankDims.interiorBottom;
 const INTERIOR_HEIGHT = tankDims.interiorHeight;
+const INTERIOR_WIDTH = TANK_WIDTH - INTERIOR_LEFT - INTERIOR_RIGHT; // for alive-tank fish drift
 const NUMBER_OFFSET = isTablet ? TANK_HEIGHT * 0.025 : SCREEN_HEIGHT * 0.015;
 
 // Responsive font sizing - tablets get scaled down to prevent oversized text
@@ -311,6 +313,38 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
   // MUST declare waterFraction before effects that use it
   const waterFraction = useSharedValue(0);
+
+  // ── Alive-tank easter egg (cosmetic only — never touches tank math) ──
+  // Subtle surface motion is always on. A rare hidden critter is decided ONCE
+  // per mount and kept stable for the session (no rerolling on refresh).
+  const wavePhase = useSharedValue(0); // 0↔1 slow loop → surface bob + float bob
+  const swim = useSharedValue(0);      // 0↔1 slow loop → fish horizontal drift
+  const aliveEggRef = useRef<{ kind: 'none' | 'fish' | 'fisherman' | 'duck'; fishCount: number } | null>(null);
+  if (aliveEggRef.current === null) {
+    const r = Math.random();
+    let kind: 'none' | 'fish' | 'fisherman' | 'duck' = 'none';
+    if (r < 0.88) kind = 'none';            // 88% nothing
+    else if (r < 0.96) kind = 'fish';       // 8%
+    else if (r < 0.99) kind = 'fisherman';  // 3%
+    else if (r < 0.998) kind = 'duck';      // 0.8%
+    else kind = 'none';                      // 0.2% ultra-rare → reserved (not built)
+    aliveEggRef.current = { kind, fishCount: kind === 'fish' ? 1 + Math.floor(Math.random() * 3) : 0 };
+  }
+  const aliveEgg = aliveEggRef.current;
+
+  // Always-on subtle surface motion (calm, slow). Only run on the active well.
+  useEffect(() => {
+    if (!isActive) { cancelAnimation(wavePhase); return; }
+    wavePhase.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.ease) }), -1, true);
+    return () => cancelAnimation(wavePhase);
+  }, [isActive, wavePhase]);
+
+  // Fish drift loop — only when a fish egg is present on the active well.
+  useEffect(() => {
+    if (!isActive || aliveEgg.kind !== 'fish') { cancelAnimation(swim); return; }
+    swim.value = withRepeat(withTiming(1, { duration: 7000, easing: Easing.inOut(Easing.ease) }), -1, true);
+    return () => cancelAnimation(swim);
+  }, [isActive, aliveEgg.kind, swim]);
 
   // Handle animation when well becomes active - separate effect to ensure proper ordering
   useEffect(() => {
@@ -876,6 +910,19 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const waterStyle = useAnimatedStyle(() => ({
     height: `${waterFraction.value * 100}%`,
   }));
+
+  // Alive-tank cosmetic styles — read waterFraction for ALIGNMENT only; the
+  // blue fill height/math is the waterStyle above and is never modified here.
+  const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
+  const surfaceWaveStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 4 }] }));   // ~±2px
+  const floatBobStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 5 }] }));      // ~±2.5px
+  const fishStyleA = useAnimatedStyle(() => ({ transform: [{ translateX: (swim.value - 0.5) * INTERIOR_WIDTH * 0.45 }] }));
+  const fishStyleB = useAnimatedStyle(() => ({ transform: [{ translateX: -(swim.value - 0.5) * INTERIOR_WIDTH * 0.36 }] }));
+  const fishStyleC = useAnimatedStyle(() => ({ transform: [{ translateX: (swim.value - 0.5) * INTERIOR_WIDTH * 0.52 }] }));
+  // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
+  const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
+  const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
+  const showFloat = (aliveEgg.kind === 'duck' || aliveEgg.kind === 'fisherman') && aliveWaterPct > 0.12;
   
   // Number floats half in/half out of water - positioned from TOP of interior
   const numberStyle = useAnimatedStyle(() => {
@@ -932,7 +979,31 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             <View style={styles.waterWrapper}>
               <Animated.View style={[styles.tankWater, waterStyle]} />
             </View>
-            
+
+            {/* Alive-tank cosmetic layer — subtle surface motion + a rare hidden
+                critter. Overlays the water (bottom-anchored, same height), clipped
+                to the interior, pointer-events off. Never affects tank math. */}
+            <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
+              <Animated.View style={[styles.aliveSurface, surfaceWaveStyle]} />
+              {showFish && (
+                <>
+                  <Animated.Text style={[styles.aliveFish, { top: '36%', left: '14%' }, fishStyleA]}>🐟</Animated.Text>
+                  {aliveEgg.fishCount > 1 && (
+                    <Animated.Text style={[styles.aliveFish, { top: '58%', left: '40%' }, fishStyleB]}>🐟</Animated.Text>
+                  )}
+                  {aliveEgg.fishCount > 2 && (
+                    <Animated.Text style={[styles.aliveFish, { top: '72%', left: '22%' }, fishStyleC]}>🐟</Animated.Text>
+                  )}
+                </>
+              )}
+              {showFloat && aliveEgg.kind === 'duck' && (
+                <Animated.Text style={[styles.aliveFloat, { left: '46%' }, floatBobStyle]}>🦆</Animated.Text>
+              )}
+              {showFloat && aliveEgg.kind === 'fisherman' && (
+                <Animated.Text style={[styles.aliveFloat, { left: '44%' }, floatBobStyle]}>🎣</Animated.Text>
+              )}
+            </Animated.View>
+
             <Animated.View style={[styles.numberContainer, numberStyle]}>
               <Text style={styles.tankNumber}>{currentLevelDisplay}</Text>
             </Animated.View>
@@ -2424,6 +2495,33 @@ const styles = StyleSheet.create({
   tankWater: {
     backgroundColor: '#2563EB',
     width: '100%',
+  },
+  // Alive-tank cosmetic layer — overlays the water (bottom-anchored), clipped.
+  aliveLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
+  aliveSurface: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.16)', // faint surface shimmer line
+  },
+  aliveFish: {
+    position: 'absolute',
+    fontSize: 11,
+    opacity: 0.3,
+  },
+  aliveFloat: {
+    position: 'absolute',
+    top: -7, // rides on the surface line
+    fontSize: 13,
+    opacity: 0.4,
   },
   tankBadge: {
     position: 'absolute',

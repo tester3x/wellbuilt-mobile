@@ -318,12 +318,17 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const waterFraction = useSharedValue(0);
 
   // ── Alive-tank easter egg (cosmetic only — never touches tank math) ──
-  // Subtle surface motion is always on. A rare hidden critter is decided ONCE
-  // per mount and kept stable for the session (no rerolling on refresh).
-  const wavePhase = useSharedValue(0); // 0↔1 slow loop → surface bob + float bob
-  const swim = useSharedValue(0);      // 0↔1 slow loop → fish horizontal drift
-  const swimDir = useSharedValue(0);   // -1 = swimming left, +1 = right (sign of swim velocity)
-  const aliveEggRef = useRef<{ kind: 'none' | 'fish' | 'fisherman' | 'duck'; fishCount: number } | null>(null);
+  // Subtle surface ripple is always on. A rare hidden critter is decided ONCE
+  // per mount and kept stable for the session (no rerolling on refresh); each
+  // fish also gets randomized depth / start / range / speed at the same time.
+  const wavePhase = useSharedValue(0); // 0↔1 slow loop → surface ripple glints + float bob
+  const swim = useSharedValue(0);      // 0→1 continuous loop → fish sine drift
+  const TWO_PI = Math.PI * 2;
+  const aliveEggRef = useRef<{
+    kind: 'none' | 'fish' | 'fisherman' | 'duck';
+    fishCount: number;
+    fish: { topPct: number; leftPct: number; freq: number; phase: number; rangePx: number }[];
+  } | null>(null);
   if (aliveEggRef.current === null) {
     const r = Math.random();
     let kind: 'none' | 'fish' | 'fisherman' | 'duck' = 'none';
@@ -333,34 +338,44 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     else if (r < 0.998) kind = 'duck';      // 0.8%
     else kind = 'none';                      // 0.2% ultra-rare → reserved (not built)
     if (FORCE_EGG) kind = FORCE_EGG;        // dev-only override (null in commits)
-    aliveEggRef.current = { kind, fishCount: kind === 'fish' ? 1 + Math.floor(Math.random() * 3) : 0 };
+    // Per-fish randomization, decided once. Depth stays in the LOWER water
+    // (below the surface level number) and the horizontal base avoids the centre
+    // column — so a fish never sits behind the level text. freq/phase/range vary
+    // so they don't look like the same slot every time.
+    const mkFish = () => {
+      const onLeft = Math.random() < 0.5;
+      const leftPct = onLeft ? 8 + Math.random() * 24 : 58 + Math.random() * 26; // 8–32% or 58–84%, never centre
+      return {
+        topPct: 46 + Math.random() * 32,                          // 46–78% depth (below the number)
+        leftPct,
+        freq: Math.random() < 0.5 ? 1 : 2,                        // slight speed variance
+        phase: Math.random() * TWO_PI,                            // random start position + direction
+        rangePx: INTERIOR_WIDTH * (0.12 + Math.random() * 0.16),  // ~12–28% travel
+      };
+    };
+    aliveEggRef.current = {
+      kind,
+      fishCount: kind === 'fish' ? 1 + Math.floor(Math.random() * 3) : 0,
+      fish: [mkFish(), mkFish(), mkFish()],
+    };
   }
   const aliveEgg = aliveEggRef.current;
 
-  // Always-on subtle surface motion (calm, slow). Only run on the active well.
+  // Always-on subtle surface ripple (calm, slow). Only run on the active well.
   useEffect(() => {
     if (!isActive) { cancelAnimation(wavePhase); return; }
     wavePhase.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.ease) }), -1, true);
     return () => cancelAnimation(wavePhase);
   }, [isActive, wavePhase]);
 
-  // Fish drift loop — only when a fish egg is present on the active well.
+  // Fish sine-drift loop — continuous phase; per-fish freq/phase shape the swim.
+  // Linear + non-reversing so sin() stays smooth across the wrap (integer freq).
   useEffect(() => {
     if (!isActive || aliveEgg.kind !== 'fish') { cancelAnimation(swim); return; }
-    swim.value = withRepeat(withTiming(1, { duration: 7000, easing: Easing.inOut(Easing.ease) }), -1, true);
+    swim.value = 0;
+    swim.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
     return () => cancelAnimation(swim);
   }, [isActive, aliveEgg.kind, swim]);
-
-  // Track swim travel direction so fish face the way they move (no moonwalking).
-  useAnimatedReaction(
-    () => swim.value,
-    (cur, prev) => {
-      if (prev == null) return;
-      if (cur > prev) swimDir.value = 1;       // position increasing → traveling right
-      else if (cur < prev) swimDir.value = -1; // decreasing → traveling left
-    },
-    [swim],
-  );
 
   // Handle animation when well becomes active - separate effect to ensure proper ordering
   useEffect(() => {
@@ -930,17 +945,22 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Alive-tank cosmetic styles — read waterFraction for ALIGNMENT only; the
   // blue fill height/math is the waterStyle above and is never modified here.
   const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
-  const surfaceWaveStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 4 }] }));   // ~±2px
+  // Surface ripple — two faint glints drift horizontally near the edges (no
+  // vertical "breathing" line). Float bob stays vertical (floating things bob).
+  const rippleStyleA = useAnimatedStyle(() => ({ transform: [{ translateX: wavePhase.value * INTERIOR_WIDTH * 0.28 }] }));
+  const rippleStyleB = useAnimatedStyle(() => ({ transform: [{ translateX: -wavePhase.value * INTERIOR_WIDTH * 0.28 }] }));
   const floatBobStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 5 }] }));      // ~±2.5px
-  // Movement (translateX) lives on the outer wrapper; facing (scaleX) on the
-  // inner glyph — so flipping the fish to face its travel direction can never
-  // affect its position. 🐟 faces left by default → flip to -1 when moving right.
-  // Fish A/C drift with +coeff (velocity sign = swimDir); B with −coeff.
-  const fishMoveA = useAnimatedStyle(() => ({ transform: [{ translateX: (swim.value - 0.5) * INTERIOR_WIDTH * 0.45 }] }));
-  const fishMoveB = useAnimatedStyle(() => ({ transform: [{ translateX: -(swim.value - 0.5) * INTERIOR_WIDTH * 0.36 }] }));
-  const fishMoveC = useAnimatedStyle(() => ({ transform: [{ translateX: (swim.value - 0.5) * INTERIOR_WIDTH * 0.52 }] }));
-  const fishFaceFwd = useAnimatedStyle(() => ({ transform: [{ scaleX: swimDir.value > 0 ? -1 : 1 }] }));  // +coeff fish
-  const fishFaceRev = useAnimatedStyle(() => ({ transform: [{ scaleX: swimDir.value > 0 ? 1 : -1 }] }));  // −coeff fish
+  // Fish: movement (sine translateX) on the outer wrapper, facing (scaleX, from
+  // the sign of the velocity = cos of the same phase) on the inner glyph — so
+  // the flip can never affect position. 🐟 faces left, so flip to -1 (face right)
+  // while moving right. Per-fish freq/phase/range come from the stable ref.
+  const fa = aliveEgg.fish[0], fb = aliveEgg.fish[1], fc = aliveEgg.fish[2];
+  const fishMoveA = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fa.freq + fa.phase) * fa.rangePx }] }));
+  const fishMoveB = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fb.freq + fb.phase) * fb.rangePx }] }));
+  const fishMoveC = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fc.freq + fc.phase) * fc.rangePx }] }));
+  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fa.freq + fa.phase) >= 0 ? -1 : 1 }] }));
+  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fb.freq + fb.phase) >= 0 ? -1 : 1 }] }));
+  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fc.freq + fc.phase) >= 0 ? -1 : 1 }] }));
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
   const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
@@ -1006,20 +1026,23 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 critter. Overlays the water (bottom-anchored, same height), clipped
                 to the interior, pointer-events off. Never affects tank math. */}
             <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
-              <Animated.View style={[styles.aliveSurface, surfaceWaveStyle]} />
+              {/* Surface ripple — static water edge + faint glints drifting horizontally */}
+              <View style={styles.aliveSurfaceLine} />
+              <Animated.View style={[styles.aliveRipple, { left: '6%' }, rippleStyleA]} />
+              <Animated.View style={[styles.aliveRipple, { right: '6%' }, rippleStyleB]} />
               {showFish && (
                 <>
-                  <Animated.View style={[styles.aliveFishWrap, { top: '36%', left: '14%' }, fishMoveA]}>
-                    <Animated.Text style={[styles.aliveFishGlyph, fishFaceFwd]}>🐟</Animated.Text>
+                  <Animated.View style={[styles.aliveFishWrap, { top: `${fa.topPct}%`, left: `${fa.leftPct}%` }, fishMoveA]}>
+                    <Animated.Text style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
                   </Animated.View>
                   {aliveEgg.fishCount > 1 && (
-                    <Animated.View style={[styles.aliveFishWrap, { top: '58%', left: '40%' }, fishMoveB]}>
-                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceRev]}>🐟</Animated.Text>
+                    <Animated.View style={[styles.aliveFishWrap, { top: `${fb.topPct}%`, left: `${fb.leftPct}%` }, fishMoveB]}>
+                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
                     </Animated.View>
                   )}
                   {aliveEgg.fishCount > 2 && (
-                    <Animated.View style={[styles.aliveFishWrap, { top: '72%', left: '22%' }, fishMoveC]}>
-                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceFwd]}>🐟</Animated.Text>
+                    <Animated.View style={[styles.aliveFishWrap, { top: `${fc.topPct}%`, left: `${fc.leftPct}%` }, fishMoveC]}>
+                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
                     </Animated.View>
                   )}
                 </>
@@ -2532,13 +2555,21 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
-  aliveSurface: {
+  aliveSurfaceLine: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.09)', // faint static water edge (no breathing)
+  },
+  aliveRipple: {
+    position: 'absolute',
+    top: 0,
+    width: '26%',
     height: 1.5,
-    backgroundColor: 'rgba(255,255,255,0.16)', // faint surface shimmer line
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.11)', // faint glint that drifts horizontally
   },
   aliveFishWrap: {
     position: 'absolute',

@@ -189,28 +189,52 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
   }
 
   // Cross-app pull history: if this response's last pull was by the current driver
-  // (e.g. from WB T), add it to pull history so it shows up alongside WB M pulls
+  // (e.g. from WB T), keep WB M Pull History in sync alongside the main-screen
+  // snapshot. New pulls get added; EDIT responses (isEdit) reconcile an existing
+  // entry by packetId — addPullToHistoryIfNew skips existing packetIds, so without
+  // this an edit (e.g. WB T History edit) updated the main screen but left the Pull
+  // History card stale (proof case 20260622_192528_Gab1_ivnuo2: main 150, history 160).
   if (packet.lastPullDriverId && packet.lastPullPacketId) {
     try {
       const { getDriverId } = await import("./driverAuth");
       const myDriverId = await getDriverId();
       if (myDriverId && packet.lastPullDriverId === myDriverId) {
-        const { addPullToHistoryIfNew } = await import("./pullHistory");
+        const { addPullToHistoryIfNew, updatePullHistoryEntryByPacketId } = await import("./pullHistory");
         const topFeet = parseFeet(packet.lastPullTopLevel || '');
         const packetTimestamp = packet.lastPullPacketId.match(/^(\d{8}_\d{6})/)?.[1] || '';
-        await addPullToHistoryIfNew(
-          packet.wellName,
-          packet.lastPullDateTime || '',
-          topFeet,
-          lastPullBbls || 0,
-          false,
-          packetTimestamp,
-          packet.lastPullPacketId
-        );
+
+        if (forceUpdate) {
+          // EDIT response — correct the existing entry in place (original pull
+          // dateTime/sentAt preserved; only bbls/top/wellDown + edited status change).
+          console.log("[pullHistory.updateFromResponseEdit.attempt]", packet.lastPullPacketId, "bbls=", lastPullBbls);
+          const found = await updatePullHistoryEntryByPacketId(packet.lastPullPacketId, {
+            bblsTaken: lastPullBbls,
+            tankLevelFeet: topFeet,
+            wellDown: wellIsDown,
+          });
+          if (found) {
+            console.log("[pullHistory.updateFromResponseEdit.success]", packet.lastPullPacketId, "bbls=", lastPullBbls);
+          } else {
+            // Not in local history yet — add it carrying the current (edited) value.
+            await addPullToHistoryIfNew(packet.wellName, packet.lastPullDateTime || '', topFeet, lastPullBbls || 0, wellIsDown, packetTimestamp, packet.lastPullPacketId);
+          }
+        } else {
+          await addPullToHistoryIfNew(
+            packet.wellName,
+            packet.lastPullDateTime || '',
+            topFeet,
+            lastPullBbls || 0,
+            false,
+            packetTimestamp,
+            packet.lastPullPacketId
+          );
+        }
       }
     } catch (err) {
       console.error("[BackgroundSync] Cross-app pull history error:", err);
     }
+  } else if (packet.isEdit === true && !packet.lastPullPacketId) {
+    console.warn("[pullHistory.updateFromResponseEdit.missingPacketId] wellName=", packet.wellName);
   }
 
   // Clear pending pull for this well - response has been processed

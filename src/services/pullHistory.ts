@@ -208,23 +208,41 @@ async function backfillAndMerge(): Promise<void> {
   const backfilled = await backfillFromFirebase();
   if (backfilled.length === 0) return;
 
-  // Merge: use existing local entries as the base, add any Firebase entries we don't have
-  const existingIds = new Set(cachedHistory.map(e => e.packetId || e.id));
+  // Merge: existing local entries are the base. Add any Firebase entries we don't
+  // have AND reconcile mutable fields of entries we DO have, so a stale local value
+  // (e.g. an old WB M-local edit superseded by a later cross-app edit) self-heals on
+  // the next session backfill. PRESERVE the original dateTime / sentAt / packetId
+  // (ordering + original pull time stay local-authoritative); only the canonical
+  // measurement fields are overwritten. Never downgrade an 'edited' status.
+  const byId = new Map<string, PullHistoryEntry>();
+  for (const e of cachedHistory) byId.set(e.packetId || e.id, e);
   let addedCount = 0;
+  let updatedCount = 0;
 
   for (const entry of backfilled) {
-    if (!existingIds.has(entry.packetId)) {
+    const existing = byId.get(entry.packetId);
+    if (!existing) {
       cachedHistory.push(entry);
-      existingIds.add(entry.packetId);
+      byId.set(entry.packetId, entry);
       addedCount++;
+      continue;
+    }
+    let changed = false;
+    if (Number.isFinite(entry.bblsTaken) && entry.bblsTaken !== existing.bblsTaken) { existing.bblsTaken = entry.bblsTaken; changed = true; }
+    if (Number.isFinite(entry.tankLevelFeet) && entry.tankLevelFeet > 0 && entry.tankLevelFeet !== existing.tankLevelFeet) { existing.tankLevelFeet = entry.tankLevelFeet; changed = true; }
+    if (typeof entry.wellDown === "boolean" && entry.wellDown !== existing.wellDown) { existing.wellDown = entry.wellDown; changed = true; }
+    if (entry.status === "edited" && existing.status !== "edited") { existing.status = "edited"; changed = true; }
+    if (changed) {
+      updatedCount++;
+      console.log("[pullHistory.backfill.updatedExisting]", entry.packetId, "bbls→", existing.bblsTaken, "(dateTime preserved:", existing.dateTime + ")");
     }
   }
 
-  if (addedCount > 0) {
+  if (addedCount > 0 || updatedCount > 0) {
     // Re-sort newest first
     cachedHistory.sort((a, b) => b.sentAt - a.sentAt);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
-    console.log(`[PullHistory] Merged ${addedCount} new pulls from Firebase (total: ${cachedHistory.length})`);
+    console.log(`[PullHistory] Merged ${addedCount} new + reconciled ${updatedCount} existing from Firebase (total: ${cachedHistory.length})`);
   }
 
   // Track what we've backfilled so we know if it needs expanding later
@@ -482,6 +500,58 @@ export async function updatePullHistoryEntry(
   } else {
     console.warn("[PullHistory] Entry not found for update:", id);
   }
+}
+
+/**
+ * Update an existing history entry's mutable fields BY PACKET ID, preserving the
+ * original pull timestamp. Used by backgroundSync to reconcile a cross-app edit
+ * (e.g. a WB T History edit) into the Pull History cache: addPullToHistoryIfNew
+ * skips existing packetIds, so a stale entry (e.g. a prior WB M-local edit) would
+ * never be corrected without this.
+ *
+ * TIMESTAMP RULE: dateTime / sentAt / packetId / packetTimestamp are the ORIGINAL
+ * pull identity + time and are intentionally NEVER touched here. Only the corrected
+ * measurement fields (bblsTaken, tankLevelFeet/top, wellDown) + the edited status
+ * are updated. The card's bottom level is derived from top + bbls, so it follows.
+ *
+ * Returns true if a matching entry was found (whether or not a value changed),
+ * false if no entry exists for this packetId (caller may then add-new).
+ */
+export async function updatePullHistoryEntryByPacketId(
+  packetId: string,
+  fields: { bblsTaken?: number; tankLevelFeet?: number; wellDown?: boolean },
+): Promise<boolean> {
+  if (cachedHistory.length === 0) {
+    await loadPullHistory();
+  }
+  if (!packetId) {
+    console.warn("[PullHistory] updateByPacketId: missing packetId, bailing");
+    return false;
+  }
+
+  const entry = cachedHistory.find(e => e.packetId === packetId || e.id === packetId);
+  if (!entry) return false;
+
+  let changed = false;
+  if (typeof fields.bblsTaken === "number" && Number.isFinite(fields.bblsTaken) && fields.bblsTaken !== entry.bblsTaken) {
+    entry.bblsTaken = fields.bblsTaken;
+    changed = true;
+  }
+  if (typeof fields.tankLevelFeet === "number" && Number.isFinite(fields.tankLevelFeet) && fields.tankLevelFeet > 0 && fields.tankLevelFeet !== entry.tankLevelFeet) {
+    entry.tankLevelFeet = fields.tankLevelFeet;
+    changed = true;
+  }
+  if (typeof fields.wellDown === "boolean" && fields.wellDown !== entry.wellDown) {
+    entry.wellDown = fields.wellDown;
+    changed = true;
+  }
+
+  if (changed) {
+    entry.status = "edited";
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
+    console.log("[PullHistory] updateByPacketId applied:", packetId, "bbls:", entry.bblsTaken, "(original dateTime preserved:", entry.dateTime + ")");
+  }
+  return true;
 }
 
 /**

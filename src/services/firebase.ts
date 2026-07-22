@@ -88,6 +88,15 @@ const buildTimestamp = (date: Date) => {
 
 const randomSuffix = () => Math.random().toString(36).slice(2, 8);
 
+/**
+ * Mint ONE server-compatible packet identity (`YYYYMMDD_HHMMSS_Well_rand6`)
+ * at submit time. GS3 identity fix: this same id must ride the payload
+ * through the offline queue, every upload/replay, local Pull History, and
+ * Firebase incoming/processed — replays never mint a fresh id again.
+ */
+export const mintPacketId = (wellName: string, at: Date = new Date()): string =>
+  `${buildTimestamp(at)}_${wellName.replace(/\s+/g, '')}_${randomSuffix()}`;
+
 // Build Firebase REST URL
 const buildFirebaseUrl = (path: string, includeAuth = true) => {
   let url = `${FIREBASE_DATABASE_URL}/${path}.json`;
@@ -245,6 +254,10 @@ const incrementIncomingVersion = async (): Promise<void> => {
 // NO AUTH PROMPT - Firebase uses API key, not OAuth!
 
 export const uploadTankPacket = async (params: {
+  /** Stable identity minted at submit time (mintPacketId). When supplied it
+   *  is honored VERBATIM — retries/replays are idempotent and never create
+   *  a fresh server id. Minted here only for legacy callers without one. */
+  packetId?: string;
   wellName: string;
   dateTime: string;          // Local display string (legacy)
   dateTimeUTC: string;       // ISO 8601 UTC timestamp
@@ -255,11 +268,10 @@ export const uploadTankPacket = async (params: {
 }) => {
   const { wellName, dateTime, dateTimeUTC, tankLevelFeet, bblsTaken, wellDown, predictedLevelInches } = params;
 
-  const now = new Date();
-  const timestamp = buildTimestamp(now);
-
   const wellNameClean = wellName.replace(/\s+/g, "");
-  const packetId = `${timestamp}_${wellNameClean}_${randomSuffix()}`;
+  const packetId = params.packetId || mintPacketId(wellName);
+  // Timestamp prefix of the EFFECTIVE id (supplied or freshly minted).
+  const timestamp = packetId.slice(0, 15);
 
   // Get device timezone (IANA format like "America/Chicago")
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;

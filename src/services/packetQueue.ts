@@ -9,9 +9,23 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
-import { uploadTankPacket, uploadEditPacket } from "./firebase";
+import { uploadTankPacket, uploadEditPacket, mintPacketId } from "./firebase";
+import { setPullSyncStatus } from "./pullHistory";
 
 const QUEUE_STORAGE_KEY = "@wellbuilt_packet_queue";
+
+// GS3 durability rules: a queued packet is NEVER silently discarded.
+// After SYNC_FAILED_THRESHOLD failed attempts its Pull History entry is
+// marked sync_failed (attention required) but the packet stays queued and
+// keeps retrying on a capped backoff until it is confirmed sent or a
+// future user-facing recovery action handles it intentionally.
+export const SYNC_FAILED_THRESHOLD = 5;
+const BACKOFF_BASE_MS = 30 * 1000;
+const BACKOFF_CAP_MS = 30 * 60 * 1000;
+
+export function computeBackoffMs(retryCount: number): number {
+  return Math.min(BACKOFF_BASE_MS * Math.pow(2, Math.max(0, retryCount - 1)), BACKOFF_CAP_MS);
+}
 
 export interface QueuedPacket {
   id: string;
@@ -19,13 +33,43 @@ export interface QueuedPacket {
   data: any;
   createdAt: number;
   retryCount: number;
+  /** Stable server identity for pulls — identical in data.packetId, Pull
+   *  History, and Firebase. Null for edit packets (their identity is the
+   *  original pull's id; see smartUploadEditPacket). */
+  packetId?: string | null;
+  firstQueuedAt?: number;
+  lastAttemptAt?: number | null;
+  nextAttemptAt?: number | null;
+  lastError?: string | null;
 }
 
-// Get all queued packets
+/**
+ * Get all queued packets. Migrates legacy entries in place, ONCE:
+ * a pull entry without a stable packetId is assigned one (persisted
+ * immediately, into both the entry and its payload) and never regenerated
+ * on later loads/retries. Payloads, timestamps, retry metadata, and
+ * ordering are preserved; nothing else in AsyncStorage is touched.
+ */
 export async function getQueuedPackets(): Promise<QueuedPacket[]> {
   try {
     const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
+    let migrated = false;
+    for (const p of queue) {
+      if (p.type === "pull" && !p.packetId) {
+        const id = p.data?.packetId || mintPacketId(p.data?.wellName || "Unknown");
+        p.packetId = id;
+        p.data = { ...(p.data || {}), packetId: id };
+        migrated = true;
+      }
+      if (p.firstQueuedAt === undefined) { p.firstQueuedAt = p.createdAt; migrated = true; }
+      if (p.retryCount === undefined) { p.retryCount = 0; migrated = true; }
+    }
+    if (migrated) {
+      await saveQueue(queue);
+      console.log("[PacketQueue] Migrated legacy queue entries to stable identity");
+    }
+    return queue;
   } catch {
     return [];
   }
@@ -44,27 +88,56 @@ export async function queuePacket(
   const queue = await getQueuedPackets();
 
   const id = `queued_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // Pulls carry their stable identity in the payload; guarantee it here so
+  // no queued pull can ever exist without one.
+  let packetId: string | null = null;
+  if (type === "pull") {
+    packetId = data?.packetId || mintPacketId(data?.wellName || "Unknown");
+    data = { ...(data || {}), packetId };
+  }
 
+  const now = Date.now();
   queue.push({
     id,
     type,
     data,
-    createdAt: Date.now(),
+    createdAt: now,
     retryCount: 0,
+    packetId,
+    firstQueuedAt: now,
+    lastAttemptAt: null,
+    nextAttemptAt: null,
+    lastError: null,
   });
 
   await saveQueue(queue);
-  console.log(`[PacketQueue] Queued ${type} packet:`, id);
+  console.log(`[PacketQueue] Queued ${type} packet:`, id, packetId ?? "");
 
   return id;
 }
 
-// Remove a packet from the queue (after successful send)
+// Remove a packet from the queue (after CONFIRMED successful send).
+// Re-reads storage so it composes safely with per-packet persistence.
 async function removeFromQueue(id: string): Promise<void> {
-  const queue = await getQueuedPackets();
+  const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
+  const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
   const filtered = queue.filter(p => p.id !== id);
   await saveQueue(filtered);
   console.log("[PacketQueue] Removed:", id);
+}
+
+// Persist updated retry metadata for ONE packet immediately (crash-safe:
+// a crash later in the flush loop cannot lose this attempt's bookkeeping).
+async function persistAttemptFailure(id: string, error: string, nowMs: number): Promise<void> {
+  const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
+  const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
+  const entry = queue.find(p => p.id === id);
+  if (!entry) return;
+  entry.retryCount = (entry.retryCount || 0) + 1;
+  entry.lastAttemptAt = nowMs;
+  entry.nextAttemptAt = nowMs + computeBackoffMs(entry.retryCount);
+  entry.lastError = error;
+  await saveQueue(queue);
 }
 
 // Check if we have network connectivity
@@ -83,22 +156,31 @@ export async function isOnline(): Promise<boolean> {
   }
 }
 
-// Send a single queued packet
-async function sendQueuedPacket(packet: QueuedPacket): Promise<boolean> {
+// Send a single queued packet. The payload carries its stable packetId, so
+// a replay is idempotent — uploadTankPacket honors the supplied id and the
+// server sees the SAME identity on every attempt.
+async function sendQueuedPacket(packet: QueuedPacket): Promise<{ ok: boolean; error?: string }> {
   try {
     if (packet.type === "pull") {
       await uploadTankPacket(packet.data);
     } else if (packet.type === "edit") {
       await uploadEditPacket(packet.data);
     }
-    return true;
-  } catch (error) {
+    return { ok: true };
+  } catch (error: any) {
     console.log("[PacketQueue] Send failed:", packet.id, error);
-    return false;
+    return { ok: false, error: String(error?.message || error || "unknown") };
   }
 }
 
-// Flush the queue - send all pending packets
+// Flush the queue - send all pending packets.
+// Durability contract (GS3):
+//  - offline flush exits BEFORE any attempt — it never consumes a retry;
+//  - each success removes ONLY that packet and persists before the next;
+//  - each failure persists its retry metadata immediately;
+//  - packets are NEVER dropped for age or retry count — at
+//    SYNC_FAILED_THRESHOLD the history entry is marked sync_failed and the
+//    packet stays queued on capped backoff.
 export async function flushQueue(): Promise<{ sent: number; failed: number }> {
   const online = await isOnline();
   if (!online) {
@@ -115,36 +197,43 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
 
   let sent = 0;
   let failed = 0;
+  let deferred = 0;
   const wellNames: string[] = [];
-  const stillQueued: QueuedPacket[] = [];
 
   // Process in order (oldest first)
-  queue.sort((a, b) => a.createdAt - b.createdAt);
+  queue.sort((a, b) => (a.firstQueuedAt ?? a.createdAt) - (b.firstQueuedAt ?? b.createdAt));
 
   for (const packet of queue) {
-    const success = await sendQueuedPacket(packet);
+    const nowMs = Date.now();
+    if (packet.nextAttemptAt && packet.nextAttemptAt > nowMs) {
+      deferred++;
+      continue; // backing off — not an attempt, not a failure
+    }
 
-    if (success) {
+    const result = await sendQueuedPacket(packet);
+
+    if (result.ok) {
       sent++;
       if (packet.data?.wellName) wellNames.push(packet.data.wellName);
-      console.log("[PacketQueue] Sent:", packet.id);
+      // Persist THIS removal before touching the next packet — a crash
+      // here can neither resurrect this packet nor lose the removal.
+      await removeFromQueue(packet.id);
+      if (packet.type === "pull" && packet.packetId) {
+        try { await setPullSyncStatus(packet.packetId, "sent", Date.now()); } catch {}
+      }
+      console.log("[PacketQueue] Sent:", packet.id, packet.packetId ?? "");
     } else {
       failed++;
-      packet.retryCount++;
-
-      // Keep retrying up to 5 times, or for 24 hours
-      const age = Date.now() - packet.createdAt;
-      if (packet.retryCount < 5 && age < 24 * 60 * 60 * 1000) {
-        stillQueued.push(packet);
-      } else {
-        console.log("[PacketQueue] Giving up on:", packet.id);
+      await persistAttemptFailure(packet.id, result.error || "unknown", nowMs);
+      const attempts = (packet.retryCount || 0) + 1;
+      if (attempts >= SYNC_FAILED_THRESHOLD && packet.type === "pull" && packet.packetId) {
+        // Attention required — but the packet REMAINS queued and retrying.
+        try { await setPullSyncStatus(packet.packetId, "sync_failed"); } catch {}
       }
     }
   }
 
-  await saveQueue(stillQueued);
-
-  console.log(`[PacketQueue] Flush complete: ${sent} sent, ${failed} failed, ${stillQueued.length} still queued`);
+  console.log(`[PacketQueue] Flush complete: ${sent} sent, ${failed} failed, ${deferred} deferred (backoff)`);
 
   // Notify listeners with flush results
   if (sent > 0) {
@@ -255,6 +344,9 @@ export interface UploadResult {
  * Returns immediately with queued status if offline
  */
 export async function smartUploadTankPacket(params: {
+  /** Stable identity from mintPacketId — one id across upload, queue,
+   *  replay, Pull History, and Firebase. Minted here if absent. */
+  packetId?: string;
   wellName: string;
   dateTime: string;
   dateTimeUTC: string;
@@ -263,11 +355,16 @@ export async function smartUploadTankPacket(params: {
   wellDown?: boolean;
   predictedLevelInches?: number; // What driver saw on pull form card - for performance tracking
 }): Promise<UploadResult> {
+  // Guarantee the stable identity BEFORE any branch, so online success,
+  // failure-queue, and offline-queue all carry the exact same id.
+  const stableParams = { ...params, packetId: params.packetId || mintPacketId(params.wellName) };
+  const packetId = stableParams.packetId;
+  const packetTimestamp = packetId.slice(0, 15);
   const online = await isOnline();
 
   if (online) {
     try {
-      const result = await uploadTankPacket(params);
+      const result = await uploadTankPacket(stableParams);
       return {
         success: true,
         queued: false,
@@ -276,21 +373,28 @@ export async function smartUploadTankPacket(params: {
         wellName: result.wellName,
       };
     } catch (error: any) {
-      // Network error during send - queue it
+      // Network error during send - queue it (same identity; the eventual
+      // replay is idempotent even if this PUT actually landed server-side)
       console.log(`[PacketQueue] Upload FAILED for ${params.wellName}: ${error.message} (${error.name})`);
-      const queueId = await queuePacket("pull", params);
+      await queuePacket("pull", stableParams);
       return {
         success: false,
         queued: true,
+        packetId,
+        packetTimestamp,
+        wellName: params.wellName,
         error: `Upload failed: ${error.message || error.name || 'unknown'}`,
       };
     }
   } else {
     // Offline - queue immediately
-    const queueId = await queuePacket("pull", params);
+    await queuePacket("pull", stableParams);
     return {
       success: false,
       queued: true,
+      packetId,
+      packetTimestamp,
+      wellName: params.wellName,
       error: "Queued for later (offline)",
     };
   }

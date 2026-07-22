@@ -75,3 +75,19 @@ describe('record.tsx wiring of the future-time gate', () => {
     expect(src).not.toContain('queuePacket(');
   });
 });
+
+describe('record.tsx stable-identity wiring (GS3 durability)', () => {
+  test('15. the future-time gate still precedes identity minting, upload, queue, and history', () => {
+    const mintIdx = handleSubmit.indexOf('mintPacketId(wellName)');
+    expect(mintIdx).toBeGreaterThan(-1);
+    expect(mintIdx).toBeGreaterThan(gateIdx); // blocked pulls never mint/queue/record
+  });
+
+  test('the invented queued_* history ids are gone — one stable id feeds history', () => {
+    expect(src).not.toContain('queued_${');
+    // History receives the minted id plus an honest sync status.
+    expect(handleSubmit).toContain("uploadResult.success ? 'sent' : 'pending_sync'");
+    // The timestamp is derived from the same id, not a second clock read.
+    expect(handleSubmit).toContain('packetId.slice(0, 15)');
+  });
+});

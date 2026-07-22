@@ -20,6 +20,7 @@ import { useAppAlert } from '../components/AppAlert';
 import { useDispatch } from '../src/contexts/DispatchContext';
 import { isCurrentUserViewer } from '../src/services/driverAuth';
 import { smartUploadTankPacket, smartUploadEditPacket, getQueueCount } from '../src/services/packetQueue';
+import { mintPacketId } from '../src/services/firebase';
 import { evaluatePullTime } from '../src/services/pullTimeGuard';
 import { addPullToHistory, updatePullHistoryEntry } from '../src/services/pullHistory';
 import { getBblPerFoot, getWellConfig, loadWellConfig } from '../src/services/wellConfig';
@@ -746,7 +747,12 @@ export default function RecordScreen() {
         // Use smart upload - queues automatically if offline
         // Include predicted level (what driver saw on screen) for performance tracking
         const predictedLevelInches = estLevelFeet !== null ? Math.floor(estLevelFeet * 12) : undefined;
+        // GS3 identity fix: ONE server-compatible id minted here carries
+        // through upload/queue/replay, Pull History, and Firebase — replays
+        // are idempotent and history reconciles by this same id.
+        const packetId = mintPacketId(wellName);
         const uploadResult = await smartUploadTankPacket({
+          packetId,
           wellName,
           dateTime: dateTimeString,           // Local display (legacy)
           dateTimeUTC: dateTimeUTCString,     // UTC for calculations
@@ -756,10 +762,9 @@ export default function RecordScreen() {
           predictedLevelInches,               // What driver saw - for performance tracking
         });
 
-        // Generate local packet ID/timestamp for history tracking (even when queued)
-        const localTimestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15);
-        const packetTimestamp = uploadResult.packetTimestamp || localTimestamp;
-        const packetId = uploadResult.packetId || `queued_${localTimestamp}_${wellName.replace(/\s+/g, '')}`;
+        // History carries the SAME stable id whether the upload succeeded
+        // or queued — no invented queued_* ids, no identity break.
+        const packetTimestamp = packetId.slice(0, 15);
 
         // Save to pull history for driver reference
         await addPullToHistory(
@@ -769,7 +774,8 @@ export default function RecordScreen() {
           bblsTakenNum,
           wellDown,
           packetTimestamp,
-          packetId
+          packetId,
+          uploadResult.success ? 'sent' : 'pending_sync'
         );
 
         // Save to local history for future level estimates

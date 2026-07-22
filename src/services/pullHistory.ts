@@ -18,6 +18,14 @@ const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
 let historyDays = DEFAULT_HISTORY_DAYS;
 let backfillAttempted = false; // Only try empty-history backfill once per session
 
+/** Server-sync lifecycle of an entry (GS3 durability):
+ *  pending_sync — queued locally, not yet confirmed by Firebase;
+ *  sent — confirmed uploaded;
+ *  sync_failed — SYNC_FAILED_THRESHOLD attempts failed; ATTENTION REQUIRED,
+ *  but the packet remains queued and retrying — never deleted.
+ *  Legacy entries have no syncStatus (undefined = created before tracking). */
+export type PullSyncStatus = 'pending_sync' | 'sent' | 'sync_failed';
+
 export interface PullHistoryEntry {
   id: string;                    // full packetId (timestamp_wellName_randomSuffix) - unique identifier
   wellName: string;
@@ -29,6 +37,8 @@ export interface PullHistoryEntry {
   packetTimestamp: string;       // "20251213_173045" for filename matching
   packetId: string;              // full unique ID (timestamp_wellName_randomSuffix) - stored in Excel column B
   status: 'sent' | 'edited';     // for future edit tracking
+  syncStatus?: PullSyncStatus;   // server-sync lifecycle (absent on legacy entries)
+  sentConfirmedAt?: number;      // ms timestamp of CONFIRMED server send
 }
 
 let cachedHistory: PullHistoryEntry[] = [];
@@ -307,7 +317,8 @@ export async function addPullToHistory(
   bblsTaken: number,
   wellDown: boolean,
   packetTimestamp: string,
-  packetId: string
+  packetId: string,
+  syncStatus: PullSyncStatus = 'sent'
 ): Promise<void> {
   try {
     if (cachedHistory.length === 0) {
@@ -325,6 +336,8 @@ export async function addPullToHistory(
       packetTimestamp,
       packetId,                  // Store full packetId for edit lookup
       status: 'sent',
+      syncStatus,
+      ...(syncStatus === 'sent' ? { sentConfirmedAt: Date.now() } : {}),
     };
 
     // Add to front (newest first)
@@ -551,6 +564,32 @@ export async function updatePullHistoryEntryByPacketId(
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
     console.log("[PullHistory] updateByPacketId applied:", packetId, "bbls:", entry.bblsTaken, "(original dateTime preserved:", entry.dateTime + ")");
   }
+  return true;
+}
+
+/**
+ * Reconcile an entry with its CONFIRMED server-sync state, matched by the
+ * stable packetId (GS3 identity fix). 'sent' records the confirmed time;
+ * 'sync_failed' flags attention required — the queued packet is NOT
+ * deleted and keeps retrying. Safe no-op when the entry is unknown
+ * (e.g. cross-app pulls whose history entry never existed here).
+ */
+export async function setPullSyncStatus(
+  packetId: string,
+  syncStatus: PullSyncStatus,
+  sentConfirmedAt?: number,
+): Promise<boolean> {
+  if (cachedHistory.length === 0) {
+    await loadPullHistory();
+  }
+  const entry = cachedHistory.find(e => e.packetId === packetId || e.id === packetId);
+  if (!entry) return false;
+  entry.syncStatus = syncStatus;
+  if (syncStatus === 'sent') {
+    entry.sentConfirmedAt = sentConfirmedAt ?? Date.now();
+  }
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
+  console.log('[PullHistory] syncStatus:', packetId, '→', syncStatus);
   return true;
 }
 

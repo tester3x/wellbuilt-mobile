@@ -20,6 +20,7 @@ import { useAppAlert } from '../components/AppAlert';
 import { useDispatch } from '../src/contexts/DispatchContext';
 import { isCurrentUserViewer } from '../src/services/driverAuth';
 import { smartUploadTankPacket, smartUploadEditPacket, getQueueCount } from '../src/services/packetQueue';
+import { evaluatePullTime } from '../src/services/pullTimeGuard';
 import { addPullToHistory, updatePullHistoryEntry } from '../src/services/pullHistory';
 import { getBblPerFoot, getWellConfig, loadWellConfig } from '../src/services/wellConfig';
 import { getLevelSnapshot, savePendingPull, saveWellPull, saveLevelSnapshot } from '../src/services/wellHistory';
@@ -616,6 +617,30 @@ export default function RecordScreen() {
       const dateTimeString = formatPacketDateTime(adjustedDateTime);     // Local display string
       const dateTimeUTCString = formatPacketDateTimeUTC(adjustedDateTime); // ISO 8601 UTC
       const topLevel = flooredLevelFeet;
+
+      // GS3 7/21/2026 hard stop: a future-dated pull (11:07 PM entered for
+      // 11:07 AM) became the server's stale-guard watermark and later real
+      // pulls were silently deleted. Validate the FINALIZED UTC value — the
+      // exact string every downstream write would carry — BEFORE any side
+      // effect on either path: no upload, no queue, no Pull History, no
+      // snapshots, no dispatch message. "Use current time" only updates the
+      // form; the driver reviews and submits again — never a silent submit.
+      const timeGate = evaluatePullTime(dateTimeUTCString, Date.now());
+      if (!timeGate.ok) {
+        setIsSending(false);
+        alert.show('Future time detected', timeGate.message, [
+          { text: 'Fix date/time', style: 'cancel' },
+          {
+            text: 'Use current time',
+            onPress: () => {
+              const now = new Date();
+              setDateTime(now);
+              setTempDateTime(now);
+            },
+          },
+        ]);
+        return;
+      }
 
       if (isEditMode) {
         // --- EDIT MODE: Send edit packet (with offline queueing) ---

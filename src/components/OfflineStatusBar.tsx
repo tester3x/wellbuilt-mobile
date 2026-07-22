@@ -17,10 +17,12 @@ export function SyncConfirmation() {
     const unsub = onFlushComplete((result: FlushResult) => {
       const wells = result.wellNames.join(', ');
       const lines: string[] = [];
-      lines.push(`${result.sent} pull${result.sent > 1 ? 's' : ''} sent`);
+      // Truthful wording (GS3): a flushed packet is UPLOADED — the server
+      // outcome is confirmed separately by the delivery reconciler.
+      lines.push(`${result.sent} pull${result.sent > 1 ? 's' : ''} uploaded`);
       if (wells) lines.push(`Wells: ${wells}`);
       if (result.failed > 0) lines.push(`${result.failed} still pending`);
-      Alert.alert('Back Online — Pulls Synced', lines.join('\n'));
+      Alert.alert('Back Online — Pulls Uploaded', lines.join('\n'));
     });
     return unsub;
   }, []);

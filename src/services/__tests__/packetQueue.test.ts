@@ -370,13 +370,13 @@ describe('pull history compatibility + reconciliation', () => {
     expect(loaded[0].status).toBe('edited');
     // Reconciliation by unknown id is a safe no-op; by known id it works.
     expect(await setPullSyncStatus('nonexistent_id', 'sent')).toBe(false);
-    expect(await setPullSyncStatus('queued_20260721170845_Gunslinger3', 'sent', 123)).toBe(true);
+    expect(await setPullSyncStatus('queued_20260721170845_Gunslinger3', 'sent', { sentConfirmedAt: 123 })).toBe(true);
     const after = await getPullHistory();
     expect(after[0].syncStatus).toBe('sent');
     expect(after[0].sentConfirmedAt).toBe(123);
   });
 
-  test('confirmed send flips pending_sync → sent with a confirmed time', async () => {
+  test('a flushed upload flips pending_sync → submitted (NOT sent — server outcome unknown)', async () => {
     const pid = '20260721_120600_Gunslinger3_abc123';
     await addPullToHistory('Gunslinger 3', '7/21/2026 12:06 PM', 11.58, 170, false, pid.slice(0, 15), pid, 'pending_sync');
     expect((await getPullHistory())[0].syncStatus).toBe('pending_sync');
@@ -386,7 +386,8 @@ describe('pull history compatibility + reconciliation', () => {
     mockedUploadTank.mockResolvedValueOnce({ packetId: pid });
     await flushQueue();
     const entry = (await getPullHistory()).find((e) => e.packetId === pid)!;
-    expect(entry.syncStatus).toBe('sent');
-    expect(entry.sentConfirmedAt).toBeGreaterThan(0);
+    expect(entry.syncStatus).toBe('submitted'); // GS3: upload ≠ processed
+    expect(entry.submittedAt).toBeGreaterThan(0);
+    expect(entry.sentConfirmedAt).toBeUndefined();
   });
 });

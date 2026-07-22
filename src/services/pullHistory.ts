@@ -18,13 +18,18 @@ const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
 let historyDays = DEFAULT_HISTORY_DAYS;
 let backfillAttempted = false; // Only try empty-history backfill once per session
 
-/** Server-sync lifecycle of an entry (GS3 durability):
- *  pending_sync — queued locally, not yet confirmed by Firebase;
- *  sent — confirmed uploaded;
- *  sync_failed — SYNC_FAILED_THRESHOLD attempts failed; ATTENTION REQUIRED,
- *  but the packet remains queued and retrying — never deleted.
+/** TRUTHFUL server-delivery lifecycle of an entry (GS3):
+ *  pending_sync — still local/queued; nothing reached Firebase yet;
+ *  submitted   — PUT to packets/incoming succeeded; server outcome UNKNOWN
+ *                (a successful upload is NOT proof of processing — the GS3
+ *                stale guard consumed five successfully-uploaded packets);
+ *  sent        — packets/processed/<packetId> confirmed to exist;
+ *  sync_failed — SYNC_FAILED_THRESHOLD transport failures; ATTENTION
+ *                REQUIRED, but the packet remains queued and retrying;
+ *  rejected    — server quarantine confirmed via packets/rejected/<id>;
+ *                the reason is preserved and it is NEVER auto-retried.
  *  Legacy entries have no syncStatus (undefined = created before tracking). */
-export type PullSyncStatus = 'pending_sync' | 'sent' | 'sync_failed';
+export type PullSyncStatus = 'pending_sync' | 'submitted' | 'sent' | 'sync_failed' | 'rejected';
 
 export interface PullHistoryEntry {
   id: string;                    // full packetId (timestamp_wellName_randomSuffix) - unique identifier
@@ -37,8 +42,10 @@ export interface PullHistoryEntry {
   packetTimestamp: string;       // "20251213_173045" for filename matching
   packetId: string;              // full unique ID (timestamp_wellName_randomSuffix) - stored in Excel column B
   status: 'sent' | 'edited';     // for future edit tracking
-  syncStatus?: PullSyncStatus;   // server-sync lifecycle (absent on legacy entries)
-  sentConfirmedAt?: number;      // ms timestamp of CONFIRMED server send
+  syncStatus?: PullSyncStatus;   // server-delivery lifecycle (absent on legacy entries)
+  sentConfirmedAt?: number;      // ms timestamp when packets/processed existence was CONFIRMED
+  submittedAt?: number;          // ms timestamp of the successful PUT to incoming
+  rejectionReason?: string;      // stable reason code + readable text from packets/rejected
 }
 
 let cachedHistory: PullHistoryEntry[] = [];
@@ -338,6 +345,7 @@ export async function addPullToHistory(
       status: 'sent',
       syncStatus,
       ...(syncStatus === 'sent' ? { sentConfirmedAt: Date.now() } : {}),
+      ...(syncStatus === 'submitted' ? { submittedAt: Date.now() } : {}),
     };
 
     // Add to front (newest first)
@@ -568,16 +576,17 @@ export async function updatePullHistoryEntryByPacketId(
 }
 
 /**
- * Reconcile an entry with its CONFIRMED server-sync state, matched by the
- * stable packetId (GS3 identity fix). 'sent' records the confirmed time;
- * 'sync_failed' flags attention required — the queued packet is NOT
- * deleted and keeps retrying. Safe no-op when the entry is unknown
- * (e.g. cross-app pulls whose history entry never existed here).
+ * Reconcile an entry with its server-delivery state, matched by the stable
+ * packetId (GS3 identity fix). 'submitted' records the PUT time, 'sent'
+ * the confirmed-processed time, 'rejected' preserves the quarantine
+ * reason; 'sync_failed' flags attention while the packet stays queued.
+ * Evidence is only ever ADDED — nothing is deleted here. Safe no-op when
+ * the entry is unknown (e.g. cross-app pulls with no local entry).
  */
 export async function setPullSyncStatus(
   packetId: string,
   syncStatus: PullSyncStatus,
-  sentConfirmedAt?: number,
+  opts?: { sentConfirmedAt?: number; submittedAt?: number; rejectionReason?: string },
 ): Promise<boolean> {
   if (cachedHistory.length === 0) {
     await loadPullHistory();
@@ -586,7 +595,13 @@ export async function setPullSyncStatus(
   if (!entry) return false;
   entry.syncStatus = syncStatus;
   if (syncStatus === 'sent') {
-    entry.sentConfirmedAt = sentConfirmedAt ?? Date.now();
+    entry.sentConfirmedAt = opts?.sentConfirmedAt ?? Date.now();
+  }
+  if (syncStatus === 'submitted') {
+    entry.submittedAt = opts?.submittedAt ?? Date.now();
+  }
+  if (syncStatus === 'rejected' && opts?.rejectionReason) {
+    entry.rejectionReason = opts.rejectionReason;
   }
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
   console.log('[PullHistory] syncStatus:', packetId, '→', syncStatus);

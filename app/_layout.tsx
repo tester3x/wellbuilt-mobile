@@ -16,7 +16,9 @@ import AppSwitcher from '../src/components/AppSwitcher';
 import { WhatsNewModal } from '../components/WhatsNewModal';
 import { useWhatsNew } from '../hooks/use-whats-new';
 import { SyncConfirmation } from '../src/components/OfflineStatusBar';
+import { SyncAttentionBadge } from '../src/components/SyncAttentionBadge';
 import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/services/wellHistory';
+import { startDeliveryReconciler } from '../src/services/deliveryStatus';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
 import { clearDriverSession } from '../src/services/driverAuth';
 
@@ -134,6 +136,11 @@ export default function RootLayout() {
     // Will auto-flush queued packets when network is restored
     startNetworkMonitor();
 
+    // Truthful delivery status (GS3): reconcile submitted pulls against
+    // packets/processed | packets/rejected. Started BEFORE the flush so
+    // the flush-complete event triggers a reconcile pass.
+    startDeliveryReconciler();
+
     // Flush any packets that were queued while app was closed
     flushQueue();
     return () => appStateSub.remove();
@@ -150,6 +157,7 @@ export default function RootLayout() {
       <DispatchProvider>
         <View style={styles.container}>
           <SyncConfirmation />
+          <SyncAttentionBadge />
           <Stack
             screenOptions={{
               headerShown: false,

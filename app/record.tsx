@@ -775,7 +775,9 @@ export default function RecordScreen() {
           wellDown,
           packetTimestamp,
           packetId,
-          uploadResult.success ? 'sent' : 'pending_sync'
+          // Truthful status: an accepted upload is only 'submitted' — the
+          // reconciler confirms 'sent' once packets/processed shows it.
+          uploadResult.success ? 'submitted' : 'pending_sync'
         );
 
         // Save to local history for future level estimates

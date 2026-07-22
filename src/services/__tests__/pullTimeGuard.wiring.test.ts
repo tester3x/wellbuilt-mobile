@@ -85,8 +85,9 @@ describe('record.tsx stable-identity wiring (GS3 durability)', () => {
 
   test('the invented queued_* history ids are gone — one stable id feeds history', () => {
     expect(src).not.toContain('queued_${');
-    // History receives the minted id plus an honest sync status.
-    expect(handleSubmit).toContain("uploadResult.success ? 'sent' : 'pending_sync'");
+    // History receives the minted id plus an honest sync status — an
+    // accepted upload is only 'submitted', never optimistically 'sent'.
+    expect(handleSubmit).toContain("uploadResult.success ? 'submitted' : 'pending_sync'");
     // The timestamp is derived from the same id, not a second clock read.
     expect(handleSubmit).toContain('packetId.slice(0, 15)');
   });

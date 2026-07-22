@@ -181,7 +181,24 @@ async function sendQueuedPacket(packet: QueuedPacket): Promise<{ ok: boolean; er
 //  - packets are NEVER dropped for age or retry count — at
 //    SYNC_FAILED_THRESHOLD the history entry is marked sync_failed and the
 //    packet stays queued on capped backoff.
+let _flushInProgress = false;
+
 export async function flushQueue(): Promise<{ sent: number; failed: number }> {
+  // Concurrency guard: a manual retry racing the auto-flush (or two
+  // network events) must never double-send the same packet.
+  if (_flushInProgress) {
+    console.log("[PacketQueue] Flush already in progress, skipping");
+    return { sent: 0, failed: 0 };
+  }
+  _flushInProgress = true;
+  try {
+    return await flushQueueInner();
+  } finally {
+    _flushInProgress = false;
+  }
+}
+
+async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
   const online = await isOnline();
   if (!online) {
     console.log("[PacketQueue] Still offline, skipping flush");
@@ -219,9 +236,12 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
       // here can neither resurrect this packet nor lose the removal.
       await removeFromQueue(packet.id);
       if (packet.type === "pull" && packet.packetId) {
-        try { await setPullSyncStatus(packet.packetId, "sent", Date.now()); } catch {}
+        // TRUTHFUL status: a successful PUT to incoming is only
+        // "submitted" — the server may still quarantine it. 'sent' comes
+        // from the delivery reconciler once packets/processed confirms.
+        try { await setPullSyncStatus(packet.packetId, "submitted", { submittedAt: Date.now() }); } catch {}
       }
-      console.log("[PacketQueue] Sent:", packet.id, packet.packetId ?? "");
+      console.log("[PacketQueue] Submitted:", packet.id, packet.packetId ?? "");
     } else {
       failed++;
       await persistAttemptFailure(packet.id, result.error || "unknown", nowMs);
@@ -250,6 +270,25 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
 export async function getQueueCount(): Promise<number> {
   const queue = await getQueuedPackets();
   return queue.length;
+}
+
+/**
+ * Manual retry for a LOCALLY QUEUED transport failure: clears the backoff
+ * on that entry and runs a normal flush. The packet keeps its stable
+ * packetId (identity lives in the payload), so the retry is idempotent.
+ * Server-rejected packets are never in the queue and can never be retried
+ * here. The flush concurrency guard prevents duplication against a
+ * simultaneous auto-flush.
+ */
+export async function retryPacketNow(queueId: string): Promise<{ attempted: boolean; sent: number; failed: number }> {
+  const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
+  const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
+  const entry = queue.find(p => p.id === queueId);
+  if (!entry) return { attempted: false, sent: 0, failed: 0 };
+  entry.nextAttemptAt = null; // driver asked — retry immediately
+  await saveQueue(queue);
+  const result = await flushQueue();
+  return { attempted: true, ...result };
 }
 
 // Clear the queue (for testing/reset)

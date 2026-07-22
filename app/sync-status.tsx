@@ -21,7 +21,9 @@ import {
   DeliveryItem,
   getDeliveryItems,
   reconcileSubmittedPulls,
+  recoverStuckSubmission,
 } from '../src/services/deliveryStatus';
+import { processEditOperations } from '../src/services/editDelivery';
 import { retryPacketNow } from '../src/services/packetQueue';
 
 const STATUS_META: Record<DeliveryItem['status'], { label: string; color: string }> = {
@@ -29,6 +31,17 @@ const STATUS_META: Record<DeliveryItem['status'], { label: string; color: string
   submitted: { label: 'Submitted — awaiting server', color: '#eab308' },
   sync_failed: { label: 'Send failing — will keep retrying', color: '#ef4444' },
   rejected: { label: 'Rejected by server', color: '#ef4444' },
+  edit_pending: { label: 'Edit waiting on original pull', color: '#3b82f6' },
+  edit_submitted: { label: 'Edit submitted — awaiting server', color: '#eab308' },
+  edit_failed: { label: 'Edit send failing — will keep retrying', color: '#ef4444' },
+  edit_rejected: { label: 'Edit rejected by server', color: '#ef4444' },
+  edit_blocked: { label: 'Edit held — needs review', color: '#ef4444' },
+};
+
+const ACTION_LABEL: Record<NonNullable<DeliveryItem['action']>, string> = {
+  retry: 'Retry now',
+  recover: 'Check & recover',
+  retryEdit: 'Retry edit',
 };
 
 export default function SyncStatusScreen() {
@@ -57,11 +70,20 @@ export default function SyncStatusScreen() {
     setRefreshing(false);
   }, [load]);
 
-  const onRetry = useCallback(async (item: DeliveryItem) => {
-    if (!item.queueId || retryingId) return;
-    setRetryingId(item.queueId);
+  const onAction = useCallback(async (item: DeliveryItem) => {
+    if (!item.action || retryingId) return;
+    const key = item.queueId ?? item.packetId ?? '';
+    setRetryingId(key);
     try {
-      await retryPacketNow(item.queueId);
+      if (item.action === 'retry' && item.queueId) {
+        await retryPacketNow(item.queueId);
+      } else if (item.action === 'recover' && item.packetId) {
+        // Safe same-ID recovery: checks processed → rejected → incoming
+        // before any resubmission; never duplicates an in-flight packet.
+        await recoverStuckSubmission(item.packetId);
+      } else if (item.action === 'retryEdit') {
+        await processEditOperations();
+      }
       await load(true);
     } finally {
       setRetryingId(null);
@@ -88,7 +110,7 @@ export default function SyncStatusScreen() {
         {items.map((item) => {
           const meta = STATUS_META[item.status];
           return (
-            <View key={item.queueId ?? item.packetId ?? item.dateTime} style={styles.card}>
+            <View key={`${item.type}_${item.queueId ?? item.packetId ?? item.dateTime}`} style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.well}>{item.wellName}{item.type === 'edit' ? ' (edit)' : ''}</Text>
                 <Text style={[styles.status, { color: meta.color }]}>{meta.label}</Text>
@@ -105,14 +127,14 @@ export default function SyncStatusScreen() {
               )}
               {item.lastError && <Text style={styles.error}>{item.lastError}</Text>}
               {item.packetId && <Text style={styles.packetId}>{item.packetId}</Text>}
-              {item.canRetry && (
+              {item.action && (
                 <TouchableOpacity
                   style={[styles.retryBtn, retryingId !== null && styles.retryBtnDisabled]}
                   disabled={retryingId !== null}
-                  onPress={() => onRetry(item)}
+                  onPress={() => onAction(item)}
                 >
                   <Text style={styles.retryText}>
-                    {retryingId === item.queueId ? 'Retrying…' : 'Retry now'}
+                    {retryingId === (item.queueId ?? item.packetId) ? 'Working…' : ACTION_LABEL[item.action]}
                   </Text>
                 </TouchableOpacity>
               )}

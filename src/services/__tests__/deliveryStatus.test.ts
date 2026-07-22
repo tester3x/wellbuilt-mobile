@@ -141,7 +141,7 @@ describe('server-outcome reconciliation', () => {
     const items = await getDeliveryItems();
     const rejectedItem = items.find((i) => i.packetId === PID)!;
     expect(rejectedItem.status).toBe('rejected');
-    expect(rejectedItem.canRetry).toBe(false);
+    expect(rejectedItem.action).toBeNull(); // no retry of any kind offered
     expect(rejectedItem.lastError).toContain('FUTURE_PULL_TIME');
   });
 });

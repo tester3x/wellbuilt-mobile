@@ -19,7 +19,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppAlert } from '../components/AppAlert';
 import { useDispatch } from '../src/contexts/DispatchContext';
 import { isCurrentUserViewer } from '../src/services/driverAuth';
-import { smartUploadTankPacket, smartUploadEditPacket, getQueueCount } from '../src/services/packetQueue';
+import { smartUploadTankPacket, getQueueCount } from '../src/services/packetQueue';
+import { submitPullEdit } from '../src/services/editDelivery';
 import { mintPacketId } from '../src/services/firebase';
 import { evaluatePullTime } from '../src/services/pullTimeGuard';
 import { addPullToHistory, updatePullHistoryEntry } from '../src/services/pullHistory';
@@ -652,7 +653,11 @@ export default function RecordScreen() {
         const minuteChanged =
           formatMinuteKey(dateTime) !== originalEditMinuteRef.current;
 
-        const editResult = await smartUploadEditPacket({
+        // GS3 ordered edits: submitPullEdit decides the safe path — merge
+        // into a still-queued pull (no edit packet), hold as a dependent
+        // operation until the original is processed, upload now, or block
+        // for attention (rejected original / legacy identity).
+        const editOutcome = await submitPullEdit({
           originalPacketTimestamp: editPacketTimestamp,
           originalPacketId: editId,
           wellName,
@@ -663,13 +668,16 @@ export default function RecordScreen() {
           wellDown,
         });
 
-        // Update the entry in local history with new values
+        // Update the entry's VALUES locally — but never claim '(edited)'
+        // here: that marker appears only on server confirmation
+        // (editDelivery → setPullEditStatus('edited')).
         await updatePullHistoryEntry(
           editId,
           dateTimeString,
           topLevel,
           bblsTakenNum,
-          wellDown
+          wellDown,
+          { markEdited: false }
         );
 
         // Calculate bottom level after pull (same as new pull logic)
@@ -699,7 +707,7 @@ export default function RecordScreen() {
 
         // Save pending pull for drain animation on main screen (same as new pull)
         // isEdit flag tells main screen to skip immediate response check (old response still exists)
-        if (editResult.success) {
+        if (editOutcome.mode === 'uploading' && editOutcome.submitted) {
           await savePendingPull(wellName, {
             topLevel,
             bblsTaken: bblsTakenNum,
@@ -726,17 +734,28 @@ export default function RecordScreen() {
 
         setIsSending(false);
 
-        if (editResult.queued) {
-          // Offline - show queued message with reason for debugging
+        if (editOutcome.mode === 'merged_into_queued') {
           alert.show(
-            "Edit Saved Locally",
-            `System is offline. Your edit has been saved and will be submitted when connection is restored.\n\n(${editResult.error || 'unknown'})`,
-            [{ text: "OK", onPress: () => router.back() }]
+            'Pull Updated',
+            "This pull hasn't been sent yet, so your correction was folded into the queued pull itself — it will upload as one corrected record.",
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
+        } else if (editOutcome.mode === 'held_dependent') {
+          alert.show(
+            'Edit Saved',
+            'The original pull is still awaiting server confirmation. Your edit is saved and will send automatically as soon as the pull is confirmed.',
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
+        } else if (editOutcome.mode === 'blocked') {
+          alert.show(
+            'Edit Needs Attention',
+            editOutcome.reason,
+            [{ text: 'OK', onPress: () => router.back() }]
           );
         } else {
-          // Online - go back immediately. The Cloud Function will process the edit
-          // and increment incoming_version when done (~2-3s), which triggers the
-          // app's version watcher to auto-sync and refresh the UI.
+          // Uploading (or stored for retry). The Cloud Function will process
+          // the edit and increment incoming_version when done (~2-3s), which
+          // triggers the app's version watcher to auto-sync and refresh.
           router.back();
         }
       } else {

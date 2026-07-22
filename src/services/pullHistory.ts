@@ -31,6 +31,16 @@ let backfillAttempted = false; // Only try empty-history backfill once per sessi
  *  Legacy entries have no syncStatus (undefined = created before tracking). */
 export type PullSyncStatus = 'pending_sync' | 'submitted' | 'sent' | 'sync_failed' | 'rejected';
 
+/** TRUTHFUL edit lifecycle — DISTINCT from the pull's own delivery status:
+ *  edit_pending   — driver saved an edit locally; not sent (original may
+ *                   still be queued/submitted, or blocked for attention);
+ *  edit_submitted — edit uploaded to incoming; server outcome unknown;
+ *  edited         — server CONFIRMED the edit applied (only now does the
+ *                   legacy '(edited)' marker appear);
+ *  edit_failed    — transport failures; the edit is retained and retried;
+ *  edit_rejected  — server quarantined the edit; reason preserved. */
+export type PullEditStatus = 'edit_pending' | 'edit_submitted' | 'edited' | 'edit_failed' | 'edit_rejected';
+
 export interface PullHistoryEntry {
   id: string;                    // full packetId (timestamp_wellName_randomSuffix) - unique identifier
   wellName: string;
@@ -46,6 +56,8 @@ export interface PullHistoryEntry {
   sentConfirmedAt?: number;      // ms timestamp when packets/processed existence was CONFIRMED
   submittedAt?: number;          // ms timestamp of the successful PUT to incoming
   rejectionReason?: string;      // stable reason code + readable text from packets/rejected
+  editStatus?: PullEditStatus;   // edit lifecycle (absent when never edited via new flow)
+  editStatusReason?: string;     // rejection/blocked reason for the edit
 }
 
 let cachedHistory: PullHistoryEntry[] = [];
@@ -503,7 +515,14 @@ export async function updatePullHistoryEntry(
   dateTime: string,
   tankLevelFeet: number,
   bblsTaken: number,
-  wellDown: boolean
+  wellDown: boolean,
+  opts?: {
+    /** GS3 truthfulness: '(edited)' must only appear once the SERVER
+     *  confirmed the edit. The new edit flow passes false and lets
+     *  setPullEditStatus('edited') flip the marker on confirmation.
+     *  Defaults to true for legacy/server-confirmed callers. */
+    markEdited?: boolean;
+  }
 ): Promise<void> {
   if (cachedHistory.length === 0) {
     await loadPullHistory();
@@ -515,12 +534,40 @@ export async function updatePullHistoryEntry(
     entry.tankLevelFeet = tankLevelFeet;
     entry.bblsTaken = bblsTaken;
     entry.wellDown = wellDown;
-    entry.status = 'edited';
+    if (opts?.markEdited !== false) {
+      entry.status = 'edited';
+    }
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
     console.log("[PullHistory] Updated entry:", id, "bbls:", bblsTaken);
   } else {
     console.warn("[PullHistory] Entry not found for update:", id);
   }
+}
+
+/**
+ * Set the DISTINCT edit lifecycle on an entry (matched by stable id).
+ * 'edited' is the ONLY state that also flips the legacy status marker —
+ * i.e. '(edited)' appears exclusively on server confirmation. The pull's
+ * own delivery syncStatus is never touched here.
+ */
+export async function setPullEditStatus(
+  packetId: string,
+  editStatus: PullEditStatus,
+  reason?: string,
+): Promise<boolean> {
+  if (cachedHistory.length === 0) {
+    await loadPullHistory();
+  }
+  const entry = cachedHistory.find(e => e.packetId === packetId || e.id === packetId);
+  if (!entry) return false;
+  entry.editStatus = editStatus;
+  if (reason !== undefined) entry.editStatusReason = reason;
+  if (editStatus === 'edited') {
+    entry.status = 'edited'; // server-confirmed — legacy marker may appear
+  }
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
+  console.log('[PullHistory] editStatus:', packetId, '→', editStatus);
+  return true;
 }
 
 /**

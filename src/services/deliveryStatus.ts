@@ -10,7 +10,17 @@
 // reconciles them directly by the STABLE packet id. Rejected packets are
 // evidence: their reason is preserved and they are never auto-retried.
 
-import { QueuedPacket, SYNC_FAILED_THRESHOLD, getQueuedPackets, onFlushComplete } from './packetQueue';
+import { EDIT_FAILED_THRESHOLD, EditOperation, getEditOperations, processEditOperations } from './editDelivery';
+import {
+  QueuedPacket,
+  SYNC_FAILED_THRESHOLD,
+  flushQueue,
+  forgetSubmittedPayload,
+  getQueuedPackets,
+  getSubmittedPayload,
+  onFlushComplete,
+  queuePacket,
+} from './packetQueue';
 import { PullHistoryEntry, getPullHistory, setPullSyncStatus } from './pullHistory';
 
 const FIREBASE_DATABASE_URL = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
@@ -58,6 +68,7 @@ export async function reconcileSubmittedPulls(
     if (processed) {
       const at = processed.processedAt ? new Date(processed.processedAt).getTime() : Date.now();
       await setPullSyncStatus(entry.packetId, 'sent', { sentConfirmedAt: Number.isFinite(at) ? at : Date.now() });
+      await forgetSubmittedPayload(entry.packetId); // recovery copy no longer needed
       confirmedSent++;
       continue;
     }
@@ -65,6 +76,7 @@ export async function reconcileSubmittedPulls(
     if (rejected) {
       const reason = [rejected.reason, rejected.readableReason].filter(Boolean).join(': ') || 'rejected by server';
       await setPullSyncStatus(entry.packetId, 'rejected', { rejectionReason: reason });
+      await forgetSubmittedPayload(entry.packetId); // verdict reached — evidence lives in history + server
       confirmedRejected++;
       continue;
     }
@@ -90,11 +102,14 @@ export interface DeliveryCounts {
   attention: number;
 }
 
-/** Pure count computation (unit-testable without storage). */
+/** Pure count computation (unit-testable without storage). Edit
+ *  operations contribute attention when blocked, rejected, or past the
+ *  transport-failure threshold — a pending dependent edit is normal. */
 export function computeDeliveryCounts(
   queue: QueuedPacket[],
   history: PullHistoryEntry[],
   nowMs: number,
+  editOps: EditOperation[] = [],
 ): DeliveryCounts {
   const failed = queue.filter(p => (p.retryCount || 0) >= SYNC_FAILED_THRESHOLD).length;
   const pending = queue.length - failed;
@@ -102,12 +117,61 @@ export function computeDeliveryCounts(
     e => e.syncStatus === 'submitted' && (e.submittedAt ?? e.sentAt) < nowMs - SUBMITTED_ATTENTION_MS,
   ).length;
   const rejected = history.filter(e => e.syncStatus === 'rejected').length;
-  return { pending, failed, submittedTooLong, rejected, attention: failed + submittedTooLong + rejected };
+  const editAttention = editOps.filter(
+    o => o.state === 'edit_blocked' || o.state === 'edit_rejected' || o.attempts >= EDIT_FAILED_THRESHOLD,
+  ).length;
+  return {
+    pending,
+    failed,
+    submittedTooLong,
+    rejected,
+    attention: failed + submittedTooLong + rejected + editAttention,
+  };
 }
 
 export async function getDeliveryCounts(nowMs: number = Date.now()): Promise<DeliveryCounts> {
-  const [queue, history] = [await getQueuedPackets(), await getPullHistory()];
-  return computeDeliveryCounts(queue, history, nowMs);
+  const [queue, history, editOps] = [await getQueuedPackets(), await getPullHistory(), await getEditOperations()];
+  return computeDeliveryCounts(queue, history, nowMs, editOps);
+}
+
+/**
+ * Safe same-ID recovery for a pull stuck in 'submitted' (GS3 §7). Checks
+ * all three server locations IN ORDER before acting:
+ *   processed → confirm 'sent';  rejected → confirm 'rejected';
+ *   incoming  → still in flight: DO NOTHING (a resubmit would duplicate);
+ *   absent from all three → the packet vanished (crash/lost write): re-
+ *   queue the RETAINED payload under the SAME stable packetId and flush.
+ */
+export async function recoverStuckSubmission(
+  packetId: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<'confirmed_sent' | 'confirmed_rejected' | 'still_in_incoming' | 'resubmitted' | 'no_payload'> {
+  const processed = await readPath(`packets/processed/${packetId}`, fetchFn);
+  if (processed) {
+    const at = processed.processedAt ? new Date(processed.processedAt).getTime() : Date.now();
+    await setPullSyncStatus(packetId, 'sent', { sentConfirmedAt: Number.isFinite(at) ? at : Date.now() });
+    await forgetSubmittedPayload(packetId);
+    return 'confirmed_sent';
+  }
+  const rejected = await readPath(`packets/rejected/${packetId}`, fetchFn);
+  if (rejected) {
+    const reason = [rejected.reason, rejected.readableReason].filter(Boolean).join(': ') || 'rejected by server';
+    await setPullSyncStatus(packetId, 'rejected', { rejectionReason: reason });
+    await forgetSubmittedPayload(packetId);
+    return 'confirmed_rejected';
+  }
+  const incoming = await readPath(`packets/incoming/${packetId}`, fetchFn);
+  if (incoming) {
+    return 'still_in_incoming'; // never duplicate a packet already in flight
+  }
+  const payload = await getSubmittedPayload(packetId);
+  if (!payload) {
+    return 'no_payload'; // stays attention-flagged; nothing invented
+  }
+  await queuePacket('pull', payload); // payload carries the SAME packetId
+  await setPullSyncStatus(packetId, 'pending_sync');
+  await flushQueue();
+  return 'resubmitted';
 }
 
 export interface DeliveryItem {
@@ -117,12 +181,17 @@ export interface DeliveryItem {
   dateTime: string;             // driver-entered pull time (display)
   bblsTaken: number | null;
   type: 'pull' | 'edit';
-  status: 'pending_sync' | 'submitted' | 'sync_failed' | 'rejected';
+  status:
+    | 'pending_sync' | 'submitted' | 'sync_failed' | 'rejected'
+    | 'edit_pending' | 'edit_submitted' | 'edit_failed' | 'edit_rejected' | 'edit_blocked';
   attempts: number;
-  lastError: string | null;     // transport error or rejection reason
+  lastError: string | null;     // transport error or rejection/blocked reason
   lastAttemptAt: number | null;
-  /** Manual retry allowed ONLY for locally queued transport failures. */
-  canRetry: boolean;
+  /** Which manual action is safe for this item, if any:
+   *  'retry'   — locally queued transport failure → retryPacketNow;
+   *  'recover' — stuck submitted → recoverStuckSubmission (3-path check);
+   *  'retryEdit' — edit transport failure → processEditOperations. */
+  action: 'retry' | 'recover' | 'retryEdit' | null;
 }
 
 /**
@@ -134,6 +203,7 @@ export interface DeliveryItem {
 export async function getDeliveryItems(nowMs: number = Date.now()): Promise<DeliveryItem[]> {
   const queue = await getQueuedPackets();
   const history = await getPullHistory();
+  const editOps = await getEditOperations();
   const items: DeliveryItem[] = [];
   const queuedPacketIds = new Set(queue.map(p => p.packetId).filter(Boolean));
 
@@ -150,7 +220,7 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
       attempts: p.retryCount || 0,
       lastError: p.lastError ?? null,
       lastAttemptAt: p.lastAttemptAt ?? null,
-      canRetry: true, // in the queue ⇒ a local transport-level packet
+      action: 'retry', // in the queue ⇒ a local transport-level packet
     });
   }
 
@@ -168,9 +238,10 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
         attempts: 0,
         lastError: e.rejectionReason ?? 'rejected by server',
         lastAttemptAt: e.submittedAt ?? null,
-        canRetry: false, // server verdict — never auto/manual retried here
+        action: null, // server verdict — never auto/manual retried here
       });
     } else if (e.syncStatus === 'submitted') {
+      const stuck = (e.submittedAt ?? e.sentAt) < nowMs - SUBMITTED_ATTENTION_MS;
       items.push({
         packetId: e.packetId,
         queueId: null,
@@ -180,14 +251,39 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
         type: 'pull',
         status: 'submitted',
         attempts: 0,
-        lastError:
-          (e.submittedAt ?? e.sentAt) < nowMs - SUBMITTED_ATTENTION_MS
-            ? 'No server outcome yet — needs attention'
-            : null,
+        lastError: stuck ? 'No server outcome yet — needs attention' : null,
         lastAttemptAt: e.submittedAt ?? null,
-        canRetry: false, // outcome unknown; retrying could double-record
+        // Stuck submissions get the SAFE recovery (processed → rejected →
+        // incoming checks before any same-ID resubmit). Fresh submissions
+        // get no action — the reconciler resolves them within seconds.
+        action: stuck ? 'recover' : null,
       });
     }
+  }
+
+  // Edit operations: dependent, blocked, submitted, failed, and rejected
+  // edits are all visible; nothing is hidden until confirmed 'edited'.
+  for (const op of editOps) {
+    if (op.state === 'edited') continue;
+    const transportFailed = op.attempts >= EDIT_FAILED_THRESHOLD;
+    items.push({
+      packetId: op.originalPacketId,
+      queueId: null,
+      wellName: op.wellName,
+      dateTime: op.payload.dateTime || '',
+      bblsTaken: op.payload.bblsTaken,
+      type: 'edit',
+      status:
+        op.state === 'edit_blocked' ? 'edit_blocked'
+        : op.state === 'edit_rejected' ? 'edit_rejected'
+        : op.state === 'edit_submitted' ? 'edit_submitted'
+        : transportFailed ? 'edit_failed'
+        : 'edit_pending',
+      attempts: op.attempts,
+      lastError: op.rejectionReason ?? op.blockedReason ?? op.lastError,
+      lastAttemptAt: op.updatedAt,
+      action: op.state === 'edit_pending' && op.attempts > 0 ? 'retryEdit' : null,
+    });
   }
 
   // Oldest first — same discipline as the queue itself.

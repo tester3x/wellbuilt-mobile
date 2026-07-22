@@ -51,8 +51,8 @@ describe('record.tsx wiring of the future-time gate', () => {
   test('the gate precedes the edit branch and every side effect', () => {
     const sideEffects = [
       'if (isEditMode) {',        // edit path — future edit can never save
-      'smartUploadEditPacket(',   // remote edit
-      'updatePullHistoryEntry(',  // local history edit-marking
+      'submitPullEdit(',          // ordered edit delivery (merge/hold/upload)
+      'updatePullHistoryEntry(',  // local history value updates
       'smartUploadTankPacket(',   // upload (and its internal offline queueing)
       'addPullToHistory(',        // local Pull History insert
       'saveWellPull(',            // local level history

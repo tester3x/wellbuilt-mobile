@@ -126,6 +126,68 @@ async function removeFromQueue(id: string): Promise<void> {
   console.log("[PacketQueue] Removed:", id);
 }
 
+// ── Submitted-payload retention (GS3 recovery) ────────────────────────────
+// A packet leaves the queue the moment its PUT succeeds, but its server
+// outcome is still unknown. Retaining the exact payload (keyed by stable
+// packetId) makes a safe same-ID resubmission possible if the packet later
+// proves absent from processed/rejected/incoming. Pruned on confirmation.
+const SUBMITTED_PAYLOAD_KEY = "@wellbuilt_submitted_payloads";
+
+export async function rememberSubmittedPayload(packetId: string, data: any): Promise<void> {
+  try {
+    const stored = await AsyncStorage.getItem(SUBMITTED_PAYLOAD_KEY);
+    const map = stored ? JSON.parse(stored) : {};
+    map[packetId] = { data, submittedAt: Date.now() };
+    await AsyncStorage.setItem(SUBMITTED_PAYLOAD_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+export async function getSubmittedPayload(packetId: string): Promise<any | null> {
+  try {
+    const stored = await AsyncStorage.getItem(SUBMITTED_PAYLOAD_KEY);
+    const map = stored ? JSON.parse(stored) : {};
+    return map[packetId]?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function forgetSubmittedPayload(packetId: string): Promise<void> {
+  try {
+    const stored = await AsyncStorage.getItem(SUBMITTED_PAYLOAD_KEY);
+    const map = stored ? JSON.parse(stored) : {};
+    if (packetId in map) {
+      delete map[packetId];
+      await AsyncStorage.setItem(SUBMITTED_PAYLOAD_KEY, JSON.stringify(map));
+    }
+  } catch {}
+}
+
+/**
+ * Atomically mutate a QUEUED pull's payload in place (GS3 ordered edits):
+ * editing a pull that never left the phone must NOT create a separate edit
+ * packet — the queued payload itself is corrected. Stable packetId, queue
+ * position, and retry metadata are preserved; only the provided fields
+ * change. Returns false when no queued pull carries that id.
+ */
+export async function mutateQueuedPullInPlace(
+  packetId: string,
+  changes: { tankLevelFeet?: number; bblsTaken?: number; wellDown?: boolean; dateTime?: string; dateTimeUTC?: string },
+): Promise<boolean> {
+  const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
+  const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
+  const entry = queue.find(p => p.type === "pull" && p.packetId === packetId);
+  if (!entry) return false;
+  const applied: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(changes)) {
+    if (v !== undefined && v !== "") applied[k] = v;
+  }
+  entry.data = { ...entry.data, ...applied, packetId }; // identity immutable
+  await saveQueue(queue);
+  console.log("[PacketQueue] Edited queued pull in place:", packetId);
+  return true;
+}
+
 // Persist updated retry metadata for ONE packet immediately (crash-safe:
 // a crash later in the flush loop cannot lose this attempt's bookkeeping).
 async function persistAttemptFailure(id: string, error: string, nowMs: number): Promise<void> {
@@ -240,6 +302,9 @@ async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
         // "submitted" — the server may still quarantine it. 'sent' comes
         // from the delivery reconciler once packets/processed confirms.
         try { await setPullSyncStatus(packet.packetId, "submitted", { submittedAt: Date.now() }); } catch {}
+        // Retain the exact payload for safe same-ID recovery if the
+        // packet later vanishes without a server verdict.
+        try { await rememberSubmittedPayload(packet.packetId, packet.data); } catch {}
       }
       console.log("[PacketQueue] Submitted:", packet.id, packet.packetId ?? "");
     } else {
@@ -404,6 +469,9 @@ export async function smartUploadTankPacket(params: {
   if (online) {
     try {
       const result = await uploadTankPacket(stableParams);
+      // Same recovery contract as flushed packets: keep the payload until
+      // the reconciler confirms a server verdict.
+      try { await rememberSubmittedPayload(packetId, stableParams); } catch {}
       return {
         success: true,
         queued: false,

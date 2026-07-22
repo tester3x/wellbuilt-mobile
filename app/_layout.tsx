@@ -19,6 +19,7 @@ import { SyncConfirmation } from '../src/components/OfflineStatusBar';
 import { SyncAttentionBadge } from '../src/components/SyncAttentionBadge';
 import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/services/wellHistory';
 import { startDeliveryReconciler } from '../src/services/deliveryStatus';
+import { startEditDelivery } from '../src/services/editDelivery';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
 import { clearDriverSession } from '../src/services/driverAuth';
 
@@ -140,6 +141,10 @@ export default function RootLayout() {
     // packets/processed | packets/rejected. Started BEFORE the flush so
     // the flush-complete event triggers a reconcile pass.
     startDeliveryReconciler();
+
+    // Ordered edit delivery (GS3): dependent edits survive restart and
+    // release only after their original pull is confirmed processed.
+    startEditDelivery();
 
     // Flush any packets that were queued while app was closed
     flushQueue();

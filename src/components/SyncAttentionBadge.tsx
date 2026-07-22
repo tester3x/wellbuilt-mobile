@@ -7,13 +7,21 @@
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DeliveryCounts, getDeliveryCounts } from '../services/deliveryStatus';
 import { onFlushComplete } from '../services/packetQueue';
+import { badgeRightOffset, badgeTopOffset } from '../ui/safeAreaBadge';
 
 const POLL_MS = 30 * 1000;
 
 export function SyncAttentionBadge() {
   const router = useRouter();
+  // Safe-area placement from the app's EXISTING provider (expo-router's
+  // root supplies initial window metrics, so insets resolve synchronously
+  // — no layout jump on first render). Clears the status bar/notch/
+  // Dynamic Island on Fold cover+main, S24, tablets, and iPhones, in
+  // portrait and landscape.
+  const insets = useSafeAreaInsets();
   const [counts, setCounts] = useState<DeliveryCounts | null>(null);
 
   const refresh = useCallback(async () => {
@@ -40,7 +48,11 @@ export function SyncAttentionBadge() {
 
   return (
     <TouchableOpacity
-      style={[styles.badge, urgent ? styles.badgeUrgent : styles.badgePending]}
+      style={[
+        styles.badge,
+        urgent ? styles.badgeUrgent : styles.badgePending,
+        { top: badgeTopOffset(insets.top), right: badgeRightOffset(insets.right) },
+      ]}
       onPress={() => router.push('/sync-status')}
       accessibilityRole="button"
       accessibilityLabel="Open sync status"
@@ -53,12 +65,14 @@ export function SyncAttentionBadge() {
 const styles = StyleSheet.create({
   badge: {
     position: 'absolute',
-    top: 52,
-    right: 12,
+    // top/right come from safe-area insets at render time (see above) —
+    // never fixed offsets that collide with status bars or notches.
     zIndex: 999,
     elevation: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
+    minHeight: 32, // preserve a comfortable tap target on dense screens
+    justifyContent: 'center',
     borderRadius: 16,
     borderWidth: 1,
   },

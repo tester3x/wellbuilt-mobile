@@ -10,10 +10,15 @@ import {
   FISH_HOOK_DEPTH_PX,
   FISH_MIN_SUBMERGE_PX,
   FISHERMAN_WIDTH,
+  PELICAN_FOOT_OVERLAP_PX,
   PELICAN_HEIGHT,
   PELICAN_MAX_INTERVAL_MS,
   PELICAN_MIN_INTERVAL_MS,
+  PELICAN_MIN_SCALE,
+  PELICAN_TOP_SAFE_MARGIN_PX,
   PELICAN_WIDTH,
+  RIPPLE_MAX_AMPLITUDE_PX,
+  RIPPLE_MAX_SLOPE,
   computeDuckBand,
   computeFishermanLayout,
   duckTopOffset,
@@ -21,8 +26,11 @@ import {
   fishHookedCenterY,
   fishingLineHeight,
   nextPelicanDelayMs,
+  pelicanLayout,
   pelicanPerchX,
   pelicanTopPx,
+  poleTipSway,
+  rippleGeometry,
 } from '../tankWildlife';
 
 /** Interior widths for phone / Fold cover / Fold main / tablet layouts. */
@@ -176,7 +184,7 @@ describe('wiring — index.tsx integration facts', () => {
 
   test('fisherman scene is rim-anchored with pole-tip line and hooked fish helpers', () => {
     expect(src).toContain('computeFishermanLayout(INTERIOR_WIDTH');
-    expect(src).toContain('fishingLineHeight(waterTop, fisher.poleTipYPx');
+    expect(src).toContain('fishingLineHeight(waterTop, tipY, tug)'); // tip rides the sway
     expect(src).toContain('fishHookedCenterY(waterTop, tug)');
     expect(src).toContain('styles.fishermanSeat');
     expect(src).not.toMatch(/aliveFloat[\s\S]{0,60}🎣/); // old floating pole gone
@@ -187,7 +195,7 @@ describe('wiring — index.tsx integration facts', () => {
     expect(src).toContain('pelicanTimerRef');
     expect(src).toMatch(/clearTimeout\(pelicanTimerRef\.current\)/);
     expect(src).toContain('pelicanPerchX(INTERIOR_WIDTH');
-    expect(src).toContain('pelicanTopPx(');
+    expect(src).toContain('PELICAN_TOP_SAFE_MARGIN_PX'); // safe-clamped placement (inline worklet math)
     // one state slot → one pelican, ever
     expect(src.split('setPelicanVisit(').length - 1).toBeGreaterThanOrEqual(3); // set + two clears
     expect(src).toContain('<TankPelican');
@@ -222,5 +230,161 @@ describe('wiring — index.tsx integration facts', () => {
 
   test('dev override stays disabled in commits', () => {
     expect(src).toMatch(/FORCE_EGG: 'fish' \| 'fisherman' \| 'duck' \| null = null;/);
+  });
+});
+
+describe('shallow ripple geometry (follow-up fix)', () => {
+  test('relief never exceeds the amplitude cap at ANY interior width', () => {
+    for (const w of WIDTHS.concat([80, 900])) {
+      const g = rippleGeometry(w);
+      expect(g.crestPx).toBeLessThanOrEqual(RIPPLE_MAX_AMPLITUDE_PX);
+      expect(g.crestBPx).toBeLessThanOrEqual(g.crestPx); // two UNEQUAL gentle crests
+      expect(g.crestBPx).toBeGreaterThan(0);
+    }
+  });
+
+  test('no deep V-point geometry: crests are wide, shallow, and heavily overlapped', () => {
+    for (const w of WIDTHS) {
+      const g = rippleGeometry(w);
+      // Shallow slope (the old humps were 5/16 = 0.31 - visibly pointy).
+      expect(g.crestPx / g.crestWidthPx).toBeLessThanOrEqual(RIPPLE_MAX_SLOPE + 0.001);
+      // Stride < drawn width => every shoulder hides behind its neighbor,
+      // so the profile can never dip to the base in a sharp cusp.
+      expect(g.wavelengthPx).toBeLessThan(g.crestWidthPx);
+      expect((g.crestWidthPx - g.wavelengthPx) / g.crestWidthPx).toBeGreaterThanOrEqual(0.3);
+    }
+  });
+
+  test('wavelength scales responsively and stays bounded; rows cover the interior plus drift overhang', () => {
+    const small = rippleGeometry(110);
+    const big = rippleGeometry(560);
+    expect(small.wavelengthPx).toBeGreaterThanOrEqual(22);
+    expect(big.wavelengthPx).toBeLessThanOrEqual(44);
+    expect(big.wavelengthPx).toBeGreaterThan(small.wavelengthPx);
+    for (const w of WIDTHS) {
+      const g = rippleGeometry(w);
+      expect(g.humpCount * g.wavelengthPx).toBeGreaterThanOrEqual(w + 2 * g.wavelengthPx);
+    }
+  });
+
+  test('degenerate widths still produce sane geometry', () => {
+    for (const bad of [0, -5, Number.NaN]) {
+      const g = rippleGeometry(bad as number);
+      expect(g.crestPx).toBeGreaterThan(0);
+      expect(g.humpCount).toBeGreaterThan(2);
+    }
+  });
+});
+
+describe('pelican safe clamp (follow-up fix)', () => {
+  test('normal phone mid-level: full size, feet on the number top edge', () => {
+    const lay = pelicanLayout(101.8)!; // 390-pt phone, mid level
+    expect(lay.scale).toBe(1);
+    expect(lay.topPx + PELICAN_HEIGHT * lay.scale).toBeCloseTo(101.8 + PELICAN_FOOT_OVERLAP_PX, 5);
+    expect(lay.topPx).toBeGreaterThanOrEqual(PELICAN_TOP_SAFE_MARGIN_PX);
+  });
+
+  test('nearly-full on Fold-cover geometry: scales down but stays inside the interior and above the digits', () => {
+    // Fold cover ~344x748: interior height ~202, number clamp min 30.3,
+    // NUMBER_OFFSET ~11.2 -> numberTop ~19.1 - tighter than the pelican.
+    const lay = pelicanLayout(19.1)!;
+    expect(lay.scale).toBeLessThan(1);
+    expect(lay.scale).toBeGreaterThanOrEqual(PELICAN_MIN_SCALE);
+    expect(lay.topPx).toBeGreaterThanOrEqual(PELICAN_TOP_SAFE_MARGIN_PX); // never behind the frame
+    // Never covers the digits: bottom stays at/above numberTop + seated overlap.
+    expect(lay.topPx + PELICAN_HEIGHT * lay.scale).toBeLessThanOrEqual(19.1 + PELICAN_FOOT_OVERLAP_PX + 0.001);
+  });
+
+  test('insufficient space: the visit is skipped entirely, never squeezed or escaping', () => {
+    expect(pelicanLayout(8)).toBeNull();   // < min-scale room
+    expect(pelicanLayout(0)).toBeNull();
+    expect(pelicanLayout(-10)).toBeNull();
+  });
+
+  test('empty-tank geometry (number clamped low) is unconstrained full size', () => {
+    const lay = pelicanLayout(159)!;
+    expect(lay.scale).toBe(1);
+  });
+});
+
+describe('pole-line attachment (follow-up fix)', () => {
+  test('drawn pole length equals hands-to-tip distance - the art can never overshoot a clamped tip', () => {
+    for (const w of WIDTHS) {
+      for (const onLeft of [true, false]) {
+        const lay = computeFishermanLayout(w, onLeft, 0.5);
+        const dist = Math.hypot(lay.poleTipXPx - lay.handsXPx, lay.poleTipYPx - lay.handsYPx);
+        expect(lay.poleLenPx).toBeCloseTo(dist, 6);
+        expect(lay.poleAngleDeg).toBeGreaterThan(0); // always dips toward the water
+      }
+    }
+  });
+
+  test('line anchor follows the exact rigid-body tip displacement at both sway extremes', () => {
+    const lay = computeFishermanLayout(300, true, 0.5);
+    for (const angle of [-1, 1]) { // the sway extremes used in production
+      const sway = poleTipSway(lay.swayRxPx, lay.swayRyPx, angle);
+      // Sub-pixel movement - and by construction the LINE uses this same
+      // displacement, so tip and line coincide exactly: zero air gap.
+      expect(Math.abs(sway.dx)).toBeLessThan(1);
+      expect(Math.abs(sway.dy)).toBeLessThan(1);
+    }
+    const rest = poleTipSway(lay.swayRxPx, lay.swayRyPx, 0);
+    expect(Math.abs(rest.dx)).toBe(0); // exactly at rest with no sway
+    expect(Math.abs(rest.dy)).toBe(0);
+  });
+
+  test('right-side spawn mirrors correctly (negative sway radius)', () => {
+    const lay = computeFishermanLayout(300, false, 0.5);
+    expect(lay.swayRxPx).toBeLessThan(0);
+    const sway = poleTipSway(lay.swayRxPx, lay.swayRyPx, 1);
+    expect(Number.isFinite(sway.dx)).toBe(true);
+  });
+});
+
+describe('follow-up wiring: waterline stability, lifecycle, reduced motion', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../../app/(tabs)/index.tsx'), 'utf8');
+
+  test('ripple drifts LATERALLY only - the nominal waterline never moves', () => {
+    const rowA = src.slice(src.indexOf('rippleRowAStyle'), src.indexOf('rippleRowAStyle') + 400);
+    expect(rowA).toContain('translateX');
+    expect(rowA).not.toContain('translateY'); // no vertical sloshing
+    // Wildlife anchors to the NOMINAL line (waterFraction math), never the crests.
+    expect(src).toContain('duckTopOffset(waterTop)');
+    expect(src.split('INTERIOR_HEIGHT * (1 - waterFraction.value)').length - 1).toBeGreaterThanOrEqual(4);
+    expect(src).not.toMatch(/duck[\s\S]{0,120}RIPPLE\.crest/); // duck ignores decorative relief
+  });
+
+  test('all loops and the pelican schedule are gated on sceneActive (isActive AND app foreground)', () => {
+    expect(src).toContain("AppState.addEventListener('change', (s) => setAppForeground(s === 'active'))");
+    expect(src).toContain('const sceneActive = isActive && appForeground;');
+    expect(src).toMatch(/!sceneActive \|\| reducedMotion\) \{ cancelAnimation\(wavePhase\)/);
+    expect(src).toMatch(/!sceneActive \|\| reducedMotion\) \{ cancelAnimation\(drift\)/);
+    expect(src).toMatch(/sceneActive && !reducedMotion && \(aliveEgg\.kind === 'fish'/);
+    expect(src).toMatch(/if \(!sceneActive\) \{ setPelicanVisit\(null\); return; \}/);
+  });
+
+  test('reduced motion: ripple drift is zeroed and its loop never starts', () => {
+    expect(src).toMatch(/translateX: reducedMotion \? 0 : drift\.value/);
+    expect(src).toMatch(/translateX: reducedMotion \? 0 : -drift\.value/);
+  });
+
+  test('line and hooked fish ride the swayed pole tip', () => {
+    expect(src.split('poleTipSway(fisher.swayRxPx, fisher.swayRyPx, angle)').length - 1).toBe(2);
+    expect(src).toContain('left: fisher.poleTipXPx + sway.dx');
+    expect(src).toContain('poleLenPx={fisher.poleLenPx}');
+    expect(src).toContain('poleAngleDeg={fisher.poleAngleDeg}');
+  });
+
+  test('worklet-called helpers carry the worklet directive (UI-thread safety)', () => {
+    const lib = fs.readFileSync(path.join(__dirname, '../tankWildlife.ts'), 'utf8');
+    for (const fn of ['duckTopOffset', 'fishingLineHeight', 'fishHookedCenterY', 'poleTipSway', 'pelicanTopPx']) {
+      const idx = lib.indexOf(`export function ${fn}`);
+      expect(lib.slice(idx, idx + 220)).toContain("'worklet'");
+    }
+  });
+
+  test('pelican scales bottom-anchored so its feet stay on the number', () => {
+    expect(src).toContain("transformOrigin: 'center bottom'");
+    expect(src).toContain('PELICAN_FOOT_OVERLAP_PX * scale - PELICAN_HEIGHT');
   });
 });

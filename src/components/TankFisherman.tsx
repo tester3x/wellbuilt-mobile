@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { FISHERMAN_HEIGHT, FISHERMAN_WIDTH, POLE_REACH_X, POLE_TIP_DROP_Y } from '../ui/tankWildlife';
+import { FISHERMAN_HANDS_LOCAL, FISHERMAN_HEIGHT, FISHERMAN_WIDTH } from '../ui/tankWildlife';
 
 const HAT = '#3f6b45';
 const SKIN = '#e8b98a';
@@ -18,7 +18,18 @@ const JACKET = '#b3552e';
 const PANTS = '#31405e';
 const POLE = '#8a6b42';
 
-export function TankFisherman({ facingLeft = false }: { facingLeft?: boolean }) {
+export function TankFisherman({
+  facingLeft = false,
+  poleLenPx = 30,
+  poleAngleDeg = 8,
+}: {
+  facingLeft?: boolean;
+  /** Hands→tip length from computeFishermanLayout — the drawn pole ends
+   *  EXACTLY where the fishing line hangs, even when the tip is clamped
+   *  away from the level-text column. */
+  poleLenPx?: number;
+  poleAngleDeg?: number;
+}) {
   return (
     <View
       pointerEvents="none"
@@ -26,8 +37,17 @@ export function TankFisherman({ facingLeft = false }: { facingLeft?: boolean }) 
       importantForAccessibility="no-hide-descendants"
       style={[styles.box, facingLeft && styles.flipped]}
     >
-      {/* pole — held at the hands, tip reaching out/down over the water */}
-      <View style={styles.pole} />
+      {/* pole — rotates FROM THE HANDS (transform origin at its butt) so
+          hands, drawn tip, and the line's mathematical tip coincide */}
+      <View
+        style={[
+          styles.pole,
+          {
+            width: Math.max(8, poleLenPx),
+            transform: [{ rotate: `${poleAngleDeg}deg` }],
+          },
+        ]}
+      />
       {/* hat brim + dome */}
       <View style={styles.hatBrim} />
       <View style={styles.hatDome} />
@@ -54,14 +74,14 @@ const styles = StyleSheet.create({
   },
   pole: {
     position: 'absolute',
-    left: FISHERMAN_WIDTH - 8,
-    top: 10,
-    width: POLE_REACH_X + 8,
+    left: FISHERMAN_HANDS_LOCAL.x,
+    top: FISHERMAN_HANDS_LOCAL.y,
     height: 2,
     borderRadius: 1,
     backgroundColor: POLE,
-    // Anchored at the hands; tip dips toward the water.
-    transform: [{ rotate: `${Math.atan2(POLE_TIP_DROP_Y - 10, POLE_REACH_X) * (180 / Math.PI)}deg` }],
+    // Rotate around the BUTT (hands), not the center — length/angle come
+    // from layout math so the tip is exact.
+    transformOrigin: 'left center',
   },
   hatBrim: {
     position: 'absolute',

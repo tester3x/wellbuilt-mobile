@@ -38,8 +38,11 @@ import { TankPelican } from '../../src/components/TankPelican';
 import {
   DUCK_FONT_SIZE,
   DuckSpawn,
-  FISHERMAN_WIDTH,
   FishermanLayout,
+  PELICAN_FOOT_OVERLAP_PX,
+  PELICAN_HEIGHT,
+  PELICAN_MIN_SCALE,
+  PELICAN_TOP_SAFE_MARGIN_PX,
   PELICAN_VISIT_MS,
   computeDuckBand,
   computeFishermanLayout,
@@ -48,7 +51,8 @@ import {
   fishingLineHeight,
   nextPelicanDelayMs,
   pelicanPerchX,
-  pelicanTopPx,
+  poleTipSway,
+  rippleGeometry,
 } from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
 // Response processing handled entirely by backgroundSync
@@ -121,7 +125,10 @@ const INTERIOR_WIDTH = TANK_WIDTH - INTERIOR_LEFT - INTERIOR_RIGHT; // for alive
 const FORCE_EGG: 'fish' | 'fisherman' | 'duck' | null = null;
 // Stylized water-top ripple texture — number of wave-crest scallops to tile
 // across the interior (clipped to the water). Precomputed once.
-const RIPPLE_HUMPS = Array.from({ length: Math.ceil(INTERIOR_WIDTH / 12) + 3 }, (_, i) => i);
+// Responsive shallow-ripple geometry — wide overlapped crests, hard
+// amplitude cap; see rippleGeometry() for the no-V-point rationale.
+const RIPPLE = rippleGeometry(INTERIOR_WIDTH);
+const RIPPLE_HUMPS = Array.from({ length: RIPPLE.humpCount }, (_, i) => i);
 const NUMBER_OFFSET = isTablet ? TANK_HEIGHT * 0.025 : SCREEN_HEIGHT * 0.015;
 
 // Responsive font sizing - tablets get scaled down to prevent oversized text
@@ -342,8 +349,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Subtle surface ripple is always on. A rare hidden critter is decided ONCE
   // per mount and kept stable for the session (no rerolling on refresh); each
   // fish also gets randomized depth / start / range / speed at the same time.
-  const wavePhase = useSharedValue(0); // 0↔1 slow loop → surface ripple glints + float bob
-  const swim = useSharedValue(0);      // 0→1 continuous loop → fish sine drift
+  const wavePhase = useSharedValue(0); // 0↔1 slow loop → bob/tug breathing
+  const swim = useSharedValue(0);      // 0→1 continuous loop → fish/duck sine drift
+  const drift = useSharedValue(0);     // 0→1 continuous loop → ripple lateral drift (one wavelength per loop)
   const TWO_PI = Math.PI * 2;
   const aliveEggRef = useRef<{
     kind: 'none' | 'fish' | 'fisherman' | 'duck';
@@ -394,16 +402,38 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   }
   const aliveEgg = aliveEggRef.current;
 
-  // Always-on subtle surface ripple (calm, slow). Only run on the active well.
+  // Reduced-motion (OS accessibility setting): wildlife and the ripple
+  // stay correctly placed/afloat but stationary — no swim, no bob, no
+  // drift, no pelican flight.
+  const reducedMotion = useReducedMotion();
+
+  // App lifecycle: when the app goes inactive/background, EVERY wildlife
+  // loop and timer is cancelled (no suspended pelican timeout can fire
+  // late); returning to the foreground starts exactly one fresh loop /
+  // one fresh bounded schedule — missed visits are never replayed.
+  const [appForeground, setAppForeground] = useState(AppState.currentState === 'active');
   useEffect(() => {
-    if (!isActive) { cancelAnimation(wavePhase); return; }
+    const sub = AppState.addEventListener('change', (s) => setAppForeground(s === 'active'));
+    return () => sub.remove();
+  }, []);
+  const sceneActive = isActive && appForeground;
+
+  // Breathing loop (bob/tug). Cancel-before-restart — never duplicates.
+  useEffect(() => {
+    if (!sceneActive || reducedMotion) { cancelAnimation(wavePhase); return; }
     wavePhase.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.ease) }), -1, true);
     return () => cancelAnimation(wavePhase);
-  }, [isActive, wavePhase]);
+  }, [sceneActive, reducedMotion, wavePhase]);
 
-  // Reduced-motion (OS accessibility setting): wildlife stays correctly
-  // placed/afloat but stationary — no swim, no bob, no pelican flight.
-  const reducedMotion = useReducedMotion();
+  // Ripple lateral drift — slow sideways travel of the decorative crests
+  // (one wavelength per loop, so the periodic pattern wraps seamlessly).
+  // The nominal waterline NEVER moves; there is no vertical sloshing.
+  useEffect(() => {
+    if (!sceneActive || reducedMotion) { cancelAnimation(drift); return; }
+    drift.value = 0;
+    drift.value = withRepeat(withTiming(1, { duration: 11000, easing: Easing.linear }), -1, false);
+    return () => cancelAnimation(drift);
+  }, [sceneActive, reducedMotion, drift]);
 
   // Swim sine loop — shared by fish AND the surface duck. Continuous
   // phase, linear + non-reversing so sin() stays smooth across the wrap.
@@ -411,12 +441,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // background/foreground and navigation can never stack duplicates.
   useEffect(() => {
     const needsSwim =
-      isActive && !reducedMotion && (aliveEgg.kind === 'fish' || aliveEgg.kind === 'duck');
+      sceneActive && !reducedMotion && (aliveEgg.kind === 'fish' || aliveEgg.kind === 'duck');
     if (!needsSwim) { cancelAnimation(swim); return; }
     swim.value = 0;
     swim.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
     return () => cancelAnimation(swim);
-  }, [isActive, aliveEgg.kind, reducedMotion, swim]);
+  }, [sceneActive, aliveEgg.kind, reducedMotion, swim]);
 
   // Handle animation when well becomes active - separate effect to ensure proper ordering
   useEffect(() => {
@@ -986,12 +1016,17 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Alive-tank cosmetic styles — read waterFraction for ALIGNMENT only; the
   // blue fill height/math is the waterStyle above and is never modified here.
   const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
-  // Surface ripple — small BLUE wave crests sitting AT the water surface that
-  // break the flat top edge. Same blue as the fill, so only the part cresting
-  // above the edge shows (against the dark interior). Two interlocking rows
-  // gently rise/fall out of phase (~±1px). Float bob stays vertical.
-  const rippleRowAStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 2 }] }));
-  const rippleRowBStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(wavePhase.value - 0.5) * 2 }] }));
+  // Surface ripple — wide, SHALLOW, overlapped blue crests riding above
+  // the flat fill edge (same blue, so only the crest relief shows). The
+  // two unequal rows DRIFT laterally in opposite directions (no vertical
+  // sloshing — the nominal waterline is stationary). One wavelength per
+  // loop makes the periodic pattern wrap seamlessly.
+  const rippleRowAStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: reducedMotion ? 0 : drift.value * RIPPLE.wavelengthPx }],
+  }));
+  const rippleRowBStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: reducedMotion ? 0 : -drift.value * RIPPLE.wavelengthPx }],
+  }));
   // (former floatBobStyle removed — the duck's bob now lives in
   // duckMoveStyle and the fisherman scene has its own tug styles)
   // Fish: movement (sine translateX) on the outer wrapper, facing (scaleX, from
@@ -1035,15 +1070,27 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // fish that tugs gently but never rises above the waterline. The line
   // length re-derives from the live water level every frame.
   const fisher = aliveEgg.fisher;
+  // The seated group sways by this angle; the LINE and hooked fish follow
+  // the EXACT rigid-body displacement of the pole tip (poleTipSway), so
+  // pole and line stay attached at both sway extremes, on either side.
   const fishingLineStyle = useAnimatedStyle(() => {
     const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    const angle = reducedMotion ? 0 : (wavePhase.value - 0.5) * 2;
+    const sway = poleTipSway(fisher.swayRxPx, fisher.swayRyPx, angle);
     const tug = reducedMotion ? 0 : (wavePhase.value - 0.5) * 4; // ±2px
-    return { top: fisher.poleTipYPx, height: fishingLineHeight(waterTop, fisher.poleTipYPx, tug) };
+    const tipY = fisher.poleTipYPx + sway.dy;
+    return {
+      left: fisher.poleTipXPx + sway.dx,
+      top: tipY,
+      height: fishingLineHeight(waterTop, tipY, tug),
+    };
   });
   const hookedFishStyle = useAnimatedStyle(() => {
     const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    const angle = reducedMotion ? 0 : (wavePhase.value - 0.5) * 2;
+    const sway = poleTipSway(fisher.swayRxPx, fisher.swayRyPx, angle);
     const tug = reducedMotion ? 0 : (wavePhase.value - 0.5) * 4;
-    return { top: fishHookedCenterY(waterTop, tug) - 6 };
+    return { left: fisher.poleTipXPx + sway.dx - 6, top: fishHookedCenterY(waterTop, tug) - 6 };
   });
   const poleTugStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: reducedMotion ? '0deg' : `${(wavePhase.value - 0.5) * 2}deg` }], // subtle pole response
@@ -1058,7 +1105,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const pelicanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pelicanIn = useSharedValue(0);
   useEffect(() => {
-    if (!isActive) { setPelicanVisit(null); return; }
+    // Gated on sceneActive: backgrounding cancels the schedule outright —
+    // a suspended timeout can never fire late, and foregrounding starts
+    // ONE fresh bounded schedule (missed visits are not replayed).
+    if (!sceneActive) { setPelicanVisit(null); return; }
     let cancelled = false;
     const scheduleNext = () => {
       pelicanTimerRef.current = setTimeout(() => {
@@ -1077,7 +1127,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       if (pelicanTimerRef.current) { clearTimeout(pelicanTimerRef.current); pelicanTimerRef.current = null; }
       setPelicanVisit(null);
     };
-  }, [isActive]);
+  }, [sceneActive]);
   useEffect(() => {
     if (!pelicanVisit) { pelicanIn.value = 0; return; }
     if (reducedMotion) { pelicanIn.value = 1; return; } // stationary perch
@@ -1087,13 +1137,26 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   }, [pelicanVisit, reducedMotion, pelicanIn]);
   const pelicanStyle = useAnimatedStyle(() => {
     // Track the SAME clamped waterline math the number uses so the feet
-    // stay aligned with the number's top edge at every level.
+    // stay aligned with the number's top edge at every level — then apply
+    // the SAFE clamp: keep the whole bird below the interior-top margin,
+    // scaling it down (bottom-anchored, feet stay on the number) when the
+    // number rides high; skip the visit entirely (opacity 0) when even
+    // the minimum scale cannot fit (smallest Fold-cover geometry).
     const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
     const clampedTop = Math.max(INTERIOR_HEIGHT * 0.15, Math.min(INTERIOR_HEIGHT * 0.75, waterTop));
+    const numberTop = clampedTop - NUMBER_OFFSET;
+    const available = numberTop + PELICAN_FOOT_OVERLAP_PX - PELICAN_TOP_SAFE_MARGIN_PX;
+    const scale = Math.min(1, available / PELICAN_HEIGHT);
+    const fits = scale >= PELICAN_MIN_SCALE;
     return {
-      top: pelicanTopPx(clampedTop - NUMBER_OFFSET),
-      opacity: pelicanIn.value,
-      transform: [{ translateY: (1 - pelicanIn.value) * -8 }], // tiny settle-in "flight"
+      // Box top: with the bottom-anchored scale below, the VISUAL top is
+      // numberTop + overlap·scale − height·scale ≥ the safe margin.
+      top: numberTop + PELICAN_FOOT_OVERLAP_PX * scale - PELICAN_HEIGHT,
+      opacity: fits ? pelicanIn.value : 0,
+      transform: [
+        { translateY: (1 - pelicanIn.value) * -8 }, // tiny settle-in "flight"
+        { scale: Math.min(1, Math.max(scale, PELICAN_MIN_SCALE)) },
+      ],
     };
   });
   
@@ -1180,11 +1243,19 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 ripple crests + any floating critter, placed OFF-CENTRE so it never
                 sits behind the level text. Clipped only by the tank interior. */}
             <Animated.View pointerEvents="none" style={[styles.aliveSurfaceLayer, aliveLayerStyle]}>
-              <Animated.View style={[styles.aliveWaveRow, rippleRowAStyle]}>
-                {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.aliveWaveHump} />)}
+              <Animated.View
+                style={[styles.aliveWaveRow, { top: -RIPPLE.crestPx, left: -RIPPLE.crestWidthPx }, rippleRowAStyle]}
+              >
+                {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.waveHumpA} />)}
               </Animated.View>
-              <Animated.View style={[styles.aliveWaveRow, styles.aliveWaveRowB, rippleRowBStyle]}>
-                {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.aliveWaveHump} />)}
+              <Animated.View
+                style={[
+                  styles.aliveWaveRow,
+                  { top: -RIPPLE.crestBPx, left: -RIPPLE.crestWidthPx + RIPPLE.rowOffsetBPx },
+                  rippleRowBStyle,
+                ]}
+              >
+                {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.waveHumpB} />)}
               </Animated.View>
               {showFloat && aliveEgg.kind === 'duck' && (
                 // Rendered AFTER the water fill (later sibling ⇒ above the
@@ -1209,10 +1280,15 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             {showFloat && aliveEgg.kind === 'fisherman' && (
               <View pointerEvents="none" style={styles.fishermanLayer}>
                 <Animated.View style={[styles.fishermanSeat, { left: fisher.fishermanLeftPx }, poleTugStyle]}>
-                  <TankFisherman facingLeft={!fisher.onLeft} />
+                  <TankFisherman
+                    facingLeft={!fisher.onLeft}
+                    poleLenPx={fisher.poleLenPx}
+                    poleAngleDeg={fisher.poleAngleDeg}
+                  />
                 </Animated.View>
-                <Animated.View style={[styles.fishingLine, { left: fisher.poleTipXPx }, fishingLineStyle]} />
-                <Animated.View style={[styles.hookedFishWrap, { left: fisher.poleTipXPx - 6 }, hookedFishStyle]}>
+                {/* line/fish left+top ride the swayed pole tip (animated) */}
+                <Animated.View style={[styles.fishingLine, fishingLineStyle]} />
+                <Animated.View style={[styles.hookedFishWrap, hookedFishStyle]}>
                   <Text accessible={false} importantForAccessibility="no" style={styles.aliveFishGlyph}>🐟</Text>
                 </Animated.View>
               </View>
@@ -2741,22 +2817,29 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
+  // Ripple rows: top/left are set inline from the responsive RIPPLE
+  // geometry. Crests are WIDE and heavily OVERLAPPED (negative stride
+  // margin) so neighboring shoulders hide behind each other — the visible
+  // profile is a continuous shallow undulation with no V-shaped cusps.
   aliveWaveRow: {
     position: 'absolute',
-    top: -3,   // base sits at the water surface; crest rises ~3px above the flat edge
-    left: 0,
     flexDirection: 'row',
   },
-  aliveWaveRowB: {
-    top: -2,
-    left: -8,  // half-hump stagger so the two rows interlock
-  },
-  aliveWaveHump: {
-    width: 16,
-    height: 5,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
+  waveHumpA: {
+    width: RIPPLE.crestWidthPx,
+    height: RIPPLE.crestPx + 3, // +3 tucks the base into the fill — no seams
+    borderTopLeftRadius: RIPPLE.crestWidthPx / 2,
+    borderTopRightRadius: RIPPLE.crestWidthPx / 2,
+    marginRight: -(RIPPLE.crestWidthPx - RIPPLE.wavelengthPx), // overlap to stride λ
     backgroundColor: '#2563EB', // SAME blue as the fill — only the crest above the flat edge shows
+  },
+  waveHumpB: {
+    width: RIPPLE.crestWidthPx,
+    height: RIPPLE.crestBPx + 3, // gentler second row — two unequal crests
+    borderTopLeftRadius: RIPPLE.crestWidthPx / 2,
+    borderTopRightRadius: RIPPLE.crestWidthPx / 2,
+    marginRight: -(RIPPLE.crestWidthPx - RIPPLE.wavelengthPx),
+    backgroundColor: '#2563EB',
   },
   aliveFishWrap: {
     position: 'absolute',
@@ -2796,6 +2879,9 @@ const styles = StyleSheet.create({
   },
   pelicanWrap: {
     position: 'absolute',
+    // Bottom-anchored scaling: when the safe clamp shrinks the pelican,
+    // its FEET stay on the number's top edge and only the body shrinks.
+    transformOrigin: 'center bottom',
   },
   tankBadge: {
     position: 'absolute',

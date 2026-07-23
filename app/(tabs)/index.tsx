@@ -28,10 +28,28 @@ import Animated, {
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
+import { TankFisherman } from '../../src/components/TankFisherman';
+import { TankPelican } from '../../src/components/TankPelican';
+import {
+  DUCK_FONT_SIZE,
+  DuckSpawn,
+  FISHERMAN_WIDTH,
+  FishermanLayout,
+  PELICAN_VISIT_MS,
+  computeDuckBand,
+  computeFishermanLayout,
+  duckTopOffset,
+  fishHookedCenterY,
+  fishingLineHeight,
+  nextPelicanDelayMs,
+  pelicanPerchX,
+  pelicanTopPx,
+} from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
@@ -331,6 +349,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     kind: 'none' | 'fish' | 'fisherman' | 'duck';
     fishCount: number;
     fish: { topPct: number; leftPct: number; freq: number; phase: number; rangePx: number }[];
+    duck: DuckSpawn & { phase: number };
+    fisher: FishermanLayout;
   } | null>(null);
   if (aliveEggRef.current === null) {
     const r = Math.random();
@@ -360,6 +380,16 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       kind,
       fishCount: kind === 'fish' ? 1 + Math.floor(Math.random() * 3) : 0,
       fish: [mkFish(), mkFish(), mkFish()],
+      // Duck: side band + jittered start + random phase — decided once, so
+      // every tank's duck starts somewhere different (never synchronized)
+      // yet stays inside its band and out of the level-text column.
+      duck: {
+        ...computeDuckBand(INTERIOR_WIDTH, Math.random() < 0.5, Math.random()),
+        phase: Math.random() * TWO_PI,
+      },
+      // Fisherman: seated on the rim at a jittered side spot; the pole tip
+      // (where the line hangs) is clamped out of the center column.
+      fisher: computeFishermanLayout(INTERIOR_WIDTH, Math.random() < 0.5, Math.random()),
     };
   }
   const aliveEgg = aliveEggRef.current;
@@ -371,14 +401,22 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     return () => cancelAnimation(wavePhase);
   }, [isActive, wavePhase]);
 
-  // Fish sine-drift loop — continuous phase; per-fish freq/phase shape the swim.
-  // Linear + non-reversing so sin() stays smooth across the wrap (integer freq).
+  // Reduced-motion (OS accessibility setting): wildlife stays correctly
+  // placed/afloat but stationary — no swim, no bob, no pelican flight.
+  const reducedMotion = useReducedMotion();
+
+  // Swim sine loop — shared by fish AND the surface duck. Continuous
+  // phase, linear + non-reversing so sin() stays smooth across the wrap.
+  // ONE loop per screen: the effect cancels before every (re)start, so
+  // background/foreground and navigation can never stack duplicates.
   useEffect(() => {
-    if (!isActive || aliveEgg.kind !== 'fish') { cancelAnimation(swim); return; }
+    const needsSwim =
+      isActive && !reducedMotion && (aliveEgg.kind === 'fish' || aliveEgg.kind === 'duck');
+    if (!needsSwim) { cancelAnimation(swim); return; }
     swim.value = 0;
     swim.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
     return () => cancelAnimation(swim);
-  }, [isActive, aliveEgg.kind, swim]);
+  }, [isActive, aliveEgg.kind, reducedMotion, swim]);
 
   // Handle animation when well becomes active - separate effect to ensure proper ordering
   useEffect(() => {
@@ -954,7 +992,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // gently rise/fall out of phase (~±1px). Float bob stays vertical.
   const rippleRowAStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 2 }] }));
   const rippleRowBStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(wavePhase.value - 0.5) * 2 }] }));
-  const floatBobStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (wavePhase.value - 0.5) * 5 }] }));      // ~±2.5px
+  // (former floatBobStyle removed — the duck's bob now lives in
+  // duckMoveStyle and the fisherman scene has its own tug styles)
   // Fish: movement (sine translateX) on the outer wrapper, facing (scaleX, from
   // the sign of the velocity = cos of the same phase) on the inner glyph — so
   // the flip can never affect position. 🐟 faces left, so flip to -1 (face right)
@@ -970,6 +1009,93 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
   const showFloat = (aliveEgg.kind === 'duck' || aliveEgg.kind === 'fisherman') && aliveWaterPct > 0.12;
+
+  // ── Duck (surface lane): swims its side band, flips at turnarounds,
+  // bobs with the ripple, and its glyph is clamped so it stays fully
+  // inside the tank even when nearly full. Reduced motion → floats still.
+  const duck = aliveEgg.duck;
+  const duckMoveStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: reducedMotion ? 0 : Math.sin(swim.value * TWO_PI + duck.phase) * duck.rangePx },
+      { translateY: reducedMotion ? 0 : (wavePhase.value - 0.5) * 4 }, // gentle ±2px bob on the waterline
+    ],
+  }));
+  // Facing = sign of horizontal velocity (cos of the same phase); flip on
+  // the inner glyph only so it can never affect position. 🦆 faces left.
+  const duckFaceStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleX: !reducedMotion && Math.cos(swim.value * TWO_PI + duck.phase) >= 0 ? -1 : 1 }],
+  }));
+  const duckSurfaceStyle = useAnimatedStyle(() => {
+    const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    return { top: duckTopOffset(waterTop) };
+  });
+
+  // ── Fisherman scene (rim lane): he sits ON the rim holding the pole;
+  // the line hangs from the pole tip THROUGH the surface to a hooked
+  // fish that tugs gently but never rises above the waterline. The line
+  // length re-derives from the live water level every frame.
+  const fisher = aliveEgg.fisher;
+  const fishingLineStyle = useAnimatedStyle(() => {
+    const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    const tug = reducedMotion ? 0 : (wavePhase.value - 0.5) * 4; // ±2px
+    return { top: fisher.poleTipYPx, height: fishingLineHeight(waterTop, fisher.poleTipYPx, tug) };
+  });
+  const hookedFishStyle = useAnimatedStyle(() => {
+    const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    const tug = reducedMotion ? 0 : (wavePhase.value - 0.5) * 4;
+    return { top: fishHookedCenterY(waterTop, tug) - 6 };
+  });
+  const poleTugStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: reducedMotion ? '0deg' : `${(wavePhase.value - 0.5) * 2}deg` }], // subtle pole response
+  }));
+
+  // ── Pelican (above-the-number lane): occasional visitor on a bounded
+  // random schedule; perches with its feet on the number's top edge —
+  // entirely above the digits, never covering them. ONE timer chain per
+  // screen (ref-held) → never multiple pelicans; fully cleaned up on
+  // blur/unmount. Reduced motion: stationary perch, no flight animation.
+  const [pelicanVisit, setPelicanVisit] = useState<{ side: 'left' | 'right'; jitter: number } | null>(null);
+  const pelicanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pelicanIn = useSharedValue(0);
+  useEffect(() => {
+    if (!isActive) { setPelicanVisit(null); return; }
+    let cancelled = false;
+    const scheduleNext = () => {
+      pelicanTimerRef.current = setTimeout(() => {
+        if (cancelled) return;
+        setPelicanVisit({ side: Math.random() < 0.5 ? 'left' : 'right', jitter: Math.random() });
+        pelicanTimerRef.current = setTimeout(() => {
+          if (cancelled) return;
+          setPelicanVisit(null);
+          scheduleNext();
+        }, PELICAN_VISIT_MS);
+      }, nextPelicanDelayMs(Math.random()));
+    };
+    scheduleNext();
+    return () => {
+      cancelled = true;
+      if (pelicanTimerRef.current) { clearTimeout(pelicanTimerRef.current); pelicanTimerRef.current = null; }
+      setPelicanVisit(null);
+    };
+  }, [isActive]);
+  useEffect(() => {
+    if (!pelicanVisit) { pelicanIn.value = 0; return; }
+    if (reducedMotion) { pelicanIn.value = 1; return; } // stationary perch
+    pelicanIn.value = 0;
+    pelicanIn.value = withTiming(1, { duration: 550, easing: Easing.out(Easing.ease) });
+    return () => cancelAnimation(pelicanIn);
+  }, [pelicanVisit, reducedMotion, pelicanIn]);
+  const pelicanStyle = useAnimatedStyle(() => {
+    // Track the SAME clamped waterline math the number uses so the feet
+    // stay aligned with the number's top edge at every level.
+    const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    const clampedTop = Math.max(INTERIOR_HEIGHT * 0.15, Math.min(INTERIOR_HEIGHT * 0.75, waterTop));
+    return {
+      top: pelicanTopPx(clampedTop - NUMBER_OFFSET),
+      opacity: pelicanIn.value,
+      transform: [{ translateY: (1 - pelicanIn.value) * -8 }], // tiny settle-in "flight"
+    };
+  });
   
   // Number floats half in/half out of water - positioned from TOP of interior
   const numberStyle = useAnimatedStyle(() => {
@@ -1061,12 +1187,51 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.aliveWaveHump} />)}
               </Animated.View>
               {showFloat && aliveEgg.kind === 'duck' && (
-                <Animated.Text style={[styles.aliveFloat, { left: '22%' }, floatBobStyle]}>🦆</Animated.Text>
-              )}
-              {showFloat && aliveEgg.kind === 'fisherman' && (
-                <Animated.Text style={[styles.aliveFloat, { left: '22%' }, floatBobStyle]}>🎣</Animated.Text>
+                // Rendered AFTER the water fill (later sibling ⇒ above the
+                // blue layer). Belly just in the waterline, most of the
+                // body above it; band + clamp keep it inside the tank.
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.aliveDuckWrap, { left: duck.basePx }, duckSurfaceStyle, duckMoveStyle]}
+                >
+                  <Animated.Text
+                    accessible={false}
+                    importantForAccessibility="no"
+                    style={[styles.aliveDuckGlyph, duckFaceStyle]}
+                  >🦆</Animated.Text>
+                </Animated.View>
               )}
             </Animated.View>
+
+            {/* Fisherman scene — anchored to the INTERIOR TOP (the rim),
+                never floating in the water. Line + hooked fish track the
+                live waterline; fish stays strictly below the surface. */}
+            {showFloat && aliveEgg.kind === 'fisherman' && (
+              <View pointerEvents="none" style={styles.fishermanLayer}>
+                <Animated.View style={[styles.fishermanSeat, { left: fisher.fishermanLeftPx }, poleTugStyle]}>
+                  <TankFisherman facingLeft={!fisher.onLeft} />
+                </Animated.View>
+                <Animated.View style={[styles.fishingLine, { left: fisher.poleTipXPx }, fishingLineStyle]} />
+                <Animated.View style={[styles.hookedFishWrap, { left: fisher.poleTipXPx - 6 }, hookedFishStyle]}>
+                  <Text accessible={false} importantForAccessibility="no" style={styles.aliveFishGlyph}>🐟</Text>
+                </Animated.View>
+              </View>
+            )}
+
+            {/* Pelican — occasional visitor perched on the level number's
+                top edge; entirely above the digits, never covering them. */}
+            {pelicanVisit && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.pelicanWrap,
+                  { left: pelicanPerchX(INTERIOR_WIDTH, pelicanVisit.side, pelicanVisit.jitter) },
+                  pelicanStyle,
+                ]}
+              >
+                <TankPelican facingRight={pelicanVisit.side === 'left'} />
+              </Animated.View>
+            )}
 
             <Animated.View style={[styles.numberContainer, numberStyle]}>
               <Text style={styles.tankNumber}>{currentLevelDisplay}</Text>
@@ -2600,11 +2765,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     opacity: 0.3,
   },
-  aliveFloat: {
+  // Duck rides the surface layer's top edge (= the waterline); its
+  // vertical offset is animated (duckSurfaceStyle) so a nearly-full tank
+  // can never push it out of the interior. Bigger + near-opaque so it
+  // reads as FLOATING, not drowning (the old 13px/0.4 float sank into
+  // the blue visually).
+  aliveDuckWrap: {
     position: 'absolute',
-    top: -7, // rides on the surface line
-    fontSize: 13,
-    opacity: 0.4,
+  },
+  aliveDuckGlyph: {
+    fontSize: DUCK_FONT_SIZE,
+    opacity: 0.9,
+  },
+  // Fisherman scene — anchored to the interior (rim at top), not to the
+  // water layer. Never clipped by the water height.
+  fishermanLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  fishermanSeat: {
+    position: 'absolute',
+    top: -2, // seated ON the rim edge
+  },
+  fishingLine: {
+    position: 'absolute',
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  hookedFishWrap: {
+    position: 'absolute',
+  },
+  pelicanWrap: {
+    position: 'absolute',
   },
   tankBadge: {
     position: 'absolute',

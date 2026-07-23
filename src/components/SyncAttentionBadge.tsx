@@ -4,13 +4,13 @@
 // submitted, or server-rejected. Tapping opens the Sync Status screen.
 // Evidence is never hidden until the underlying state is resolved.
 
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DeliveryCounts, getDeliveryCounts } from '../services/deliveryStatus';
+import { DeliveryCounts, getDeliveryCounts, onReconcileResult } from '../services/deliveryStatus';
 import { onFlushComplete } from '../services/packetQueue';
-import { badgeRightOffset, badgeTopOffset } from '../ui/safeAreaBadge';
+import { badgeLeftOffset, badgePlacementForRoute, badgeRightOffset, badgeTopOffset } from '../ui/safeAreaBadge';
 
 const POLL_MS = 30 * 1000;
 
@@ -34,10 +34,20 @@ export function SyncAttentionBadge() {
 
   useEffect(() => {
     refresh();
-    const unsub = onFlushComplete(() => { refresh(); });
+    const unsubFlush = onFlushComplete(() => { refresh(); });
+    // Immediate update when a reconcile pass settles outcomes — the badge
+    // must never lag behind a processed/rejected confirmation.
+    const unsubReconcile = onReconcileResult(() => { refresh(); });
     const timer = setInterval(refresh, POLL_MS);
-    return () => { unsub(); clearInterval(timer); };
+    return () => { unsubFlush(); unsubReconcile(); clearInterval(timer); };
   }, [refresh]);
+
+  // Route-aware placement (field-test fix): left on the tank overview
+  // (settings gear owns top-right), hidden on Sync Status (the screen IS
+  // the status), right elsewhere. Safe-area behavior unchanged.
+  const pathname = usePathname();
+  const placement = badgePlacementForRoute(pathname);
+  if (placement === 'hidden') return null;
 
   if (!counts || (counts.pending === 0 && counts.attention === 0)) return null;
 
@@ -51,7 +61,10 @@ export function SyncAttentionBadge() {
       style={[
         styles.badge,
         urgent ? styles.badgeUrgent : styles.badgePending,
-        { top: badgeTopOffset(insets.top), right: badgeRightOffset(insets.right) },
+        { top: badgeTopOffset(insets.top) },
+        placement === 'left'
+          ? { left: badgeLeftOffset(insets.left) }
+          : { right: badgeRightOffset(insets.right) },
       ]}
       onPress={() => router.push('/sync-status')}
       accessibilityRole="button"

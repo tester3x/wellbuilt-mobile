@@ -26,3 +26,27 @@ export function badgeRightOffset(insetRight: number): number {
   const inset = Number.isFinite(insetRight) && insetRight > 0 ? insetRight : 0;
   return Math.max(inset + BADGE_RIGHT_MIN, BADGE_RIGHT_MIN);
 }
+
+/** Left offset: mirror of the right rule for left-side placement. */
+export function badgeLeftOffset(insetLeft: number): number {
+  const inset = Number.isFinite(insetLeft) && insetLeft > 0 ? insetLeft : 0;
+  return Math.max(inset + BADGE_RIGHT_MIN, BADGE_RIGHT_MIN);
+}
+
+export type BadgePlacement = 'left' | 'right' | 'hidden';
+
+/**
+ * Route-aware placement (field-test fix): the badge must never sit on top
+ * of another control.
+ *  - Tank overview ('/', the (tabs) home): the settings gear owns the top-
+ *    right corner → badge goes LEFT.
+ *  - Sync Status: the screen IS the status display → badge hidden.
+ *  - Record Load and every other audited route (settings/history/manager/
+ *    well-data/…): back/menu controls sit top-LEFT → badge stays RIGHT.
+ */
+export function badgePlacementForRoute(pathname: string | null | undefined): BadgePlacement {
+  const p = String(pathname || '').toLowerCase();
+  if (p.includes('sync-status')) return 'hidden';
+  if (p === '/' || p === '' || p === '/index' || p.includes('(tabs)')) return 'left';
+  return 'right';
+}

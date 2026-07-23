@@ -19,7 +19,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppAlert } from '../components/AppAlert';
 import { useDispatch } from '../src/contexts/DispatchContext';
 import { isCurrentUserViewer } from '../src/services/driverAuth';
-import { smartUploadTankPacket, getQueueCount } from '../src/services/packetQueue';
+import { smartUploadTankPacket } from '../src/services/packetQueue';
+import { showSyncToast } from '../src/components/SyncToast';
 import { submitPullEdit } from '../src/services/editDelivery';
 import { mintPacketId } from '../src/services/firebase';
 import { evaluatePullTime } from '../src/services/pullTimeGuard';
@@ -573,6 +574,20 @@ export default function RecordScreen() {
     setDateTime(newDate);
   };
 
+  // Field-test fix: once the pull is DURABLY stored (queued or uploaded +
+  // history written), the form must clear immediately — before any
+  // feedback, independent of toast dismissal or network state — so two
+  // consecutive offline pulls can never inherit stale values. Never called
+  // on a storage failure (the catch path keeps the driver's entries).
+  const resetFormAfterDurableSave = () => {
+    setLevel('');
+    setBarrels('');
+    setWellDown(false);
+    const now = new Date();
+    setDateTime(now);
+    setTempDateTime(now);
+  };
+
   const handleSubmit = async () => {
     if (!wellName) {
       alert.show("Error", "No well selected");
@@ -733,20 +748,27 @@ export default function RecordScreen() {
         }
 
         setIsSending(false);
+        // Edit is durably stored (merged/held/op) — clear temporary form
+        // state before feedback, same discipline as new pulls.
+        resetFormAfterDurableSave();
 
         if (editOutcome.mode === 'merged_into_queued') {
-          alert.show(
-            'Pull Updated',
-            "This pull hasn't been sent yet, so your correction was folded into the queued pull itself — it will upload as one corrected record.",
-            [{ text: 'OK', onPress: () => router.back() }]
-          );
+          // Routine → branded nonblocking toast, plain driver wording.
+          showSyncToast({
+            title: 'Pull updated',
+            body: `${wellName}'s queued pull now carries your correction.`,
+            tone: 'gold',
+          });
+          router.back();
         } else if (editOutcome.mode === 'held_dependent') {
-          alert.show(
-            'Edit Saved',
-            'The original pull is still awaiting server confirmation. Your edit is saved and will send automatically as soon as the pull is confirmed.',
-            [{ text: 'OK', onPress: () => router.back() }]
-          );
+          showSyncToast({
+            title: 'Edit saved',
+            body: `It will send after ${wellName}'s pull is confirmed.`,
+            tone: 'gold',
+          });
+          router.back();
         } else if (editOutcome.mode === 'blocked') {
+          // Attention-required: blocking alert, never auto-dismissed.
           alert.show(
             'Edit Needs Attention',
             editOutcome.reason,
@@ -849,17 +871,20 @@ export default function RecordScreen() {
 
         setIsSending(false);
 
-        // Clear draft after successful submission
+        // Clear draft after successful submission, then reset the form —
+        // BEFORE any feedback, unconditionally on both queued and online
+        // paths (durable local storage already succeeded above).
         await clearDraft();
+        resetFormAfterDurableSave();
 
         if (uploadResult.queued) {
-          // Offline - show queued message with queue count
-          const queueCount = await getQueueCount();
-          alert.show(
-            "Pull Saved Locally",
-            `System is offline. Your pull has been saved and will be submitted when connection is restored.${queueCount > 1 ? ` (${queueCount} pulls queued)` : ''}\n\n(${uploadResult.error || 'unknown'})`,
-            [{ text: "OK", onPress: () => router.back() }]
-          );
+          // Offline: branded, nonblocking, driver-plain — no dev wording.
+          showSyncToast({
+            title: 'Saved on this phone',
+            body: `${wellName} will send automatically when you're back online.`,
+            tone: 'gold',
+          });
+          router.back();
         } else {
           // Online - go back immediately, index.tsx will handle the waiting/animation
           // Dispatch button will appear globally if send queue was created

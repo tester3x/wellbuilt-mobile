@@ -10,7 +10,7 @@
 // reconciles them directly by the STABLE packet id. Rejected packets are
 // evidence: their reason is preserved and they are never auto-retried.
 
-import { EDIT_FAILED_THRESHOLD, EditOperation, getEditOperations, processEditOperations } from './editDelivery';
+import { EDIT_FAILED_THRESHOLD, EditOperation, getEditOperations } from './editDelivery';
 import {
   QueuedPacket,
   SYNC_FAILED_THRESHOLD,
@@ -18,6 +18,7 @@ import {
   forgetSubmittedPayload,
   getQueuedPackets,
   getSubmittedPayload,
+  onConnectivityChange,
   onFlushComplete,
   queuePacket,
 } from './packetQueue';
@@ -54,9 +55,44 @@ async function readPath(path: string, fetchFn: typeof fetch): Promise<any | null
  * reason code + readable text; else it stays 'submitted' (the badge flags
  * it after SUBMITTED_ATTENTION_MS). Never deletes anything.
  */
+export interface ReconcileResult {
+  confirmedSent: number;
+  confirmedRejected: number;
+  stillUnknown: number;
+}
+
+// Listeners fire after every completed reconcile pass so the badge, the
+// Sync Status screen, and the Delivered toast update IMMEDIATELY — a row
+// must never keep claiming "awaiting server" after processed/<id> exists.
+let _reconcileListeners: ((r: ReconcileResult) => void)[] = [];
+export function onReconcileResult(listener: (r: ReconcileResult) => void): () => void {
+  _reconcileListeners.push(listener);
+  return () => { _reconcileListeners = _reconcileListeners.filter(l => l !== listener); };
+}
+
+let _reconcileInProgress = false;
+
 export async function reconcileSubmittedPulls(
   fetchFn: typeof fetch = fetch,
-): Promise<{ confirmedSent: number; confirmedRejected: number; stillUnknown: number }> {
+): Promise<ReconcileResult> {
+  // Overlap guard: focus effects, flush events, reconnects, and the
+  // visible-screen poll may all fire together — only one pass runs.
+  if (_reconcileInProgress) return { confirmedSent: 0, confirmedRejected: 0, stillUnknown: 0 };
+  _reconcileInProgress = true;
+  try {
+    const result = await reconcileSubmittedPullsInner(fetchFn);
+    for (const l of _reconcileListeners) {
+      try { l(result); } catch {}
+    }
+    return result;
+  } finally {
+    _reconcileInProgress = false;
+  }
+}
+
+async function reconcileSubmittedPullsInner(
+  fetchFn: typeof fetch,
+): Promise<ReconcileResult> {
   const history = await getPullHistory();
   const submitted = history.filter(e => e.syncStatus === 'submitted').slice(0, RECONCILE_BATCH_LIMIT);
   let confirmedSent = 0;
@@ -293,13 +329,18 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
 
 let _reconcilerStarted = false;
 
-/** Wire reconciliation to app lifecycle: once at startup and after every
- *  queue flush (each flush may have newly submitted packets). Idempotent. */
+/** Wire reconciliation to app lifecycle: once at startup, after every
+ *  queue flush (each flush may have newly submitted packets), and
+ *  immediately on reconnect. Idempotent. */
 export function startDeliveryReconciler(): void {
   if (_reconcilerStarted) return;
   _reconcilerStarted = true;
   onFlushComplete(() => {
     reconcileSubmittedPulls().catch(() => {});
+  });
+  // Reconnect: outcomes may have settled server-side while we were dark.
+  onConnectivityChange((online) => {
+    if (online) reconcileSubmittedPulls().catch(() => {});
   });
   // Startup pass — catch outcomes that landed while the app was closed.
   setTimeout(() => {

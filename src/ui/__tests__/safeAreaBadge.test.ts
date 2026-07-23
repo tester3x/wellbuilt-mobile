@@ -1,7 +1,14 @@
 // Placement proofs for the floating SyncAttentionBadge (pure inset math).
 import * as fs from 'fs';
 import * as path from 'path';
-import { BADGE_RIGHT_MIN, BADGE_TOP_MARGIN, badgeRightOffset, badgeTopOffset } from '../safeAreaBadge';
+import {
+  BADGE_RIGHT_MIN,
+  BADGE_TOP_MARGIN,
+  badgeLeftOffset,
+  badgePlacementForRoute,
+  badgeRightOffset,
+  badgeTopOffset,
+} from '../safeAreaBadge';
 
 describe('badgeTopOffset', () => {
   test('nonzero inset: sits just below the reserved area (status bar/notch/Dynamic Island)', () => {
@@ -26,6 +33,37 @@ describe('badgeRightOffset', () => {
     expect(badgeRightOffset(0)).toBe(BADGE_RIGHT_MIN);
     expect(badgeRightOffset(44)).toBe(44 + BADGE_RIGHT_MIN);
     expect(badgeRightOffset(Number.NaN)).toBe(BADGE_RIGHT_MIN);
+  });
+});
+
+describe('badgePlacementForRoute — route-aware collision avoidance', () => {
+  test('tank overview: LEFT (settings gear owns top-right)', () => {
+    expect(badgePlacementForRoute('/')).toBe('left');
+    expect(badgePlacementForRoute('')).toBe('left');
+    expect(badgePlacementForRoute('/index')).toBe('left');
+  });
+
+  test('Sync Status: hidden (the screen already displays status)', () => {
+    expect(badgePlacementForRoute('/sync-status')).toBe('hidden');
+  });
+
+  test('Record Load and audited routes with top-LEFT back controls: RIGHT', () => {
+    for (const r of ['/record', '/well-data', '/settings', '/history', '/manager', '/summary', '/performance']) {
+      expect(badgePlacementForRoute(r)).toBe('right');
+    }
+  });
+
+  test('null/undefined pathname degrades safely to a valid placement', () => {
+    expect(['left', 'right']).toContain(badgePlacementForRoute(null));
+    expect(['left', 'right']).toContain(badgePlacementForRoute(undefined));
+  });
+});
+
+describe('badgeLeftOffset', () => {
+  test('mirrors the right rule: minimum margin, grows with inset', () => {
+    expect(badgeLeftOffset(0)).toBe(BADGE_RIGHT_MIN);
+    expect(badgeLeftOffset(44)).toBe(44 + BADGE_RIGHT_MIN);
+    expect(badgeLeftOffset(Number.NaN)).toBe(BADGE_RIGHT_MIN);
   });
 });
 

@@ -6,8 +6,8 @@
 // for locally queued transport failures and reuses the same stable
 // packetId; server-rejected packets have no retry.
 
-import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RefreshControl,
   ScrollView,
@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   DeliveryItem,
   getDeliveryItems,
+  onReconcileResult,
   reconcileSubmittedPulls,
   recoverStuckSubmission,
 } from '../src/services/deliveryStatus';
@@ -60,9 +61,34 @@ export default function SyncStatusScreen() {
     setItems(await getDeliveryItems());
   }, []);
 
-  useEffect(() => {
-    load(true);
-  }, [load]);
+  // Freshness contract (field-test fix: a pull kept showing "Submitted —
+  // awaiting server" after it was already processed):
+  //  - reconcile IMMEDIATELY on mount/focus;
+  //  - while the screen is visible AND submitted entries remain, run a
+  //    bounded short poll (the service's overlap guard prevents stacking);
+  //  - rows update the moment any reconcile pass settles an outcome
+  //    (processed confirmation always wins over stale local state);
+  //  - every timer/listener is cleaned up on blur/unmount, and the poll
+  //    self-stops once nothing is awaiting the server.
+  const itemsRef = useRef<DeliveryItem[]>([]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+
+  const POLL_WHILE_VISIBLE_MS = 5000;
+  useFocusEffect(
+    useCallback(() => {
+      load(true); // immediate pass on focus/mount
+      const unsubReconcile = onReconcileResult(() => {
+        getDeliveryItems().then(setItems).catch(() => {});
+      });
+      const timer = setInterval(() => {
+        const awaiting = itemsRef.current.some(
+          (i) => i.status === 'submitted' || i.status === 'edit_submitted',
+        );
+        if (awaiting) load(true);
+      }, POLL_WHILE_VISIBLE_MS);
+      return () => { unsubReconcile(); clearInterval(timer); };
+    }, [load]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

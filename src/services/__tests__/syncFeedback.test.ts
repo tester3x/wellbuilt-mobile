@@ -96,7 +96,7 @@ describe('reconciliation freshness (stale "Submitted — awaiting server" fix)',
     await reconcileSubmittedPulls(makeFetch({})); // nothing submitted
     unsub();
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({ confirmedSent: 0, confirmedRejected: 0, stillUnknown: 0 });
+    expect(events[0]).toEqual({ confirmedSent: 0, freshConfirmedSent: 0, confirmedRejected: 0, stillUnknown: 0 });
   });
 });
 
@@ -176,7 +176,7 @@ describe('SyncToast — branded, truthful, nonblocking', () => {
 
   test('wording is truthful: submitted until processed confirms; Delivered only on confirmation', () => {
     expect(toastSrc).toContain('submitted. Waiting for confirmation.');
-    expect(toastSrc).toMatch(/confirmedSent > 0[\s\S]{0,200}Delivered/);
+    expect(toastSrc).toMatch(/freshConfirmedSent > 0[\s\S]{0,200}Delivered/); // 7/24: fresh-only announce
     expect(toastSrc).not.toMatch(/pulls? uploaded/i);
     expect(toastSrc).not.toMatch(/title: 'Sent'/);
   });

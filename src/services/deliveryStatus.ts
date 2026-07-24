@@ -18,6 +18,7 @@ import {
   forgetSubmittedPayload,
   getQueuedPackets,
   getSubmittedPayload,
+  isOnlineSync,
   onConnectivityChange,
   onFlushComplete,
   queuePacket,
@@ -33,6 +34,73 @@ export const SUBMITTED_ATTENTION_MS = 15 * 60 * 1000;
 
 /** Cap per reconcile pass so a big backlog can't hammer the network. */
 const RECONCILE_BATCH_LIMIT = 25;
+
+// ── Confirmation freshness (7/23 field case) ──────────────────────────────
+// The "Delivered" toast must describe something the driver just did — a
+// day-old confirmation discovered at the next launch updates history
+// SILENTLY. Fresh = submitted during THIS app session, or within this
+// window of the confirming pass (covers a quick app restart right after a
+// flush).
+export const FRESH_CONFIRMATION_WINDOW_MS = 10 * 60 * 1000;
+const _sessionStartMs = Date.now();
+
+export function isFreshConfirmation(submittedAt: number | null | undefined, nowMs: number): boolean {
+  const t = typeof submittedAt === 'number' ? submittedAt : 0;
+  return t >= _sessionStartMs || nowMs - t <= FRESH_CONFIRMATION_WINDOW_MS;
+}
+
+// ── Bounded confirmation retries (7/23 field case) ────────────────────────
+// The post-flush reconcile races the Cloud Function's processing window
+// (observed 1.6–6 s: Gab 1 owplfa finished 6.1 s after its PUT). One miss
+// used to strand 'submitted' until the next launch. After any pass that
+// leaves stillUnknown > 0 while online, re-CHECK confirmation state on this
+// capped ladder, then stop until the next external trigger (flush,
+// reconnect, startup, screen poll). Read-only — reconciliation NEVER
+// resends a packet; delivery/retry ownership stays with packetQueue.
+export const CONFIRMATION_RETRY_DELAYS_MS = [5_000, 15_000, 45_000];
+
+let _confirmRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let _confirmRetryStep = 0;
+
+/** Clear any scheduled follow-up. Keeps the used-budget count unless reset. */
+function cancelConfirmationRetryTimer(): void {
+  if (_confirmRetryTimer) {
+    clearTimeout(_confirmRetryTimer);
+    _confirmRetryTimer = null;
+  }
+}
+
+/** New submissions (a flush) or a reconnect restart the ladder budget. */
+export function resetConfirmationRetryBudget(): void {
+  cancelConfirmationRetryTimer();
+  _confirmRetryStep = 0;
+}
+
+/** Test/inspection hook: pending timer + rungs used. */
+export function confirmationRetryState(): { timerPending: boolean; step: number } {
+  return { timerPending: _confirmRetryTimer !== null, step: _confirmRetryStep };
+}
+
+function scheduleConfirmationRetry(result: ReconcileResult): void {
+  if (result.stillUnknown <= 0) {
+    // Everything eligible resolved — ladder no longer needed.
+    resetConfirmationRetryBudget();
+    return;
+  }
+  if (!isOnlineSync()) {
+    // Offline: confirmation cannot land; the reconnect trigger restarts us.
+    cancelConfirmationRetryTimer();
+    return;
+  }
+  if (_confirmRetryTimer) return; // collapse duplicates — one ladder at a time
+  if (_confirmRetryStep >= CONFIRMATION_RETRY_DELAYS_MS.length) return; // budget spent
+  const delay = CONFIRMATION_RETRY_DELAYS_MS[_confirmRetryStep];
+  _confirmRetryStep += 1;
+  _confirmRetryTimer = setTimeout(() => {
+    _confirmRetryTimer = null;
+    reconcileSubmittedPulls().catch(() => {});
+  }, delay);
+}
 
 async function readPath(path: string, fetchFn: typeof fetch): Promise<any | null> {
   try {
@@ -57,6 +125,10 @@ async function readPath(path: string, fetchFn: typeof fetch): Promise<any | null
  */
 export interface ReconcileResult {
   confirmedSent: number;
+  /** Subset of confirmedSent that is FRESH (this session / recent) — the
+   *  only confirmations the Delivered toast may announce. Old catch-up
+   *  confirmations update history silently. */
+  freshConfirmedSent: number;
   confirmedRejected: number;
   stillUnknown: number;
 }
@@ -77,13 +149,16 @@ export async function reconcileSubmittedPulls(
 ): Promise<ReconcileResult> {
   // Overlap guard: focus effects, flush events, reconnects, and the
   // visible-screen poll may all fire together — only one pass runs.
-  if (_reconcileInProgress) return { confirmedSent: 0, confirmedRejected: 0, stillUnknown: 0 };
+  if (_reconcileInProgress) return { confirmedSent: 0, freshConfirmedSent: 0, confirmedRejected: 0, stillUnknown: 0 };
   _reconcileInProgress = true;
   try {
     const result = await reconcileSubmittedPullsInner(fetchFn);
     for (const l of _reconcileListeners) {
       try { l(result); } catch {}
     }
+    // 7/23 field case: one racing miss must not strand 'submitted' until
+    // the next launch — follow up on a capped ladder while online.
+    scheduleConfirmationRetry(result);
     return result;
   } finally {
     _reconcileInProgress = false;
@@ -96,8 +171,10 @@ async function reconcileSubmittedPullsInner(
   const history = await getPullHistory();
   const submitted = history.filter(e => e.syncStatus === 'submitted').slice(0, RECONCILE_BATCH_LIMIT);
   let confirmedSent = 0;
+  let freshConfirmedSent = 0;
   let confirmedRejected = 0;
   let stillUnknown = 0;
+  const nowMs = Date.now();
 
   for (const entry of submitted) {
     const processed = await readPath(`packets/processed/${entry.packetId}`, fetchFn);
@@ -106,6 +183,8 @@ async function reconcileSubmittedPullsInner(
       await setPullSyncStatus(entry.packetId, 'sent', { sentConfirmedAt: Number.isFinite(at) ? at : Date.now() });
       await forgetSubmittedPayload(entry.packetId); // recovery copy no longer needed
       confirmedSent++;
+      // Announce only what the driver just did; stale catch-ups are silent.
+      if (isFreshConfirmation(entry.submittedAt ?? entry.sentAt, nowMs)) freshConfirmedSent++;
       continue;
     }
     const rejected = await readPath(`packets/rejected/${entry.packetId}`, fetchFn);
@@ -120,9 +199,9 @@ async function reconcileSubmittedPullsInner(
   }
 
   if (confirmedSent || confirmedRejected) {
-    console.log(`[DeliveryStatus] Reconciled: ${confirmedSent} sent, ${confirmedRejected} rejected, ${stillUnknown} pending outcome`);
+    console.log(`[DeliveryStatus] Reconciled: ${confirmedSent} sent (${freshConfirmedSent} fresh), ${confirmedRejected} rejected, ${stillUnknown} pending outcome`);
   }
-  return { confirmedSent, confirmedRejected, stillUnknown };
+  return { confirmedSent, freshConfirmedSent, confirmedRejected, stillUnknown };
 }
 
 export interface DeliveryCounts {
@@ -328,23 +407,42 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
 }
 
 let _reconcilerStarted = false;
+let _initialReconcile: Promise<unknown> = Promise.resolve();
 
-/** Wire reconciliation to app lifecycle: once at startup, after every
- *  queue flush (each flush may have newly submitted packets), and
- *  immediately on reconnect. Idempotent. */
+/** Settles when the STARTUP reconcile pass has completed (or immediately if
+ *  the reconciler was never started). The attention badge awaits this before
+ *  its first render so a stale 'submitted' count from a previous session
+ *  cannot flash before the server truth is read. Never rejects. */
+export function whenInitialReconcileSettled(): Promise<unknown> {
+  return _initialReconcile;
+}
+
+/** Wire reconciliation to app lifecycle: immediately at startup (quiet
+ *  catch-up — see freshness gating), after every queue flush (each flush
+ *  may have newly submitted packets), and immediately on reconnect.
+ *  Idempotent. */
 export function startDeliveryReconciler(): void {
   if (_reconcilerStarted) return;
   _reconcilerStarted = true;
   onFlushComplete(() => {
+    // New submissions: fresh ladder budget for THIS batch's confirmation.
+    resetConfirmationRetryBudget();
     reconcileSubmittedPulls().catch(() => {});
   });
   // Reconnect: outcomes may have settled server-side while we were dark.
   onConnectivityChange((online) => {
-    if (online) reconcileSubmittedPulls().catch(() => {});
+    if (online) {
+      resetConfirmationRetryBudget();
+      reconcileSubmittedPulls().catch(() => {});
+    } else {
+      // Offline: a pending follow-up cannot succeed — stop the timer. The
+      // reconnect branch above restarts confirmation when we're back.
+      resetConfirmationRetryBudget();
+    }
   });
-  // Startup pass — catch outcomes that landed while the app was closed.
-  setTimeout(() => {
-    reconcileSubmittedPulls().catch(() => {});
-  }, 3000);
+  // Startup pass — IMMEDIATE, so stale 'submitted' entries from a previous
+  // session resolve before the badge's first render instead of flashing
+  // attention for already-delivered work (7/23 field case).
+  _initialReconcile = reconcileSubmittedPulls().catch(() => {});
   console.log('[DeliveryStatus] Reconciler started');
 }

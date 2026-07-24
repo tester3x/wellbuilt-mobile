@@ -57,12 +57,16 @@ export function SyncToastHost() {
         });
       }
     });
-    // "Delivered" ONLY when packets/processed confirmed the packet(s).
+    // "Delivered" ONLY when packets/processed confirmed the packet(s), and
+    // ONLY for FRESH confirmations (submitted this session / recently). A
+    // day-old confirmation discovered at startup updates history silently —
+    // announcing it re-alarmed the driver about already-delivered work
+    // (7/23 field case).
     const unsubReconcile = onReconcileResult((r) => {
-      if (r.confirmedSent > 0) {
+      if (r.freshConfirmedSent > 0) {
         showSyncToast({
           title: 'Delivered',
-          body: `${r.confirmedSent} pull${r.confirmedSent === 1 ? '' : 's'} confirmed.`,
+          body: `${r.freshConfirmedSent} pull${r.freshConfirmedSent === 1 ? '' : 's'} confirmed.`,
           tone: 'teal',
         });
       }

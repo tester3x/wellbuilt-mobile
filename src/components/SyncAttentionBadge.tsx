@@ -8,7 +8,7 @@ import { usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DeliveryCounts, getDeliveryCounts, onReconcileResult } from '../services/deliveryStatus';
+import { DeliveryCounts, getDeliveryCounts, onReconcileResult, whenInitialReconcileSettled } from '../services/deliveryStatus';
 import { onFlushComplete } from '../services/packetQueue';
 import { badgeLeftOffset, badgePlacementForRoute, badgeRightOffset, badgeTopOffset } from '../ui/safeAreaBadge';
 
@@ -33,13 +33,20 @@ export function SyncAttentionBadge() {
   }, []);
 
   useEffect(() => {
-    refresh();
+    // First render waits for the STARTUP reconcile (7/23 field case): a
+    // 'submitted' entry from a previous session that the server already
+    // processed must resolve to 'sent' BEFORE counts are shown — no
+    // attention flash for already-delivered work. The startup pass settles
+    // fast (offline fetches fail-fast and never reject), and genuinely
+    // unresolved items still surface right after it.
+    let mounted = true;
+    whenInitialReconcileSettled().then(() => { if (mounted) refresh(); });
     const unsubFlush = onFlushComplete(() => { refresh(); });
     // Immediate update when a reconcile pass settles outcomes — the badge
     // must never lag behind a processed/rejected confirmation.
     const unsubReconcile = onReconcileResult(() => { refresh(); });
     const timer = setInterval(refresh, POLL_MS);
-    return () => { unsubFlush(); unsubReconcile(); clearInterval(timer); };
+    return () => { mounted = false; unsubFlush(); unsubReconcile(); clearInterval(timer); };
   }, [refresh]);
 
   // Route-aware placement (field-test fix): left on the tank overview

@@ -138,30 +138,35 @@ export interface DeliveryCounts {
   attention: number;
 }
 
-/** Pure count computation (unit-testable without storage). Edit
- *  operations contribute attention when blocked, rejected, or past the
- *  transport-failure threshold — a pending dependent edit is normal. */
+/**
+ * Pure count computation (unit-testable without storage) — DERIVED from
+ * the exact same row list the Sync Status screen renders, so the badge
+ * can never disagree with the screen. Field bug this fixes: an edit that
+ * failed transport past EDIT_FAILED_THRESHOLD and then SUCCEEDED kept
+ * state 'edited' with its attempt count frozen above the threshold; the
+ * old count filter ignored state, so every such well contributed a
+ * phantom "needs attention" forever while the screen (rightly) hid
+ * completed edits — a red "3 need attention" badge over "Nothing needs
+ * attention". One canonical selector now powers both surfaces.
+ */
 export function computeDeliveryCounts(
   queue: QueuedPacket[],
   history: PullHistoryEntry[],
   nowMs: number,
   editOps: EditOperation[] = [],
 ): DeliveryCounts {
-  const failed = queue.filter(p => (p.retryCount || 0) >= SYNC_FAILED_THRESHOLD).length;
-  const pending = queue.length - failed;
-  const submittedTooLong = history.filter(
-    e => e.syncStatus === 'submitted' && (e.submittedAt ?? e.sentAt) < nowMs - SUBMITTED_ATTENTION_MS,
-  ).length;
-  const rejected = history.filter(e => e.syncStatus === 'rejected').length;
-  const editAttention = editOps.filter(
-    o => o.state === 'edit_blocked' || o.state === 'edit_rejected' || o.attempts >= EDIT_FAILED_THRESHOLD,
-  ).length;
+  const items = buildDeliveryItems(queue, history, editOps, nowMs);
+  const failed = items.filter(i => i.status === 'sync_failed').length;
+  const pending = items.filter(i => i.status === 'pending_sync').length;
+  const submittedTooLong = items.filter(i => i.status === 'submitted' && i.needsAttention).length;
+  const rejected = items.filter(i => i.status === 'rejected').length;
   return {
     pending,
     failed,
     submittedTooLong,
     rejected,
-    attention: failed + submittedTooLong + rejected + editAttention,
+    // THE invariant: badge count === attention rows visible on the screen.
+    attention: items.filter(i => i.needsAttention).length,
   };
 }
 
@@ -228,18 +233,26 @@ export interface DeliveryItem {
    *  'recover' — stuck submitted → recoverStuckSubmission (3-path check);
    *  'retryEdit' — edit transport failure → processEditOperations. */
   action: 'retry' | 'recover' | 'retryEdit' | null;
+  /** Canonical actionable flag — the badge counts EXACTLY the rows where
+   *  this is true, so the two surfaces can never contradict. */
+  needsAttention: boolean;
 }
 
 /**
- * Joined attention/pending list for the Sync Status screen: every locally
- * queued packet (with live retry metadata) plus every submitted/rejected
- * history entry that is no longer in the queue. Nothing is filtered out —
- * failed and rejected evidence stays visible until resolved.
+ * THE canonical actionable-status selector (pure, unit-testable): every
+ * locally queued packet (with live retry metadata) plus every
+ * submitted/rejected history entry that is no longer in the queue, plus
+ * every unfinished edit operation. Nothing actionable is filtered out —
+ * failed and rejected evidence stays visible until resolved — and
+ * nothing completed ('sent' pulls, 'edited' operations) is counted.
+ * Both the Sync Status screen AND the badge derive from THIS list.
  */
-export async function getDeliveryItems(nowMs: number = Date.now()): Promise<DeliveryItem[]> {
-  const queue = await getQueuedPackets();
-  const history = await getPullHistory();
-  const editOps = await getEditOperations();
+export function buildDeliveryItems(
+  queue: QueuedPacket[],
+  history: PullHistoryEntry[],
+  editOps: EditOperation[],
+  nowMs: number,
+): DeliveryItem[] {
   const items: DeliveryItem[] = [];
   const queuedPacketIds = new Set(queue.map(p => p.packetId).filter(Boolean));
 
@@ -257,6 +270,7 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
       lastError: p.lastError ?? null,
       lastAttemptAt: p.lastAttemptAt ?? null,
       action: 'retry', // in the queue ⇒ a local transport-level packet
+      needsAttention: failedThreshold,
     });
   }
 
@@ -275,6 +289,7 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
         lastError: e.rejectionReason ?? 'rejected by server',
         lastAttemptAt: e.submittedAt ?? null,
         action: null, // server verdict — never auto/manual retried here
+        needsAttention: true,
       });
     } else if (e.syncStatus === 'submitted') {
       const stuck = (e.submittedAt ?? e.sentAt) < nowMs - SUBMITTED_ATTENTION_MS;
@@ -293,15 +308,24 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
         // incoming checks before any same-ID resubmit). Fresh submissions
         // get no action — the reconciler resolves them within seconds.
         action: stuck ? 'recover' : null,
+        needsAttention: stuck,
       });
     }
   }
 
   // Edit operations: dependent, blocked, submitted, failed, and rejected
-  // edits are all visible; nothing is hidden until confirmed 'edited'.
+  // edits are all visible; a confirmed 'edited' operation is COMPLETE —
+  // it is neither shown nor counted, whatever its historical attempt
+  // count (the frozen-attempts ghost was the badge/screen contradiction).
   for (const op of editOps) {
     if (op.state === 'edited') continue;
     const transportFailed = op.attempts >= EDIT_FAILED_THRESHOLD;
+    const status: DeliveryItem['status'] =
+      op.state === 'edit_blocked' ? 'edit_blocked'
+      : op.state === 'edit_rejected' ? 'edit_rejected'
+      : op.state === 'edit_submitted' ? 'edit_submitted'
+      : transportFailed ? 'edit_failed'
+      : 'edit_pending';
     items.push({
       packetId: op.originalPacketId,
       queueId: null,
@@ -309,22 +333,26 @@ export async function getDeliveryItems(nowMs: number = Date.now()): Promise<Deli
       dateTime: op.payload.dateTime || '',
       bblsTaken: op.payload.bblsTaken,
       type: 'edit',
-      status:
-        op.state === 'edit_blocked' ? 'edit_blocked'
-        : op.state === 'edit_rejected' ? 'edit_rejected'
-        : op.state === 'edit_submitted' ? 'edit_submitted'
-        : transportFailed ? 'edit_failed'
-        : 'edit_pending',
+      status,
       attempts: op.attempts,
       lastError: op.rejectionReason ?? op.blockedReason ?? op.lastError,
       lastAttemptAt: op.updatedAt,
       action: op.state === 'edit_pending' && op.attempts > 0 ? 'retryEdit' : null,
+      needsAttention:
+        status === 'edit_blocked' || status === 'edit_rejected' || status === 'edit_failed',
     });
   }
 
   // Oldest first — same discipline as the queue itself.
   items.sort((a, b) => (a.lastAttemptAt ?? 0) - (b.lastAttemptAt ?? 0));
   return items;
+}
+
+export async function getDeliveryItems(nowMs: number = Date.now()): Promise<DeliveryItem[]> {
+  const queue = await getQueuedPackets();
+  const history = await getPullHistory();
+  const editOps = await getEditOperations();
+  return buildDeliveryItems(queue, history, editOps, nowMs);
 }
 
 let _reconcilerStarted = false;

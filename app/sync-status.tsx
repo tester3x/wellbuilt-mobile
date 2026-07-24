@@ -141,6 +141,9 @@ export default function SyncStatusScreen() {
                 <Text style={styles.well}>{item.wellName}{item.type === 'edit' ? ' (edit)' : ''}</Text>
                 <Text style={[styles.status, { color: meta.color }]}>{meta.label}</Text>
               </View>
+              {item.needsAttention && (
+                <Text style={styles.attentionTag}>⚠ Needs attention</Text>
+              )}
               <Text style={styles.line}>
                 {item.dateTime || 'Unknown time'}
                 {item.bblsTaken !== null ? `  ·  ${item.bblsTaken} BBL` : ''}
@@ -195,6 +198,7 @@ const styles = StyleSheet.create({
     borderColor: '#1e2433',
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  attentionTag: { color: '#ef4444', fontSize: 12.5, fontWeight: '700', marginBottom: 4 },
   well: { color: '#fff', fontSize: 16, fontWeight: '700' },
   status: { fontSize: 13, fontWeight: '600' },
   line: { color: '#aeb6c8', fontSize: 13, marginTop: 2 },

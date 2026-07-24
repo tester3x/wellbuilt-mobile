@@ -682,25 +682,8 @@ export const checkRegistrationStatus = async (): Promise<
   }
 
   try {
-    // Check if approved
-    const driver = await firebaseGet(`${DRIVERS_APPROVED}/${pending.passcodeHash}`);
-    if (driver) {
-      return "approved";
-    }
-
-    // Check if still in pending
-    const pendingDrivers = await firebaseGet(DRIVERS_PENDING);
-    if (pendingDrivers) {
-      for (const key of Object.keys(pendingDrivers)) {
-        const registration = pendingDrivers[key];
-        if (registration.passcodeHash === pending.passcodeHash) {
-          return "pending";
-        }
-      }
-    }
-
-    // Not in approved, not in pending = rejected
-    return "rejected";
+    const { checkDriverRegistrationStatus } = await import("./rtdbSecurityApi");
+    return await checkDriverRegistrationStatus(pending.passcodeHash);
   } catch (error) {
     console.error("[DriverAuth] Error checking registration status:", error);
     return "pending";

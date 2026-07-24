@@ -28,14 +28,16 @@ import { useAppAlert } from "../components/AppAlert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getLogs, clearLogs, getLogsAsText } from "../src/services/debugLog";
 import { debugGetRawHistory } from "../src/services/pullHistory";
-import { fetchSystemLogs, cleanupOldLogs, SystemLogEntry } from "../src/services/systemLog";
+import { cleanupOldLogs, SystemLogEntry } from "../src/services/systemLog";
 import {
   getCompanyDevices,
   registerCompanyDevice,
   removeCompanyDevice,
   isCompanyDevice,
   getDeviceId,
+  getDriverSession,
 } from "../src/services/driverAuth";
+import { callFieldDriverAdmin } from "../src/services/rtdbSecurityApi";
 
 // Firebase configuration
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
@@ -176,6 +178,13 @@ export default function ManagerScreen() {
   const [productionData, setProductionData] = useState<ProductionEntry[]>([]);
   const [productionLoading, setProductionLoading] = useState(false);
   const [productionDays, setProductionDays] = useState(7);
+  const [adminHash, setAdminHash] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDriverSession().then((session) => {
+      if (session?.passcodeHash) setAdminHash(session.passcodeHash);
+    });
+  }, []);
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false);
@@ -223,71 +232,38 @@ export default function ManagerScreen() {
 
   // Load system logs from Firebase
   const loadSystemLogs = useCallback(async () => {
+    if (!adminHash) return;
     setSystemLogsLoading(true);
     try {
-      const logs = await fetchSystemLogs(sysLogDays);
-      setSystemLogs(logs);
+      const result = await callFieldDriverAdmin<{ logs: SystemLogEntry[] }>(
+        adminHash,
+        'listSystemLogs',
+        { days: sysLogDays },
+      );
+      setSystemLogs(result.logs || []);
     } catch (error) {
       console.error('[Manager] Load system logs error:', error);
     } finally {
       setSystemLogsLoading(false);
     }
-  }, [sysLogDays]);
+  }, [sysLogDays, adminHash]);
 
-  // Load production data from Firebase
   const loadProductionData = useCallback(async () => {
+    if (!adminHash) return;
     setProductionLoading(true);
     try {
-      const data = await firebaseGet('production');
-      if (!data) {
-        setProductionData([]);
-        return;
-      }
-
-      const entries: ProductionEntry[] = [];
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - productionDays);
-      const cutoffStr = cutoffDate.toISOString().slice(0, 10);
-
-      for (const wellKey of Object.keys(data)) {
-        const wellData = data[wellKey];
-        const wellName = wellData.wellName || wellKey.replace(/_/g, ' ');
-
-        for (const dateKey of Object.keys(wellData)) {
-          // Skip 'wellName' and 'updated' metadata keys
-          if (dateKey === 'wellName' || dateKey === 'updated') continue;
-          // Filter by date range
-          if (dateKey < cutoffStr) continue;
-
-          const dayData = wellData[dateKey];
-          if (dayData && typeof dayData === 'object' && ('a' in dayData || 'w' in dayData || 'o' in dayData)) {
-            entries.push({
-              wellName,
-              date: dateKey,
-              afrBbls: dayData.a || 0,
-              windowBbls: dayData.w || 0,
-              overnightBbls: dayData.o || 0,
-              pullCount: dayData.n || 0,
-              updatedAt: dayData.u || '',
-            });
-          }
-        }
-      }
-
-      // Sort by date descending, then well name
-      entries.sort((a, b) => {
-        const dateCompare = b.date.localeCompare(a.date);
-        if (dateCompare !== 0) return dateCompare;
-        return a.wellName.localeCompare(b.wellName);
-      });
-
-      setProductionData(entries);
+      const result = await callFieldDriverAdmin<{ entries: ProductionEntry[] }>(
+        adminHash,
+        'listProduction',
+        { days: productionDays },
+      );
+      setProductionData(result.entries || []);
     } catch (error) {
       console.error('[Manager] Load production data error:', error);
     } finally {
       setProductionLoading(false);
     }
-  }, [productionDays]);
+  }, [productionDays, adminHash]);
 
   // Reload when days filter changes
   useEffect(() => {
@@ -489,22 +465,15 @@ export default function ManagerScreen() {
     );
   };
 
-  // Load pending registrations from Firebase
+  // Load pending registrations via fieldDriverAdmin callable (RTDB containment).
   const loadPendingRegistrations = async () => {
+    if (!adminHash) return;
     try {
-      const data = await firebaseGet(DRIVERS_PENDING);
-      const pending: PendingRegistration[] = [];
-      if (data) {
-        for (const key of Object.keys(data)) {
-          const entry = data[key];
-          // Skip already-processed registrations (approved/rejected from Dashboard)
-          if (entry.status === 'approved' || entry.status === 'rejected') continue;
-          pending.push({ key, ...entry });
-        }
-      }
-      // Sort by requestedAt (newest first)
-      pending.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
-      setPendingRegistrations(pending);
+      const result = await callFieldDriverAdmin<{ pending: PendingRegistration[] }>(
+        adminHash,
+        'listPending',
+      );
+      setPendingRegistrations(result.pending || []);
     } catch (error) {
       console.error('[Manager] Load pending error:', error);
     }
@@ -547,54 +516,29 @@ export default function ManagerScreen() {
     }
   };
 
-  // Load approved drivers from Firebase
-  // NEW STRUCTURE: drivers/approved/{passcodeHash}/{deviceId}/
-  // We need to traverse both levels to get all drivers
   const loadDrivers = async () => {
+    if (!adminHash) return;
     try {
-      const data = await firebaseGet(DRIVERS_APPROVED);
-      const approved: Driver[] = [];
-      if (data) {
-        for (const hashKey of Object.keys(data)) {
-          const hashNode = data[hashKey];
-
-          // Check if this is old structure (has displayName directly) or new (nested by deviceId)
-          if (hashNode.displayName) {
-            // OLD STRUCTURE: {driverId: {displayName, passcodeHash, ...}}
-            approved.push({ key: hashKey, ...hashNode });
-          } else {
-            // NEW STRUCTURE: {passcodeHash: {deviceId: {displayName, ...}}}
-            for (const deviceId of Object.keys(hashNode)) {
-              const driver = hashNode[deviceId];
-              if (driver.displayName) {
-                // Composite key for revoke: passcodeHash/deviceId
-                approved.push({
-                  key: `${hashKey}/${deviceId}`,
-                  displayName: driver.displayName,
-                  approvedAt: driver.approvedAt,
-                  active: driver.active !== false,
-                  isAdmin: driver.isAdmin,
-                  isViewer: driver.isViewer,
-                });
-              }
-            }
-          }
-        }
-      }
-      // Sort by displayName
-      approved.sort((a, b) => a.displayName.localeCompare(b.displayName));
+      const result = await callFieldDriverAdmin<{ approved: Driver[] }>(
+        adminHash,
+        'listApproved',
+      );
+      const approved = (result.approved || []).sort((a, b) =>
+        a.displayName.localeCompare(b.displayName),
+      );
       setDrivers(approved);
     } catch (error) {
       console.error('[Manager] Load drivers error:', error);
     }
   };
 
-  // Initial load
+  // Initial load (waits for admin hash from driver session)
   useEffect(() => {
+    if (!adminHash) return;
     setIsLoading(true);
     Promise.all([loadPendingRegistrations(), loadDrivers(), loadCompanyDevices(), loadLogs()])
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [adminHash]);
 
   // Auto-refresh based on active tab
   useFocusEffect(
@@ -684,10 +628,13 @@ export default function ManagerScreen() {
       }
       // 'user' role = no special flags (default driver)
 
-      await firebasePut(`${DRIVERS_APPROVED}/${pendingApproval.passcodeHash}`, driverData);
-
-      // Delete from pending
-      await firebaseDelete(`${DRIVERS_PENDING}/${pendingApproval.key}`);
+      if (!adminHash) throw new Error('Admin session missing');
+      await callFieldDriverAdmin(adminHash, 'approve', {
+        pendingKey: pendingApproval.key,
+        targetHash: pendingApproval.passcodeHash,
+        displayName: pendingApproval.displayName,
+        role: selectedRole,
+      });
 
       // Refresh lists
       await Promise.all([loadPendingRegistrations(), loadDrivers()]);
@@ -716,7 +663,8 @@ export default function ManagerScreen() {
           onPress: async () => {
             setProcessing(reg.key);
             try {
-              await firebaseDelete(`${DRIVERS_PENDING}/${reg.key}`);
+              if (!adminHash) throw new Error('Admin session missing');
+              await callFieldDriverAdmin(adminHash, 'reject', { pendingKey: reg.key });
               await loadPendingRegistrations();
               alert.show(t('manager.rejected'), t('manager.rejectedMessage', { name: reg.displayName }));
             } catch (error) {

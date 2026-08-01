@@ -184,6 +184,26 @@ export const verifyLogin = async (
   console.log("[DriverAuth] Verifying login for:", displayName);
 
   try {
+    try {
+      const { secureLogin } = await import('./secureDriverAuth');
+      const s = await secureLogin(displayName, passcode);
+      return {
+        valid: true,
+        driverId: s.driverId,
+        displayName: s.displayName,
+        passcodeHash: s.driverId,
+        isAdmin: s.isAdmin === true,
+        isViewer: s.isViewer === true,
+        companyId: s.companyId || undefined,
+        companyName: s.companyName || undefined,
+      };
+    } catch (secureErr: any) {
+      if (secureErr?.message && /reset required|Too many login/i.test(secureErr.message)) {
+        return { valid: false, error: secureErr.message };
+      }
+      console.warn('[DriverAuth] Secure login miss, legacy fallback:', secureErr?.message);
+    }
+
     const hash = await hashPasscode(passcode, displayName);
     console.log("[DriverAuth] Hash:", hash.slice(0, 8) + "...");
 
@@ -622,6 +642,25 @@ export const submitRegistration = async (params: {
   console.log("[DriverAuth] Submitting registration for:", params.displayName);
 
   try {
+    try {
+      const { secureRegister } = await import('./secureDriverAuth');
+      const result = await secureRegister(params);
+      const hash = await hashPasscode(params.passcode, params.displayName);
+      await SecureStore.setItemAsync("pendingPasscodeHash", hash);
+      await SecureStore.setItemAsync("pendingDisplayName", params.displayName);
+      await SecureStore.setItemAsync("pendingRegistrationTime", Date.now().toString());
+      if (result.pendingId) {
+        await SecureStore.setItemAsync("pendingSecureId", result.pendingId);
+      }
+      console.log("[DriverAuth] Secure registration submitted");
+      return { success: true };
+    } catch (secureErr: any) {
+      if (secureErr?.message && /too many|invalid|already/i.test(secureErr.message)) {
+        return { success: false, error: secureErr.message };
+      }
+      console.warn('[DriverAuth] Secure register miss, legacy fallback:', secureErr?.message);
+    }
+
     const hash = await hashPasscode(params.passcode, params.displayName);
 
     const registrationData: Record<string, any> = {
@@ -645,7 +684,7 @@ export const submitRegistration = async (params: {
     await SecureStore.setItemAsync("pendingDisplayName", params.displayName);
     await SecureStore.setItemAsync("pendingRegistrationTime", Date.now().toString());
 
-    console.log("[DriverAuth] Registration submitted successfully");
+    console.log("[DriverAuth] Registration submitted successfully (legacy)");
     return { success: true };
   } catch (error) {
     console.error("[DriverAuth] Error submitting registration:", error);

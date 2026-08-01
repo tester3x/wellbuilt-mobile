@@ -296,7 +296,27 @@ export const uploadTankPacket = async (params: {
     predictedLevelInches: predictedLevelInches ?? undefined, // What was displayed on pull form card
   };
 
-  // Write to Firebase incoming collection
+  // Dual-run: secure callable first; legacy RTDB while rules remain open
+  try {
+    const { secureIngestPacket } = await import('./secureOperationalApi');
+    await secureIngestPacket(
+      { ...packet, idempotencyKey: packetId } as any,
+      driverId || undefined,
+    );
+    await incrementIncomingVersion();
+    console.log('[Packet] ✅ SECURE UPLOADED:', packetId);
+    return {
+      fileName: `pull_${timestamp}_${wellNameClean}.json`,
+      packet,
+      packetTimestamp: timestamp,
+      packetId,
+      wellName: packet.wellName,
+    };
+  } catch (secureErr: any) {
+    console.warn('[Firebase] secure packet ingest miss, legacy path:', secureErr?.message);
+  }
+
+  // Write to Firebase incoming collection (legacy)
   // Use packetId as the key (like a filename)
   const uploadStart = Date.now();
   console.log(`[Packet] 🚀 UPLOADING at ${new Date().toLocaleTimeString()}:`, packetId);

@@ -5,6 +5,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDriverId, getDriverName } from "./driverAuth";
+import { packetShowsEditBadge } from "./editMarkers";
 
 const STORAGE_KEY = "@wellbuilt_pull_history";
 const SETTINGS_KEY = "@wellbuilt_pull_history_days";
@@ -52,6 +53,9 @@ export interface PullHistoryEntry {
   packetTimestamp: string;       // "20251213_173045" for filename matching
   packetId: string;              // full unique ID (timestamp_wellName_randomSuffix) - stored in Excel column B
   status: 'sent' | 'edited';     // for future edit tracking
+  /** Server editedAt when known (backfill) — enables badge + historical fallback UI. */
+  editedAt?: string;
+  editCount?: number;
   syncStatus?: PullSyncStatus;   // server-delivery lifecycle (absent on legacy entries)
   sentConfirmedAt?: number;      // ms timestamp when packets/processed existence was CONFIRMED
   submittedAt?: number;          // ms timestamp of the successful PUT to incoming
@@ -153,6 +157,12 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
           const timestampMatch = packetId.match(/^(\d{8}_\d{6})/);
           const packetTimestamp = timestampMatch ? timestampMatch[1] : packetId;
 
+          const edited = packetShowsEditBadge({
+            editedAt: p.editedAt,
+            editCount: p.editCount,
+            isEdit: p.isEdit,
+            requestType: p.requestType,
+          });
           entries.push({
             id: packetId,
             wellName: p.wellName || "Unknown",
@@ -163,7 +173,9 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
             sentAt,
             packetTimestamp,
             packetId,
-            status: p.requestType === "edit" ? "edited" : "sent",
+            status: edited ? "edited" : "sent",
+            editedAt: typeof p.editedAt === "string" ? p.editedAt : undefined,
+            editCount: typeof p.editCount === "number" ? p.editCount : undefined,
           });
         }
       }
@@ -199,6 +211,12 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
               const timestampMatch = packetId.match(/^(\d{8}_\d{6})/);
               const packetTimestamp = timestampMatch ? timestampMatch[1] : packetId;
 
+              const edited = packetShowsEditBadge({
+                editedAt: p.editedAt,
+                editCount: p.editCount,
+                isEdit: p.isEdit,
+                requestType: p.requestType,
+              });
               entries.push({
                 id: packetId,
                 wellName: p.wellName || "Unknown",
@@ -209,7 +227,9 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
                 sentAt,
                 packetTimestamp,
                 packetId,
-                status: "sent",
+                status: edited ? "edited" : "sent",
+                editedAt: typeof p.editedAt === "string" ? p.editedAt : undefined,
+                editCount: typeof p.editCount === "number" ? p.editCount : undefined,
               });
             }
           }
@@ -261,6 +281,11 @@ async function backfillAndMerge(): Promise<void> {
     if (Number.isFinite(entry.tankLevelFeet) && entry.tankLevelFeet > 0 && entry.tankLevelFeet !== existing.tankLevelFeet) { existing.tankLevelFeet = entry.tankLevelFeet; changed = true; }
     if (typeof entry.wellDown === "boolean" && entry.wellDown !== existing.wellDown) { existing.wellDown = entry.wellDown; changed = true; }
     if (entry.status === "edited" && existing.status !== "edited") { existing.status = "edited"; changed = true; }
+    if (entry.editedAt && entry.editedAt !== existing.editedAt) { existing.editedAt = entry.editedAt; changed = true; }
+    if (typeof entry.editCount === "number" && entry.editCount !== existing.editCount) {
+      existing.editCount = entry.editCount;
+      changed = true;
+    }
     if (changed) {
       updatedCount++;
       console.log("[pullHistory.backfill.updatedExisting]", entry.packetId, "bbls→", existing.bblsTaken, "(dateTime preserved:", existing.dateTime + ")");

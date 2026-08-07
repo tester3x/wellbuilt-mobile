@@ -4,6 +4,7 @@
 
 import { getDriverId, getDriverName } from './driverAuth';
 import { loadWellConfig, WellConfigMap } from './wellConfig';
+import { packetShowsEditBadge } from './editMarkers';
 
 // *** FIREBASE PROJECT CONFIG ***
 // WellBuilt Sync - Firebase Realtime Database
@@ -719,11 +720,17 @@ export const requestWellHistory = async (
       if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
       if (p.wasEdited === true) continue; // Skip original packets that were edited
 
-      // Check if this is an edit and get original data
-      // isEdit is set by Cloud Function; also check requestType for older packets
-      const isEditPacket = p.isEdit === true || p.requestType === "edit";
+      // Badge: modern editedAt/editCount + legacy isEdit / requestType edit
+      // (does not require packets/editHistory or undeployed CF fields beyond editedAt)
+      const isEditPacket = packetShowsEditBadge({
+        editCount: p.editCount,
+        editedAt: p.editedAt,
+        isEdit: p.isEdit,
+        requestType: p.requestType,
+      });
       let originalData: RawPullData["originalData"] = undefined;
-      if (isEditPacket && (p.originalPacketId || p.packetId)) {
+      // Legacy dual-row: load original snapshot when present
+      if ((p.isEdit === true || p.requestType === "edit") && (p.originalPacketId || p.packetId)) {
         const origKey = p.originalPacketId || p.packetId;
         const origPacket = (processedData as any)[origKey];
         if (origPacket) {

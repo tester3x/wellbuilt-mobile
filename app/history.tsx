@@ -40,6 +40,49 @@ import {
 import { getBblPerFootSync, getAllWellNames, loadWellConfig } from "../src/services/wellConfig";
 import { isCurrentUserViewer } from "../src/services/driverAuth";
 import { hp, spacing, wp } from "../src/ui/layout";
+import {
+  packetShowsEditBadge,
+  formatEditSourceLabel,
+  formatFieldLabel,
+  formatChangeValue,
+  type EditHistoryEvent,
+} from "../src/services/editMarkers";
+
+const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
+const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
+
+async function fetchPacketEditHistory(packetId: string): Promise<EditHistoryEvent[]> {
+  if (!packetId) return [];
+  try {
+    const url = `${FIREBASE_DATABASE_URL}/packets/editHistory/${encodeURIComponent(packetId)}.json?auth=${FIREBASE_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data || typeof data !== "object") return [];
+    const rows: EditHistoryEvent[] = Object.entries(data).map(([eventId, raw]) => {
+      const v = (raw || {}) as any;
+      return {
+        eventId: eventId || v.eventId || "",
+        packetId: v.packetId || packetId,
+        sequence: typeof v.sequence === "number" ? v.sequence : 0,
+        editedAt: v.editedAt || "",
+        source: v.source || "unknown",
+        originAppContext: v.originAppContext ?? null,
+        fields: Array.isArray(v.fields) ? v.fields : [],
+        originalSubmissionAt: v.originalSubmissionAt ?? null,
+        resolutionPath: v.resolutionPath,
+      };
+    });
+    rows.sort(
+      (a, b) =>
+        a.sequence - b.sequence ||
+        String(a.editedAt).localeCompare(String(b.editedAt)),
+    );
+    return rows;
+  } catch {
+    return [];
+  }
+}
 
 // Format level for display
 // Always floor - matches packet level sent to VBA for consistent display
@@ -80,6 +123,37 @@ interface HistoryEntryProps {
 
 function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: HistoryEntryProps) {
   const swipeableRef = useRef<Swipeable>(null);
+  const isEdited =
+    packetShowsEditBadge({
+      status: entry.status,
+      editedAt: (entry as any).editedAt,
+      editCount: (entry as any).editCount,
+    }) ||
+    entry.editStatus === 'edited' ||
+    entry.editStatus === 'edit_pending' ||
+    entry.editStatus === 'edit_submitted';
+
+  const [trail, setTrail] = useState<EditHistoryEvent[] | null>(null);
+  const [trailLoading, setTrailLoading] = useState(false);
+
+  // Load correction trail when expanded edited card — existing review-header location.
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!isExpanded || !isEdited) {
+      return;
+    }
+    const pid = entry.packetId || entry.id;
+    setTrailLoading(true);
+    fetchPacketEditHistory(pid).then((rows) => {
+      if (!cancelled) {
+        setTrail(rows);
+        setTrailLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isExpanded, isEdited, entry.packetId, entry.id]);
 
   const renderRightActions = (
     progress: Animated.AnimatedInterpolation<number>,
@@ -129,7 +203,7 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
         style={[
           styles.entryCard,
           entry.wellDown && styles.entryCardDown,
-          entry.status === 'edited' && styles.entryCardEdited,
+          isEdited && styles.entryCardEdited,
         ]}
         onPress={onToggleExpand}
         activeOpacity={0.7}
@@ -139,10 +213,51 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
             <Text style={styles.entryWellName}>{entry.wellName}</Text>
             <Text style={styles.entryTime}>
               {entry.dateTime}
-              {entry.status === 'edited' && (
-                <Text style={styles.editedBadge}> {t('history.edited')}</Text>
+              {isEdited && (
+                <Text style={styles.editedBadge}>
+                  {' '}
+                  {entry.editStatus === 'edit_pending' || entry.editStatus === 'edit_submitted'
+                    ? t('history.editPending') || '(edit pending)'
+                    : t('history.edited')}
+                </Text>
               )}
             </Text>
+            {/* Correction trail in review header (beneath well name + date) — only when expanded + edited */}
+            {isExpanded && isEdited && (
+              <View style={styles.correctionTrailHeader}>
+                <Text style={styles.correctionTrailTitle}>
+                  {t('history.correctionHistory') || 'Correction history'}
+                </Text>
+                {trailLoading && (
+                  <Text style={styles.correctionTrailMeta}>…</Text>
+                )}
+                {!trailLoading && trail && trail.length === 0 && (
+                  <Text style={styles.correctionTrailMeta}>
+                    {t('history.editedNoDetail') ||
+                      'This packet was edited. Detailed before/after values are unavailable for older records.'}
+                  </Text>
+                )}
+                {!trailLoading &&
+                  trail &&
+                  trail.map((ev) => (
+                    <View key={ev.eventId} style={styles.correctionEvent}>
+                      <Text style={styles.correctionTrailMeta}>
+                        #{ev.sequence}
+                        {ev.editedAt
+                          ? ` · ${new Date(ev.editedAt).toLocaleString()}`
+                          : ''}
+                        {` · ${formatEditSourceLabel(ev.source)}`}
+                      </Text>
+                      {(ev.fields || []).map((f, i) => (
+                        <Text key={i} style={styles.correctionField}>
+                          {formatFieldLabel(f.field)}: {formatChangeValue(f.previous)} →{' '}
+                          {formatChangeValue(f.next)}
+                        </Text>
+                      ))}
+                    </View>
+                  ))}
+              </View>
+            )}
           </View>
           <View style={styles.entryRight}>
             {entry.wellDown ? (
@@ -292,6 +407,8 @@ export default function HistoryScreen() {
   };
 
   const handleEdit = (entry: PullHistoryEntry) => {
+    // Product: WB-M has no age deadline for route/flow corrections.
+    // (WB-T ticket editing has its own 24h limit in the ticket app — not here.)
     const fullPacketId = entry.packetId || entry.id;
     router.push({
       pathname: '/record',
@@ -1073,6 +1190,32 @@ const styles = StyleSheet.create({
   entryCardDown: {
     borderColor: "#7F1D1D",
     backgroundColor: "#1F1111",
+  },
+  correctionTrailHeader: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#92400E',
+    maxWidth: wp(55),
+  },
+  correctionTrailTitle: {
+    color: '#FBBF24',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  correctionTrailMeta: {
+    color: '#D1D5DB',
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  correctionEvent: {
+    marginBottom: 4,
+  },
+  correctionField: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    paddingLeft: 4,
   },
   entryCardEdited: {
     borderColor: "#92400E",

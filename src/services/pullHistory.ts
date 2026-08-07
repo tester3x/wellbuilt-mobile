@@ -163,7 +163,13 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
             sentAt,
             packetTimestamp,
             packetId,
-            status: p.requestType === "edit" ? "edited" : "sent",
+            status:
+              p.requestType === "edit" ||
+              p.editedAt ||
+              (typeof p.editCount === "number" && p.editCount > 0) ||
+              p.isEdit === true
+                ? "edited"
+                : "sent",
           });
         }
       }
@@ -209,7 +215,13 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
                 sentAt,
                 packetTimestamp,
                 packetId,
-                status: "sent",
+                status:
+                  p.requestType === "edit" ||
+                  p.editedAt ||
+                  (typeof p.editCount === "number" && p.editCount > 0) ||
+                  p.isEdit === true
+                    ? "edited"
+                    : "sent",
               });
             }
           }

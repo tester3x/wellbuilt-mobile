@@ -8,6 +8,7 @@ import React, { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
 import {
+  Alert,
   Animated,
   KeyboardAvoidingView,
   Modal,
@@ -293,6 +294,18 @@ export default function HistoryScreen() {
 
   const handleEdit = (entry: PullHistoryEntry) => {
     const fullPacketId = entry.packetId || entry.id;
+    // 24h window anchored to original submission (sentAt). Server re-enforces.
+    // Offline: if the edit was opened within window, transport may complete later;
+    // server uses originalSubmittedAt / dateTimeUTC, not retry time.
+    const originMs = entry.sentAt || 0;
+    if (originMs > 0 && Date.now() - originMs > 24 * 60 * 60 * 1000) {
+      Alert.alert(
+        t('history.editExpiredTitle') || 'Edit window closed',
+        t('history.editExpiredBody') ||
+          'Corrections are only allowed within 24 hours of the original submission. This window is not extended by prior edits.',
+      );
+      return;
+    }
     router.push({
       pathname: '/record',
       params: {

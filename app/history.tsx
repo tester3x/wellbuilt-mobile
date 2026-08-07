@@ -40,6 +40,7 @@ import {
 import { getBblPerFootSync, getAllWellNames, loadWellConfig } from "../src/services/wellConfig";
 import { isCurrentUserViewer } from "../src/services/driverAuth";
 import { hp, spacing, wp } from "../src/ui/layout";
+import { packetShowsEditBadge } from "../src/services/editMarkers";
 
 // Format level for display
 // Always floor - matches packet level sent to VBA for consistent display
@@ -116,6 +117,12 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
   };
 
   const bottomLevel = getBottomLevel(entry.wellName, entry.tankLevelFeet, entry.bblsTaken);
+  // Badge-only: modern editedAt/editCount + legacy status/isEdit — no editHistory fetch
+  const isEdited = packetShowsEditBadge({
+    status: entry.status,
+    editedAt: entry.editedAt,
+    editCount: entry.editCount,
+  });
 
   return (
     <Swipeable
@@ -129,7 +136,7 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
         style={[
           styles.entryCard,
           entry.wellDown && styles.entryCardDown,
-          entry.status === 'edited' && styles.entryCardEdited,
+          isEdited && styles.entryCardEdited,
         ]}
         onPress={onToggleExpand}
         activeOpacity={0.7}
@@ -139,10 +146,21 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
             <Text style={styles.entryWellName}>{entry.wellName}</Text>
             <Text style={styles.entryTime}>
               {entry.dateTime}
-              {entry.status === 'edited' && (
+              {isEdited && (
                 <Text style={styles.editedBadge}> {t('history.edited')}</Text>
               )}
             </Text>
+            {/* Review header (under well name + date): historical fallback only.
+                Badge-only tranche does not read packets/editHistory. */}
+            {isExpanded && isEdited && (
+              <View style={styles.editedHeaderNote}>
+                <Text style={styles.editedHeaderNoteText}>
+                  {entry.editedAt
+                    ? `This packet was edited (${new Date(entry.editedAt).toLocaleString()}). Detailed before/after values are unavailable.`
+                    : 'This packet was edited. Detailed before/after values are unavailable.'}
+                </Text>
+              </View>
+            )}
           </View>
           <View style={styles.entryRight}>
             {entry.wellDown ? (
@@ -1073,6 +1091,18 @@ const styles = StyleSheet.create({
   entryCardDown: {
     borderColor: "#7F1D1D",
     backgroundColor: "#1F1111",
+  },
+  editedHeaderNote: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#92400E',
+    maxWidth: wp(55),
+  },
+  editedHeaderNoteText: {
+    color: '#D1D5DB',
+    fontSize: 10,
+    lineHeight: 14,
   },
   entryCardEdited: {
     borderColor: "#92400E",

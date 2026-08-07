@@ -263,6 +263,8 @@ export default function WellDataScreen() {
   // Dropdown shows: BBLs Taken, Time Dif, Recovery, Top Level, Bottom Level, etc.
   const renderRow = ({ item, index }: { item: WellHistoryRow; index: number }) => {
     const myPull = isMyPull(item.pulledBy);
+    // item.isEdit is set by fetchWellHistory via packetShowsEditBadge
+    // (editedAt / editCount / legacy isEdit / requestType edit).
     const isEdited = item.isEdit === true;
     const hasOriginalData = isEdited && item.originalData;
     return (

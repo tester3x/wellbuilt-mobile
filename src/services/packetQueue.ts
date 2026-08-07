@@ -169,22 +169,80 @@ export async function forgetSubmittedPayload(packetId: string): Promise<void> {
  * packet — the queued payload itself is corrected. Stable packetId, queue
  * position, and retry metadata are preserved; only the provided fields
  * change. Returns false when no queued pull carries that id.
+ *
+ * Product ruling: post-Send corrections are edits even while queued. When
+ * asQueuedCorrection is set, freeze original submitted values once and
+ * append a pendingEditEvents entry for server-side trail materialization.
  */
 export async function mutateQueuedPullInPlace(
   packetId: string,
   changes: { tankLevelFeet?: number; bblsTaken?: number; wellDown?: boolean; dateTime?: string; dateTimeUTC?: string },
+  opts?: {
+    asQueuedCorrection?: boolean;
+    editEventId?: string;
+    source?: 'wbm';
+  },
 ): Promise<boolean> {
   const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
   const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
   const entry = queue.find(p => p.type === "pull" && p.packetId === packetId);
   if (!entry) return false;
+  const prev = entry.data || {};
   const applied: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(changes)) {
     if (v !== undefined && v !== "") applied[k] = v;
   }
-  entry.data = { ...entry.data, ...applied, packetId }; // identity immutable
+
+  // Freeze first-submitted values before overwrite (never let compaction erase them).
+  if (opts?.asQueuedCorrection) {
+    if (!prev.originalSubmittedValues) {
+      applied.originalSubmittedValues = {
+        tankLevelFeet: prev.tankLevelFeet,
+        bblsTaken: prev.bblsTaken,
+        wellDown: prev.wellDown === true,
+        dateTimeUTC: prev.dateTimeUTC || null,
+        dateTime: prev.dateTime || null,
+        capturedAt: new Date().toISOString(),
+      };
+      applied.originalSubmittedAt =
+        prev.dateTimeUTC || prev.originalSubmittedAt || new Date().toISOString();
+    }
+    const fieldDiff: Array<{ field: string; previous: unknown; next: unknown }> = [];
+    if (applied.bblsTaken !== undefined && applied.bblsTaken !== prev.bblsTaken) {
+      fieldDiff.push({ field: 'bblsTaken', previous: prev.bblsTaken ?? null, next: applied.bblsTaken });
+    }
+    if (applied.tankLevelFeet !== undefined && applied.tankLevelFeet !== prev.tankLevelFeet) {
+      fieldDiff.push({ field: 'tankLevelFeet', previous: prev.tankLevelFeet ?? null, next: applied.tankLevelFeet });
+      const prevIn = typeof prev.tankLevelFeet === 'number' ? Math.round(prev.tankLevelFeet * 12) : null;
+      const nextIn = typeof applied.tankLevelFeet === 'number' ? Math.round(Number(applied.tankLevelFeet) * 12) : null;
+      if (prevIn !== nextIn) {
+        fieldDiff.push({ field: 'tankTopInches', previous: prevIn, next: nextIn });
+      }
+    }
+    if (applied.wellDown !== undefined && Boolean(applied.wellDown) !== Boolean(prev.wellDown)) {
+      fieldDiff.push({ field: 'wellDown', previous: Boolean(prev.wellDown), next: Boolean(applied.wellDown) });
+    }
+    if (applied.dateTimeUTC !== undefined && applied.dateTimeUTC !== prev.dateTimeUTC) {
+      fieldDiff.push({ field: 'dateTimeUTC', previous: prev.dateTimeUTC ?? null, next: applied.dateTimeUTC });
+    }
+    const pending = Array.isArray(prev.pendingEditEvents) ? [...prev.pendingEditEvents] : [];
+    const eventId = opts.editEventId || `editop_${packetId}_${pending.length + 1}`;
+    // Replace same eventId (retry) rather than duplicating.
+    const without = pending.filter((e: any) => e && e.eventId !== eventId);
+    without.push({
+      eventId,
+      source: opts.source || 'wbm',
+      fields: fieldDiff,
+      capturedAt: new Date().toISOString(),
+      resolutionPath: 'queued_pull_merge',
+    });
+    applied.pendingEditEvents = without;
+    applied.hasQueuedCorrection = true;
+  }
+
+  entry.data = { ...prev, ...applied, packetId }; // identity immutable
   await saveQueue(queue);
-  console.log("[PacketQueue] Edited queued pull in place:", packetId);
+  console.log("[PacketQueue] Edited queued pull in place:", packetId, opts?.asQueuedCorrection ? '(correction trail captured)' : '');
   return true;
 }
 

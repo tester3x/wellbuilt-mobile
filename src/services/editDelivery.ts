@@ -139,16 +139,24 @@ export async function submitPullEdit(
   }
 
   // 1. Original still locally queued → mutate the queued payload in place.
+  // Product ruling: post-Send corrections are edits even while queued.
+  // Capture original submitted values once, append pendingEditEvents for
+  // server materialization when the pull is processed.
   const merged = await mutateQueuedPullInPlace(originalId, {
     tankLevelFeet: payload.tankLevelFeet,
     bblsTaken: payload.bblsTaken,
     wellDown: payload.wellDown,
     dateTime: payload.dateTime,
     dateTimeUTC: payload.dateTimeUTC,
+  }, {
+    // Mark as a post-send correction so processIncomingPull can stamp trail.
+    asQueuedCorrection: true,
+    editEventId: `editop_${originalId}`.replace(/[.#$\[\]/]/g, '_').slice(0, 120),
+    source: 'wbm',
   });
   if (merged) {
-    // No server edit exists; the pull's own pending_sync/sync_failed
-    // delivery status stays authoritative and '(edited)' must not appear.
+    // Local history shows edit lifecycle as pending until server confirms.
+    await setPullEditStatus(originalId, 'edit_pending');
     return { mode: 'merged_into_queued' };
   }
 

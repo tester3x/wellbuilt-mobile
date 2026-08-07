@@ -4,6 +4,7 @@
 
 import { getDriverId, getDriverName } from './driverAuth';
 import { loadWellConfig, WellConfigMap } from './wellConfig';
+import { packetShowsEditBadge } from './editMarkers';
 
 // *** FIREBASE PROJECT CONFIG ***
 // WellBuilt Sync - Firebase Realtime Database
@@ -70,6 +71,10 @@ export interface EditPacket {
   wellDownIsAuthoritative?: boolean;
   driverId?: string;          // UUID of the driver who submitted the edit
   driverName?: string;        // Display name of the driver
+  /** Provenance — server allowlists; must be 'wbm' for this app. */
+  source: 'wbm';
+  /** Stable edit-event id for server-side idempotent history. */
+  editEventId?: string;
 }
 
 // --- Helpers --------------------------------------------------------
@@ -515,6 +520,13 @@ export const uploadEditPacket = async (params: {
   const driverId = await getDriverId();
   const driverName = await getDriverName();
 
+  const wellNameClean = wellName.replace(/\s+/g, "");
+  const editId = `edit_${originalPacketTimestamp}_${wellNameClean}`;
+  // Stable event id: one per original + deterministic incoming key → retries are idempotent.
+  const editEventId =
+    (params as { editEventId?: string }).editEventId ||
+    `editop_${originalPacketId}`.replace(/[.#$\[\]/]/g, '_').slice(0, 120);
+
   const packet: EditPacket = {
     packetId: originalPacketId,
     originalPacketId,              // Cloud function reads this field name
@@ -529,11 +541,9 @@ export const uploadEditPacket = async (params: {
     wellDownIsAuthoritative: true,
     driverId: driverId || undefined,
     driverName: driverName || undefined,
+    source: 'wbm',
+    editEventId,
   };
-
-  // Edit packets use a different ID format
-  const wellNameClean = wellName.replace(/\s+/g, "");
-  const editId = `edit_${originalPacketTimestamp}_${wellNameClean}`;
 
   await firebasePut(`${COLL_INCOMING}/${editId}`, packet);
 
@@ -719,11 +729,16 @@ export const requestWellHistory = async (
       if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
       if (p.wasEdited === true) continue; // Skip original packets that were edited
 
-      // Check if this is an edit and get original data
-      // isEdit is set by Cloud Function; also check requestType for older packets
-      const isEditPacket = p.isEdit === true || p.requestType === "edit";
+      // Canonical badge: editCount / editedAt / legacy isEdit / requestType edit
+      const isEditPacket = packetShowsEditBadge({
+        editCount: p.editCount,
+        editedAt: p.editedAt,
+        isEdit: p.isEdit,
+        requestType: p.requestType,
+      });
       let originalData: RawPullData["originalData"] = undefined;
-      if (isEditPacket && (p.originalPacketId || p.packetId)) {
+      // Legacy dual-row: load original snapshot when present
+      if ((p.isEdit === true || p.requestType === "edit") && (p.originalPacketId || p.packetId)) {
         const origKey = p.originalPacketId || p.packetId;
         const origPacket = (processedData as any)[origKey];
         if (origPacket) {

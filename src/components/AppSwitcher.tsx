@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
+import i18n from '../i18n';
 // WB M: Firestore + identity provided via props (no local Firestore client)
 let collection: any, getDocs: any, firestoreDoc: any, firestoreGetDoc: any;
 try {
@@ -365,7 +366,10 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
             return;
           } catch {}
         }
-        Alert.alert('Not Installed', `${app.name} is not installed on this device.`);
+        Alert.alert(
+          i18n.t('appSwitcher.notInstalledTitle'),
+          i18n.t('appSwitcher.notInstalledBody', { appName: app.name }),
+        );
       }
     }
   }, []);
@@ -383,7 +387,10 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
           return;
         } catch {}
       }
-      Alert.alert('Not Installed', 'WellBuilt Suite is not installed on this device.');
+      Alert.alert(
+        i18n.t('appSwitcher.notInstalledTitle'),
+        i18n.t('appSwitcher.suiteNotInstalled'),
+      );
     }
   }, []);
 

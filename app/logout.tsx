@@ -11,10 +11,12 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { clearDriverSession } from '../src/services/driverAuth';
 
 export default function LogoutScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   useEffect(() => {
     (async () => {
@@ -26,7 +28,7 @@ export default function LogoutScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Signing out...</Text>
+      <Text style={styles.text}>{t('loginExtra.signingOut')}</Text>
     </View>
   );
 }

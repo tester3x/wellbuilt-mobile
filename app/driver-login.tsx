@@ -222,7 +222,7 @@ export default function DriverLoginScreen() {
     }
 
     if (!legalName.trim() || legalName.trim().length < 2) {
-      setError('Enter your full legal name');
+      setError(t('loginExtra.enterLegalName'));
       return;
     }
 
@@ -449,7 +449,7 @@ export default function DriverLoginScreen() {
               blurOnSubmit={false}
               onSubmitEditing={() => companyRef.current?.focus()}
             />
-            <Text style={styles.passcodeHint}>Used on printed tickets, invoices, and payroll</Text>
+            <Text style={styles.passcodeHint}>{t('loginExtra.usedOnTickets')}</Text>
 
             <TextInput
               ref={companyRef}

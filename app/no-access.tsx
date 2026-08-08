@@ -6,10 +6,12 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { clearDriverSession } from '../src/services/driverAuth';
 
 export default function NoAccessScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   const handleLogout = async () => {
     await clearDriverSession();
@@ -19,16 +21,12 @@ export default function NoAccessScreen() {
   return (
     <View style={styles.container}>
       <MaterialCommunityIcons name="shield-lock-outline" size={64} color="#4B5563" />
-      <Text style={styles.title}>WellBuilt Mobile</Text>
-      <Text style={styles.message}>
-        This app is for routed drivers who self-manage their wells.
-      </Text>
-      <Text style={styles.subMessage}>
-        Contact your dispatcher if you believe this is an error.
-      </Text>
+      <Text style={styles.title}>{t('noAccess.title')}</Text>
+      <Text style={styles.message}>{t('noAccess.message')}</Text>
+      <Text style={styles.subMessage}>{t('noAccess.subMessage')}</Text>
       <Pressable style={styles.logoutButton} onPress={handleLogout}>
         <MaterialCommunityIcons name="logout" size={18} color="#FCA5A5" />
-        <Text style={styles.logoutText}>Log Out</Text>
+        <Text style={styles.logoutText}>{t('noAccess.logOut')}</Text>
       </Pressable>
     </View>
   );

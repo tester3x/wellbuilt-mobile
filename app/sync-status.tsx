@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import {
   DeliveryItem,
   getDeliveryItems,
@@ -27,27 +28,22 @@ import {
 import { processEditOperations } from '../src/services/editDelivery';
 import { retryPacketNow } from '../src/services/packetQueue';
 
-const STATUS_META: Record<DeliveryItem['status'], { label: string; color: string }> = {
-  pending_sync: { label: 'Waiting to send', color: '#3b82f6' },
-  submitted: { label: 'Submitted — awaiting server', color: '#eab308' },
-  sync_failed: { label: 'Send failing — will keep retrying', color: '#ef4444' },
-  rejected: { label: 'Rejected by server', color: '#ef4444' },
-  edit_pending: { label: 'Edit waiting on original pull', color: '#3b82f6' },
-  edit_submitted: { label: 'Edit submitted — awaiting server', color: '#eab308' },
-  edit_failed: { label: 'Edit send failing — will keep retrying', color: '#ef4444' },
-  edit_rejected: { label: 'Edit rejected by server', color: '#ef4444' },
-  edit_blocked: { label: 'Edit held — needs review', color: '#ef4444' },
-};
-
-const ACTION_LABEL: Record<NonNullable<DeliveryItem['action']>, string> = {
-  retry: 'Retry now',
-  recover: 'Check & recover',
-  retryEdit: 'Retry edit',
+const STATUS_COLORS: Record<DeliveryItem['status'], string> = {
+  pending_sync: '#3b82f6',
+  submitted: '#eab308',
+  sync_failed: '#ef4444',
+  rejected: '#ef4444',
+  edit_pending: '#3b82f6',
+  edit_submitted: '#eab308',
+  edit_failed: '#ef4444',
+  edit_rejected: '#ef4444',
+  edit_blocked: '#ef4444',
 };
 
 export default function SyncStatusScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const [items, setItems] = useState<DeliveryItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -120,9 +116,9 @@ export default function SyncStatusScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Back</Text>
+          <Text style={styles.backText}>‹ {t('common.back')}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Sync Status</Text>
+        <Text style={styles.title}>{t('syncStatus.title')}</Text>
         <View style={styles.backBtn} />
       </View>
 
@@ -131,39 +127,55 @@ export default function SyncStatusScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
       >
         {items.length === 0 && (
-          <Text style={styles.empty}>All pulls are confirmed synced. Nothing needs attention.</Text>
+          <Text style={styles.empty}>{t('syncStatus.emptyFull')}</Text>
         )}
         {items.map((item) => {
-          const meta = STATUS_META[item.status];
+          const color = STATUS_COLORS[item.status];
+          const statusKey = `syncStatus.${item.status}` as const;
+          const actionKey =
+            item.action === 'retry'
+              ? 'syncStatus.retry'
+              : item.action === 'recover'
+                ? 'syncStatus.recover'
+                : item.action === 'retryEdit'
+                  ? 'syncStatus.retryEdit'
+                  : null;
           return (
             <View key={`${item.type}_${item.queueId ?? item.packetId ?? item.dateTime}`} style={styles.card}>
               <View style={styles.cardHeader}>
-                <Text style={styles.well}>{item.wellName}{item.type === 'edit' ? ' (edit)' : ''}</Text>
-                <Text style={[styles.status, { color: meta.color }]}>{meta.label}</Text>
+                <Text style={styles.well} numberOfLines={2}>
+                  {item.wellName}
+                  {item.type === 'edit' ? ` (${t('history.edit')})` : ''}
+                </Text>
+                <Text style={[styles.status, { color }]} numberOfLines={2}>
+                  {t(statusKey)}
+                </Text>
               </View>
               {item.needsAttention && (
-                <Text style={styles.attentionTag}>⚠ Needs attention</Text>
+                <Text style={styles.attentionTag}>⚠ {t('syncStatus.needsAttention')}</Text>
               )}
               <Text style={styles.line}>
-                {item.dateTime || 'Unknown time'}
-                {item.bblsTaken !== null ? `  ·  ${item.bblsTaken} BBL` : ''}
+                {item.dateTime || '—'}
+                {item.bblsTaken !== null ? `  ·  ${item.bblsTaken} ${t('units.bbl').toUpperCase()}` : ''}
               </Text>
               {item.attempts > 0 && (
                 <Text style={styles.line}>
-                  Attempts: {item.attempts}
-                  {item.lastAttemptAt ? `  ·  last try ${new Date(item.lastAttemptAt).toLocaleString()}` : ''}
+                  {item.attempts}
+                  {item.lastAttemptAt ? `  ·  ${new Date(item.lastAttemptAt).toLocaleString()}` : ''}
                 </Text>
               )}
               {item.lastError && <Text style={styles.error}>{item.lastError}</Text>}
               {item.packetId && <Text style={styles.packetId}>{item.packetId}</Text>}
-              {item.action && (
+              {item.action && actionKey && (
                 <TouchableOpacity
                   style={[styles.retryBtn, retryingId !== null && styles.retryBtnDisabled]}
                   disabled={retryingId !== null}
                   onPress={() => onAction(item)}
                 >
                   <Text style={styles.retryText}>
-                    {retryingId === (item.queueId ?? item.packetId) ? 'Working…' : ACTION_LABEL[item.action]}
+                    {retryingId === (item.queueId ?? item.packetId)
+                      ? t('syncStatus.working')
+                      : t(actionKey)}
                   </Text>
                 </TouchableOpacity>
               )}

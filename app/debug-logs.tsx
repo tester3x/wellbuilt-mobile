@@ -14,10 +14,12 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
 import { getLogs, clearLogs, getLogsAsText, flushLogsToFirebase } from "../src/services/debugLog";
 
 export default function DebugLogsScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [logs, setLogs] = useState<ReturnType<typeof getLogs>>([]);
   const [isSending, setIsSending] = useState(false);
 
@@ -38,12 +40,12 @@ export default function DebugLogsScreen() {
     try {
       const text = getLogsAsText();
       if (!text) {
-        Alert.alert("No Logs", "No logs to share yet.");
+        Alert.alert(t('debugLogs.noLogsTitle'), t('debugLogs.noLogsBody'));
         return;
       }
       await Share.share({
-        message: `WellBuilt Debug Logs:\n\n${text}`,
-        title: "WellBuilt Debug Logs",
+        message: `${t('debugLogs.title')}:\n\n${text}`,
+        title: t('debugLogs.title'),
       });
     } catch (error) {
       console.error("Share error:", error);
@@ -52,12 +54,12 @@ export default function DebugLogsScreen() {
 
   const handleClear = () => {
     Alert.alert(
-      "Clear Logs",
-      "Are you sure you want to clear all debug logs?",
+      t('debugLogs.clear'),
+      t('debugLogs.clearConfirm'),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t('common.cancel'), style: "cancel" },
         {
-          text: "Clear",
+          text: t('debugLogs.clear'),
           style: "destructive",
           onPress: () => {
             clearLogs();
@@ -73,12 +75,12 @@ export default function DebugLogsScreen() {
     try {
       const success = await flushLogsToFirebase();
       if (success) {
-        Alert.alert("Sent", "Logs sent to Firebase.");
+        Alert.alert(t('debugLogs.sentTitle'), t('debugLogs.sentBody'));
       } else {
-        Alert.alert("Nothing to Send", "No warnings or errors to send.");
+        Alert.alert(t('debugLogs.nothingTitle'), t('debugLogs.nothingBody'));
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to send logs.");
+      Alert.alert(t('common.error'), t('debugLogs.errorSend'));
     }
     setIsSending(false);
   };
@@ -98,28 +100,30 @@ export default function DebugLogsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Text style={styles.backText}>{"<"}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Debug Logs</Text>
+        <Text style={styles.headerTitle}>{t('debugLogs.title')}</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={handleSendToFirebase} style={styles.actionButton} disabled={isSending}>
-            <Text style={[styles.actionText, styles.sendText]}>{isSending ? 'Sending...' : 'Send'}</Text>
+            <Text style={[styles.actionText, styles.sendText]}>
+              {isSending ? t('debugLogs.sending') : t('debugLogs.send')}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleShare} style={styles.actionButton}>
-            <Text style={styles.actionText}>Share</Text>
+            <Text style={styles.actionText}>{t('debugLogs.share')}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleClear} style={styles.actionButton}>
-            <Text style={[styles.actionText, styles.clearText]}>Clear</Text>
+            <Text style={[styles.actionText, styles.clearText]}>{t('debugLogs.clear')}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Log count */}
-      <Text style={styles.logCount}>{logs.length} logs (auto-refreshing)</Text>
+      <Text style={styles.logCount}>{logs.length}</Text>
 
       {/* Logs */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {logs.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No logs yet</Text>
+            <Text style={styles.emptyText}>{t('debugLogs.noLogs')}</Text>
             <Text style={styles.emptySubtext}>
               Recovery events and errors will appear here automatically.
               {'\n'}Logs auto-send to Firebase when app goes to background.

@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { useTranslation } from 'react-i18next';
 import {
   saveDriverSession,
   getDriverSession,
@@ -24,6 +25,7 @@ const FIREBASE_API_KEY = 'AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI';
 
 export default function SSOLoginScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{ hash?: string; name?: string; companyId?: string }>();
   const [status, setStatus] = useState<'validating' | 'error'>('validating');
   const [errorMsg, setErrorMsg] = useState('');
@@ -84,7 +86,7 @@ export default function SSOLoginScreen() {
       if (!driverData) {
         console.log('[SSO] Hash not found in approved drivers');
         setStatus('error');
-        setErrorMsg('Driver not found. Please sign in manually.');
+        setErrorMsg(t('loginExtra.driverNotFound'));
         setTimeout(() => router.replace('/driver-login'), 2000);
         return;
       }
@@ -95,7 +97,7 @@ export default function SSOLoginScreen() {
         if (driverData.active === false) {
           console.log('[SSO] Driver is deactivated');
           setStatus('error');
-          setErrorMsg('Account deactivated. Contact your administrator.');
+          setErrorMsg(t('loginExtra.accountDeactivated'));
           setTimeout(() => router.replace('/driver-login'), 2000);
           return;
         }
@@ -104,7 +106,7 @@ export default function SSOLoginScreen() {
         if (driverData.displayName.toLowerCase() !== name.toLowerCase()) {
           console.log('[SSO] Name mismatch:', driverData.displayName, 'vs', name);
           setStatus('error');
-          setErrorMsg('Name mismatch. Please sign in manually.');
+          setErrorMsg(t('loginExtra.nameMismatch'));
           setTimeout(() => router.replace('/driver-login'), 2000);
           return;
         }
@@ -174,7 +176,7 @@ export default function SSOLoginScreen() {
       // Name not found in any format
       console.log('[SSO] Name not matched in driver data');
       setStatus('error');
-      setErrorMsg('Could not verify identity. Please sign in manually.');
+      setErrorMsg(t('loginExtra.couldNotVerify'));
       setTimeout(() => router.replace('/driver-login'), 2000);
 
     } catch (error: any) {
@@ -182,10 +184,10 @@ export default function SSOLoginScreen() {
 
       if (error.name === 'AbortError') {
         setStatus('error');
-        setErrorMsg('Connection timed out. Please sign in manually.');
+        setErrorMsg(t('loginExtra.connectionTimeout'));
       } else {
         setStatus('error');
-        setErrorMsg('Connection error. Please sign in manually.');
+        setErrorMsg(t('loginExtra.connectionError'));
       }
 
       setTimeout(() => router.replace('/driver-login'), 2000);
@@ -197,13 +199,13 @@ export default function SSOLoginScreen() {
       {status === 'validating' && (
         <>
           <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.text}>Signing in from WellBuilt Suite...</Text>
+          <Text style={styles.text}>{t('loginExtra.signingInFromSuite')}</Text>
         </>
       )}
       {status === 'error' && (
         <>
           <Text style={styles.errorText}>{errorMsg}</Text>
-          <Text style={styles.subText}>Redirecting to login...</Text>
+          <Text style={styles.subText}>{t('loginExtra.redirecting')}</Text>
         </>
       )}
     </View>

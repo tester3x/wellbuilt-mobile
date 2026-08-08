@@ -5,6 +5,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useFirebaseStatus } from '../contexts/FirebaseStatusContext';
 import { hp, wp, spacing } from '../ui/layout';
 
@@ -15,6 +16,7 @@ interface Props {
 export function SystemOfflineBanner({ onRetry }: Props) {
   const { isOnline, reason, checkNow } = useFirebaseStatus();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   if (isOnline) {
     return null;
@@ -34,16 +36,16 @@ export function SystemOfflineBanner({ onRetry }: Props) {
           <Text style={styles.icon}>⚠</Text>
         </View>
         <View style={styles.textContainer}>
-          <Text style={styles.title}>WellBuilt System Offline</Text>
+          <Text style={styles.title}>{t('offlineBanner.title')}</Text>
           <Text style={styles.message}>
-            {reason || 'Cannot connect to server'}
+            {reason || t('offlineBanner.cannotConnect')}
           </Text>
           <Text style={styles.subMessage}>
-            Pulls will be saved locally and submitted when connection is restored
+            {t('offlineBanner.queuedHint')}
           </Text>
         </View>
         <TouchableOpacity style={styles.dismissButton} onPress={handleRetry} activeOpacity={0.7}>
-          <Text style={styles.dismissText}>Dismiss</Text>
+          <Text style={styles.dismissText}>{t('offlineBanner.dismiss')}</Text>
         </TouchableOpacity>
       </View>
     </View>

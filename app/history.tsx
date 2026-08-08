@@ -76,7 +76,7 @@ interface HistoryEntryProps {
   onEdit: (entry: PullHistoryEntry) => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
-  t: (key: string) => string;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }
 
 function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: HistoryEntryProps) {
@@ -150,14 +150,15 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
                 <Text style={styles.editedBadge}> {t('history.edited')}</Text>
               )}
             </Text>
-            {/* Review header (under well name + date): historical fallback only.
-                Badge-only tranche does not read packets/editHistory. */}
+            {/* Review header under well name + date: historical fallback only (badge-only). */}
             {isExpanded && isEdited && (
               <View style={styles.editedHeaderNote}>
                 <Text style={styles.editedHeaderNoteText}>
                   {entry.editedAt
-                    ? `This packet was edited (${new Date(entry.editedAt).toLocaleString()}). Detailed before/after values are unavailable.`
-                    : 'This packet was edited. Detailed before/after values are unavailable.'}
+                    ? t('history.editedDetailWithTime', {
+                        when: new Date(entry.editedAt).toLocaleString(),
+                      })
+                    : t('history.editedDetailNoTime')}
                 </Text>
               </View>
             )}
@@ -1097,12 +1098,14 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#92400E',
-    maxWidth: wp(55),
+    maxWidth: wp(58),
+    flexShrink: 1,
   },
   editedHeaderNoteText: {
     color: '#D1D5DB',
     fontSize: 10,
     lineHeight: 14,
+    flexWrap: 'wrap',
   },
   entryCardEdited: {
     borderColor: "#92400E",

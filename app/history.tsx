@@ -41,6 +41,7 @@ import { getBblPerFootSync, getAllWellNames, loadWellConfig } from "../src/servi
 import { isCurrentUserViewer } from "../src/services/driverAuth";
 import { hp, spacing, wp } from "../src/ui/layout";
 import { packetShowsEditBadge } from "../src/services/editMarkers";
+import { formatAppDateTime, formatAppNumber } from "../src/i18n/format";
 
 // Format level for display
 // Always floor - matches packet level sent to VBA for consistent display
@@ -53,14 +54,13 @@ const formatLevel = (feet: number): string => {
   return `${ft}'${inches}"`;
 };
 
-// Format full datetime for detail view
+// Format full datetime for detail view — follows selected app language
 const formatFullDateTime = (timestamp: number): string => {
-  const date = new Date(timestamp);
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
+  return formatAppDateTime(timestamp, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     hour12: true,
   });
 };
@@ -156,7 +156,7 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
                 <Text style={styles.editedHeaderNoteText}>
                   {entry.editedAt
                     ? t('history.editedDetailWithTime', {
-                        when: new Date(entry.editedAt).toLocaleString(),
+                        when: formatAppDateTime(entry.editedAt),
                       })
                     : t('history.editedDetailNoTime')}
                 </Text>
@@ -364,7 +364,7 @@ export default function HistoryScreen() {
           >
             <Text style={styles.statsCardTitle}>{t('history.today')}</Text>
             <Text style={[styles.statValueLarge, dateFilter === 'today' && styles.statValueActive]}>{todayStats.pulls}</Text>
-            <Text style={[styles.statValueSmall, dateFilter === 'today' && styles.statValueActive]}>{todayStats.bbls.toLocaleString()}</Text>
+            <Text style={[styles.statValueSmall, dateFilter === 'today' && styles.statValueActive]}>{formatAppNumber(todayStats.bbls)}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.statsCard, dateFilter === 'week' && styles.statsCardActive]}
@@ -373,7 +373,7 @@ export default function HistoryScreen() {
           >
             <Text style={styles.statsCardTitle}>{t('historyExtra.week')}</Text>
             <Text style={[styles.statValueLarge, dateFilter === 'week' && styles.statValueActive]}>{weekStats.pulls}</Text>
-            <Text style={[styles.statValueSmall, dateFilter === 'week' && styles.statValueActive]}>{weekStats.bbls.toLocaleString()}</Text>
+            <Text style={[styles.statValueSmall, dateFilter === 'week' && styles.statValueActive]}>{formatAppNumber(weekStats.bbls)}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.statsCard, styles.statsCardGreen, dateFilter === 'month' && styles.statsCardActiveGreen]}
@@ -382,7 +382,7 @@ export default function HistoryScreen() {
           >
             <Text style={styles.statsCardTitle}>{t('historyExtra.month')}</Text>
             <Text style={[styles.statValueLarge, styles.statValueGreen, dateFilter === 'month' && styles.statValueActive]}>{monthStats.pulls}</Text>
-            <Text style={[styles.statValueSmall, styles.statValueGreen, dateFilter === 'month' && styles.statValueActive]}>{monthStats.bbls.toLocaleString()}</Text>
+            <Text style={[styles.statValueSmall, styles.statValueGreen, dateFilter === 'month' && styles.statValueActive]}>{formatAppNumber(monthStats.bbls)}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.statsCard, styles.statsCardAmber, dateFilter === 'all' && styles.statsCardActiveAmber]}
@@ -391,7 +391,7 @@ export default function HistoryScreen() {
           >
             <Text style={styles.statsCardTitle}>{t('historyExtra.all')}</Text>
             <Text style={[styles.statValueLarge, styles.statValueAmber, dateFilter === 'all' && styles.statValueActive]}>{allTimeStats.pulls}</Text>
-            <Text style={[styles.statValueSmall, styles.statValueAmber, dateFilter === 'all' && styles.statValueActive]}>{allTimeStats.bbls.toLocaleString()}</Text>
+            <Text style={[styles.statValueSmall, styles.statValueAmber, dateFilter === 'all' && styles.statValueActive]}>{formatAppNumber(allTimeStats.bbls)}</Text>
           </TouchableOpacity>
         </View>
 
@@ -476,7 +476,7 @@ export default function HistoryScreen() {
               </View>
               <View style={styles.wellStatDivider} />
               <View style={styles.wellStatItem}>
-                <Text style={styles.wellStatValue}>{selectedWellStats.bbls.toLocaleString()}</Text>
+                <Text style={styles.wellStatValue}>{formatAppNumber(selectedWellStats.bbls)}</Text>
                 <Text style={styles.wellStatLabel}>{t('history.bbls')}</Text>
               </View>
               <View style={styles.wellStatDivider} />
@@ -517,7 +517,11 @@ export default function HistoryScreen() {
       {/* Filtered Results Summary */}
       <View style={styles.resultsSummary}>
         <Text style={styles.resultsSummaryText}>
-          {filteredTotals.pulls} pulls • {filteredTotals.bbls.toLocaleString()} BBLs
+          {t(filteredTotals.pulls === 1 ? 'history.pullsCount_one' : 'history.pullsCount_other', {
+            count: filteredTotals.pulls,
+          })}
+          {' • '}
+          {formatAppNumber(filteredTotals.bbls)} BBLs
         </Text>
         {(dateFilter !== 'all' || wellFilter !== 'all') && (
           <TouchableOpacity
@@ -575,7 +579,7 @@ export default function HistoryScreen() {
                   <View style={styles.dayTotals}>
                     <Text style={styles.dayTotalText}>{dayTotal.pulls} pulls</Text>
                     <Text style={styles.dayTotalDot}>•</Text>
-                    <Text style={styles.dayTotalText}>{dayTotal.bbls.toLocaleString()} bbl</Text>
+                    <Text style={styles.dayTotalText}>{formatAppNumber(dayTotal.bbls)} {t('units.bbl')}</Text>
                   </View>
                 </View>
 

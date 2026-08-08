@@ -988,15 +988,26 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       const bblsAvailable = (currentLevel - allowedBottom) * bblFt;
       const loads = loadBbls > 0 ? Math.floor(bblsAvailable / loadBbls) : 1;
 
-      if (loads > 1) {
-        return { text: t('well.readyWithLoads', { count: loads, defaultValue: `Ready (${loads})` }), isReady: true, loads };
+      if (loads === 1) {
+        return {
+          text: t('well.readyWithLoads_one', { count: loads }),
+          isReady: true,
+          loads: 1,
+        };
       }
-      return { text: t('well.ready', 'Ready'), isReady: true, loads: 1 };
+      if (loads > 1) {
+        return {
+          text: t('well.readyWithLoads_other', { count: loads }),
+          isReady: true,
+          loads,
+        };
+      }
+      return { text: t('well.ready'), isReady: true, loads: 1 };
     }
 
     // Not ready yet - calculate when
     if (flowMins <= 0) {
-      return { text: t('well.noFlowData', 'No flow data'), isReady: false, loads: 0 };
+      return { text: t('well.noFlowData'), isReady: false, loads: 0 };
     }
 
     const feetToGrow = readyLevel - currentLevel;

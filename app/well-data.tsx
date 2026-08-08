@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { formatAppNumber } from "../src/i18n/format";
 
 // Sorting types for well data list
 type WellDataSortColumn = "dateTime" | "bbls24" | "flow";
@@ -444,7 +445,7 @@ export default function WellDataScreen() {
               </View>
               <View style={styles.statCard}>
                 <Text style={[styles.statValue, styles.statValueGreen]}>
-                  {stats.totalBbls.toLocaleString()}
+                  {formatAppNumber(stats.totalBbls)}
                 </Text>
                 <Text style={styles.statLabel}>{t("wellData.totalBbls")}</Text>
               </View>

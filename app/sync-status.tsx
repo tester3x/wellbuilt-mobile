@@ -27,6 +27,7 @@ import {
 } from '../src/services/deliveryStatus';
 import { processEditOperations } from '../src/services/editDelivery';
 import { retryPacketNow } from '../src/services/packetQueue';
+import { formatAppDateTime } from '../src/i18n/format';
 
 const STATUS_COLORS: Record<DeliveryItem['status'], string> = {
   pending_sync: '#3b82f6',
@@ -161,7 +162,7 @@ export default function SyncStatusScreen() {
               {item.attempts > 0 && (
                 <Text style={styles.line}>
                   {item.attempts}
-                  {item.lastAttemptAt ? `  ·  ${new Date(item.lastAttemptAt).toLocaleString()}` : ''}
+                  {item.lastAttemptAt ? `  ·  ${formatAppDateTime(item.lastAttemptAt)}` : ''}
                 </Text>
               )}
               {item.lastError && <Text style={styles.error}>{item.lastError}</Text>}

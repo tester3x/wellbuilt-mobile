@@ -173,7 +173,6 @@
     "customTemplate": "Custom Template",
     "customTemplateHintOn": "Unique message for this recipient",
     "customTemplateHintOff": "Uses default template",
-    "messageTemplate": "Message Template",
     "typeMessagePlaceholder": "Type message here...",
     "tapToInsert": "Tap to Insert:",
     "preview": "Preview",
@@ -279,7 +278,9 @@
     "viewAnyWellData": "View Any Well's Data",
     "viewWellBuiltData": "View WellBuilt Data",
     "avgBbl": "avg BBL",
-    "avgLevel": "avg level"
+    "avgLevel": "avg level",
+    "editedDetailWithTime": "This packet was edited ({{when}}). Detailed before/after values are unavailable for older records.",
+    "editedDetailNoTime": "This packet was edited. Detailed before/after values are unavailable for older records."
   },
   "nav": {
     "history": "History",
@@ -569,5 +570,71 @@
     "inches": "Inches",
     "cancel": "Cancel",
     "set": "Set"
+  },
+  "offlineBanner": {
+    "title": "WellBuilt System Offline",
+    "cannotConnect": "Cannot connect to server",
+    "queuedHint": "Pulls will be saved locally and submitted when connection is restored",
+    "dismiss": "Dismiss"
+  },
+  "syncStatus": {
+    "title": "Sync Status",
+    "pending_sync": "Waiting to send",
+    "submitted": "Submitted — awaiting server",
+    "sync_failed": "Send failing — will keep retrying",
+    "rejected": "Rejected by server",
+    "edit_pending": "Edit waiting on original pull",
+    "edit_submitted": "Edit submitted — awaiting server",
+    "edit_failed": "Edit send failing — will keep retrying",
+    "edit_rejected": "Edit rejected by server",
+    "edit_blocked": "Edit held — needs review",
+    "retry": "Retry now",
+    "recover": "Check & recover",
+    "retryEdit": "Retry edit",
+    "empty": "Nothing waiting to sync",
+    "refresh": "Refresh",
+    "needsAttention": "Needs attention",
+    "working": "Working…",
+    "emptyFull": "All pulls are confirmed synced. Nothing needs attention."
+  },
+  "noAccess": {
+    "title": "WellBuilt Mobile",
+    "message": "This app is for routed drivers who self-manage their wells.",
+    "subMessage": "Contact your dispatcher if you believe this is an error.",
+    "logOut": "Log Out"
+  },
+  "appSwitcher": {
+    "notInstalledTitle": "Not Installed",
+    "notInstalledBody": "{{appName}} is not installed on this device.",
+    "suiteNotInstalled": "WellBuilt Suite is not installed on this device."
+  },
+  "debugLogs": {
+    "title": "Debug Logs",
+    "share": "Share",
+    "clear": "Clear",
+    "noLogs": "No logs yet",
+    "noLogsTitle": "No Logs",
+    "noLogsBody": "No logs to share yet.",
+    "sentTitle": "Sent",
+    "sentBody": "Logs sent to Firebase.",
+    "nothingTitle": "Nothing to Send",
+    "nothingBody": "No warnings or errors to send.",
+    "errorSend": "Failed to send logs.",
+    "send": "Send",
+    "sending": "Sending...",
+    "clearConfirm": "Are you sure you want to clear all debug logs?"
+  },
+  "loginExtra": {
+    "signingInFromSuite": "Signing in from WellBuilt Suite...",
+    "redirecting": "Redirecting to login...",
+    "signingOut": "Signing out...",
+    "driverNotFound": "Driver not found. Please sign in manually.",
+    "accountDeactivated": "Account deactivated. Contact your administrator.",
+    "nameMismatch": "Name mismatch. Please sign in manually.",
+    "couldNotVerify": "Could not verify identity. Please sign in manually.",
+    "connectionTimeout": "Connection timed out. Please sign in manually.",
+    "connectionError": "Connection error. Please sign in manually.",
+    "enterLegalName": "Enter your full legal name",
+    "usedOnTickets": "Used on printed tickets, invoices, and payroll"
   }
 }

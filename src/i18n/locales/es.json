@@ -153,7 +153,7 @@
     "dispatchSubtitle": "Configura quién recibe notificación cuando registras una extracción",
     "recipients": "Destinatarios",
     "noRecipients": "Sin destinatarios configurados",
-    "messageTemplate": "Plantilla de Mensaje",
+    "messageTemplate": "Plantilla del Mensaje",
     "editTemplate": "Editar",
     "noTemplate": "Sin plantilla - toca Editar para configurar",
     "pullHistoryTitle": "Historial de Extracciones",
@@ -173,7 +173,6 @@
     "customTemplate": "Plantilla Personalizada",
     "customTemplateHintOn": "Mensaje único para este destinatario",
     "customTemplateHintOff": "Usa la plantilla predeterminada",
-    "messageTemplate": "Plantilla del Mensaje",
     "typeMessagePlaceholder": "Escribe tu mensaje aquí...",
     "tapToInsert": "Toca para Insertar:",
     "preview": "Vista Previa",
@@ -279,7 +278,9 @@
     "viewAnyWellData": "Ver Datos de Cualquier Pozo",
     "viewWellBuiltData": "Ver Datos WellBuilt",
     "avgBbl": "BBL prom",
-    "avgLevel": "nivel prom"
+    "avgLevel": "nivel prom",
+    "editedDetailWithTime": "Este paquete fue editado ({{when}}). Los valores detallados de antes y después no están disponibles en registros antiguos.",
+    "editedDetailNoTime": "Este paquete fue editado. Los valores detallados de antes y después no están disponibles en registros antiguos."
   },
   "nav": {
     "history": "Historial",
@@ -569,5 +570,71 @@
     "inches": "Pulgadas",
     "cancel": "Cancelar",
     "set": "Establecer"
+  },
+  "offlineBanner": {
+    "title": "Sistema WellBuilt Sin Conexión",
+    "cannotConnect": "No se puede conectar al servidor",
+    "queuedHint": "Las extracciones se guardarán localmente y se enviarán cuando se restablezca la conexión",
+    "dismiss": "Cerrar"
+  },
+  "syncStatus": {
+    "title": "Estado de Sincronización",
+    "pending_sync": "Esperando envío",
+    "submitted": "Enviado — esperando servidor",
+    "sync_failed": "Envío fallando — se reintentará",
+    "rejected": "Rechazado por el servidor",
+    "edit_pending": "Edición en espera de la extracción original",
+    "edit_submitted": "Edición enviada — esperando servidor",
+    "edit_failed": "Envío de edición fallando — se reintentará",
+    "edit_rejected": "Edición rechazada por el servidor",
+    "edit_blocked": "Edición retenida — requiere revisión",
+    "retry": "Reintentar ahora",
+    "recover": "Verificar y recuperar",
+    "retryEdit": "Reintentar edición",
+    "empty": "Nada pendiente de sincronizar",
+    "refresh": "Actualizar",
+    "needsAttention": "Requiere atención",
+    "working": "Trabajando…",
+    "emptyFull": "Todas las extracciones están sincronizadas. Nada requiere atención."
+  },
+  "noAccess": {
+    "title": "WellBuilt Móvil",
+    "message": "Esta app es para conductores con ruta que administran sus pozos.",
+    "subMessage": "Contacte a su despachador si cree que esto es un error.",
+    "logOut": "Cerrar Sesión"
+  },
+  "appSwitcher": {
+    "notInstalledTitle": "No Instalado",
+    "notInstalledBody": "{{appName}} no está instalado en este dispositivo.",
+    "suiteNotInstalled": "WellBuilt Suite no está instalado en este dispositivo."
+  },
+  "debugLogs": {
+    "title": "Registros de Depuración",
+    "share": "Compartir",
+    "clear": "Borrar",
+    "noLogs": "Sin registros aún",
+    "noLogsTitle": "Sin Registros",
+    "noLogsBody": "Aún no hay registros para compartir.",
+    "sentTitle": "Enviado",
+    "sentBody": "Registros enviados a Firebase.",
+    "nothingTitle": "Nada que Enviar",
+    "nothingBody": "No hay advertencias ni errores para enviar.",
+    "errorSend": "Error al enviar registros.",
+    "send": "Enviar",
+    "sending": "Enviando...",
+    "clearConfirm": "¿Seguro que desea borrar todos los registros de depuración?"
+  },
+  "loginExtra": {
+    "signingInFromSuite": "Iniciando sesión desde WellBuilt Suite...",
+    "redirecting": "Redirigiendo al inicio de sesión...",
+    "signingOut": "Cerrando sesión...",
+    "driverNotFound": "Conductor no encontrado. Inicie sesión manualmente.",
+    "accountDeactivated": "Cuenta desactivada. Contacte a su administrador.",
+    "nameMismatch": "El nombre no coincide. Inicie sesión manualmente.",
+    "couldNotVerify": "No se pudo verificar la identidad. Inicie sesión manualmente.",
+    "connectionTimeout": "Tiempo de conexión agotado. Inicie sesión manualmente.",
+    "connectionError": "Error de conexión. Inicie sesión manualmente.",
+    "enterLegalName": "Ingrese su nombre legal completo",
+    "usedOnTickets": "Usado en tickets impresos, facturas y nómina"
   }
 }

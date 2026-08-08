@@ -20,6 +20,8 @@ import {
 } from "../src/services/firebase";
 import { isCurrentUserAdmin } from "../src/services/driverAuth";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
+import { userFacingErrorMessage } from "../src/i18n/userFacingError";
 
 // Constants for filtering
 const TEST_ROUTE_NAME = "Test Route";
@@ -36,6 +38,7 @@ interface WellItem {
 export default function PerformanceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{ filter?: string }>();
 
   const [loading, setLoading] = useState(true);
@@ -71,7 +74,7 @@ export default function PerformanceScreen() {
       setAllWells(wellList);
     } catch (err) {
       console.error("[Performance] Error:", err);
-      setError(err instanceof Error ? err.message : "Failed to load wells");
+      setError(userFacingErrorMessage(err, t));
     }
   }, []);
 
@@ -127,7 +130,7 @@ export default function PerformanceScreen() {
       >
         <Text style={[styles.wellName, isTestRoute && styles.wellNameTestRoute]} numberOfLines={1}>
           {item.name}
-          {isTestRoute ? " [TEST]" : ""}
+          {isTestRoute ? ` ${t('performance.testTag')}` : ''}
         </Text>
         <Text style={styles.chevron}>{">"}</Text>
       </TouchableOpacity>
@@ -142,8 +145,8 @@ export default function PerformanceScreen() {
           <Text style={styles.backText}>{"<"}</Text>
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Performance</Text>
-          <Text style={styles.headerSubtitle}>Select a well to view</Text>
+          <Text style={styles.headerTitle}>{t('performance.title')}</Text>
+          <Text style={styles.headerSubtitle}>{t('performance.subtitle')}</Text>
         </View>
         <TouchableOpacity onPress={() => router.push("/settings")} style={styles.settingsButton}>
           <Text style={styles.settingsIcon}>⚙</Text>
@@ -158,7 +161,7 @@ export default function PerformanceScreen() {
             onPress={() => setShowMyRoutesOnly(true)}
           >
             <Text style={[styles.filterButtonText, showMyRoutesOnly && styles.filterButtonTextActive]}>
-              My Routes ({selectedWells.size})
+              {t('performance.myRoutes', { count: selectedWells.size })}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -166,7 +169,7 @@ export default function PerformanceScreen() {
             onPress={() => setShowMyRoutesOnly(false)}
           >
             <Text style={[styles.filterButtonText, !showMyRoutesOnly && styles.filterButtonTextActive]}>
-              All Wells ({allWells.length})
+              {t('performance.allWells', { count: allWells.length })}
             </Text>
           </TouchableOpacity>
         </View>
@@ -176,7 +179,7 @@ export default function PerformanceScreen() {
       {loading && !refreshing && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#60A5FA" />
-          <Text style={styles.loadingText}>Loading wells...</Text>
+          <Text style={styles.loadingText}>{t('performance.loadingWells')}</Text>
         </View>
       )}
 
@@ -192,7 +195,7 @@ export default function PerformanceScreen() {
               fetchWells().finally(() => setLoading(false));
             }}
           >
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={styles.retryButtonText}>{t('performance.retry')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -215,7 +218,7 @@ export default function PerformanceScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No wells found</Text>
+              <Text style={styles.emptyText}>{t('performance.empty')}</Text>
               <Text style={styles.emptySubtext}>
                 {showMyRoutesOnly
                   ? "No wells selected in My Routes. Go to Settings to select wells."

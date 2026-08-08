@@ -24,6 +24,9 @@ import {
   WellPerformance,
 } from "../src/services/firebase";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
+import { userFacingErrorMessage } from "../src/i18n/userFacingError";
+import { formatAppNumber } from "../src/i18n/format";
 import { hp, spacing, wp } from "../src/ui/layout";
 
 // Date range filter options
@@ -99,6 +102,7 @@ const inchesToFeetInches = (inches: number): string => {
 
 export default function PerformanceDetailScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     wellName: string;
@@ -125,7 +129,7 @@ export default function PerformanceDetailScreen() {
   const [currentWellName, setCurrentWellName] = useState(wellName);
   const [showWellPicker, setShowWellPicker] = useState(false);
 
-  // My Routes filter state - initialized based on how user navigated here
+  // {t('performance.myRoutesFilter')} filter state - initialized based on how user navigated here
   const [selectedWells, setSelectedWells] = useState<Set<string>>(new Set());
   const [selectedWellsLoaded, setSelectedWellsLoaded] = useState(false);
   const [showMyRoutesOnly, setShowMyRoutesOnly] = useState(useMyRoutesFilter);
@@ -167,7 +171,7 @@ export default function PerformanceDetailScreen() {
 
   // Load available wells from well_config (lightweight — no packet download needed)
   const loadAvailableWells = useCallback(async () => {
-    // If filtering by My Routes, wait until selectedWells are loaded
+    // If filtering by {t('performance.myRoutesFilter')}, wait until selectedWells are loaded
     if (showMyRoutesOnly && !selectedWellsLoaded) {
       console.log("[PerformanceDetail] Waiting for selectedWells to load...");
       return;
@@ -213,14 +217,14 @@ export default function PerformanceDetailScreen() {
       const data = await getWellPerformance(currentWellName, fromDate, toDate);
 
       if (!data) {
-        setError(`No data found for ${currentWellName}`);
+        setError(t('performance.noDataForWell', { wellName: currentWellName }));
         return;
       }
 
       setWellData(data);
     } catch (err) {
       console.error("[PerformanceDetail] Error:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch data");
+      setError(userFacingErrorMessage(err, t));
     }
   }, [currentWellName, dateRangeOption, customFromDate, customToDate]);
 
@@ -372,14 +376,14 @@ export default function PerformanceDetailScreen() {
             </Text>
             <Text style={styles.dropdownIcon}>▼</Text>
           </View>
-          <Text style={styles.headerSubtitle}>Tap to switch wells</Text>
+          <Text style={styles.headerSubtitle}>{t('performance.detailSubtitle')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push("/settings")} style={styles.settingsButton}>
           <Text style={styles.settingsIcon}>⚙</Text>
         </TouchableOpacity>
       </View>
 
-      {/* My Routes / All Wells - Navigate to list view */}
+      {/* {t('performance.myRoutesFilter')} / All Wells - Navigate to list view */}
       <View style={styles.controlsRow}>
         <View style={styles.filterToggle}>
           <TouchableOpacity
@@ -387,7 +391,7 @@ export default function PerformanceDetailScreen() {
             onPress={() => router.push({ pathname: "/performance", params: { filter: "myroutes" } })}
           >
             <Text style={styles.filterButtonText}>
-              My Routes
+              {t('performance.myRoutesFilter')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -395,7 +399,7 @@ export default function PerformanceDetailScreen() {
             onPress={() => router.push({ pathname: "/performance", params: { filter: "all" } })}
           >
             <Text style={styles.filterButtonText}>
-              All Wells
+              {t('performance.allFilter')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -452,7 +456,7 @@ export default function PerformanceDetailScreen() {
               <View style={styles.datePickerModal}>
                 <View style={styles.datePickerHeader}>
                   <TouchableOpacity onPress={() => setShowFromPicker(false)}>
-                    <Text style={styles.datePickerDone}>Done</Text>
+                    <Text style={styles.datePickerDone}>{t('performance.done')}</Text>
                   </TouchableOpacity>
                 </View>
                 <DateTimePicker
@@ -487,7 +491,7 @@ export default function PerformanceDetailScreen() {
               <View style={styles.datePickerModal}>
                 <View style={styles.datePickerHeader}>
                   <TouchableOpacity onPress={() => setShowToPicker(false)}>
-                    <Text style={styles.datePickerDone}>Done</Text>
+                    <Text style={styles.datePickerDone}>{t('performance.done')}</Text>
                   </TouchableOpacity>
                 </View>
                 <DateTimePicker
@@ -527,9 +531,9 @@ export default function PerformanceDetailScreen() {
         <View style={styles.pickerOverlay}>
           <View style={styles.pickerContainer}>
             <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>Select Well</Text>
+              <Text style={styles.pickerTitle}>{t('performance.selectWell')}</Text>
               <TouchableOpacity onPress={() => setShowWellPicker(false)}>
-                <Text style={styles.pickerClose}>Close</Text>
+                <Text style={styles.pickerClose}>{t('performance.close')}</Text>
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.pickerList}>
@@ -557,7 +561,7 @@ export default function PerformanceDetailScreen() {
               ))}
               {availableWells.length === 0 && (
                 <View style={styles.pickerEmpty}>
-                  <Text style={styles.pickerEmptyText}>No wells available</Text>
+                  <Text style={styles.pickerEmptyText}>{t('performance.empty')}</Text>
                 </View>
               )}
             </ScrollView>
@@ -569,7 +573,7 @@ export default function PerformanceDetailScreen() {
       {loading && !refreshing && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#60A5FA" />
-          <Text style={styles.loadingText}>Loading {currentWellName} data...</Text>
+          <Text style={styles.loadingText}>{t('performance.loadingWellData', { wellName: currentWellName })}</Text>
         </View>
       )}
 
@@ -585,7 +589,7 @@ export default function PerformanceDetailScreen() {
               fetchData().finally(() => setLoading(false));
             }}
           >
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={styles.retryButtonText}>{t('performance.retry')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -634,7 +638,7 @@ export default function PerformanceDetailScreen() {
                         </Text>
                       )}
                     </View>
-                    <Text style={styles.mainAccuracyLabel}>Avg Accuracy</Text>
+                    <Text style={styles.mainAccuracyLabel}>{t('performance.avgAccuracy')}</Text>
                   </View>
 
                   {/* Compact Distribution */}
@@ -661,7 +665,7 @@ export default function PerformanceDetailScreen() {
                 <View style={styles.statsGrid}>
                   <View style={styles.statCell}>
                     <Text style={styles.statCellValue}>{stats.pulls}</Text>
-                    <Text style={styles.statCellLabel}>Total</Text>
+                    <Text style={styles.statCellLabel}>{t('performance.total')}</Text>
                   </View>
                   <TouchableOpacity
                     style={styles.statCell}
@@ -671,7 +675,7 @@ export default function PerformanceDetailScreen() {
                     <Text style={[styles.statCellValue, { color: "#10B981" }]}>
                       {stats.bestAccuracy.toFixed(1)}%
                     </Text>
-                    <Text style={styles.statCellLabelTappable}>Best ↓</Text>
+                    <Text style={styles.statCellLabelTappable}>{t('performance.best')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.statCell}
@@ -681,7 +685,7 @@ export default function PerformanceDetailScreen() {
                     <Text style={[styles.statCellValue, { color: "#EF4444" }]}>
                       {stats.worstAccuracy.toFixed(1)}%
                     </Text>
-                    <Text style={styles.statCellLabelTappable}>Worst ↓</Text>
+                    <Text style={styles.statCellLabelTappable}>{t('performance.worst')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -695,7 +699,7 @@ export default function PerformanceDetailScreen() {
               >
                 <View style={styles.tableTitleRow}>
                   <View>
-                    <Text style={styles.tableTitle}>Recent Pulls</Text>
+                    <Text style={styles.tableTitle}>{t('performance.recentPulls')}</Text>
                     <Text style={styles.tableSubtitle}>
                       Showing last {rows.length}
                     </Text>
@@ -810,7 +814,7 @@ export default function PerformanceDetailScreen() {
           }}
           ListEmptyComponent={() => (
             <View style={styles.emptyTable}>
-              <Text style={styles.emptyTableText}>No pull data available</Text>
+              <Text style={styles.emptyTableText}>{t('performance.noPullData')}</Text>
             </View>
           )}
           ListFooterComponent={() => <View style={{ height: hp("5%") }} />}

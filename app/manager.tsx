@@ -7,6 +7,8 @@
 import { useRouter } from "expo-router";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { formatAppDateTime } from '../src/i18n/format';
+import { userFacingErrorMessage } from '../src/i18n/userFacingError';
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ScrollView,
@@ -374,9 +376,9 @@ export default function ManagerScreen() {
             try {
               const count = await cleanupOldLogs();
               await loadSystemLogs();
-              alert.show('Cleanup Complete', `Deleted ${count} old log entries.`);
+              alert.show(t('manager.cleanupComplete'), t('manager.cleanupDeleted', { count }));
             } catch (error) {
-              alert.show('Error', 'Could not cleanup logs');
+              alert.show(t('manager.error'), t('manager.errorCleanupLogs'));
             } finally {
               setProcessing(null);
             }
@@ -476,10 +478,10 @@ export default function ManagerScreen() {
               setSelectionMode(false);
               setSelectedLogs(new Set());
 
-              alert.show('Deleted', `Removed ${selectedLogs.size} logs`);
+              alert.show(t('manager.deletedLogs'), t('manager.deletedLogsMessage', { count: selectedLogs.size }));
             } catch (error) {
               console.error('[Manager] Delete logs error:', error);
-              alert.show('Error', 'Could not delete some logs');
+              alert.show(t('manager.error'), t('manager.errorDeleteLogs'));
             } finally {
               setProcessing(null);
             }
@@ -781,11 +783,11 @@ export default function ManagerScreen() {
 
       await loadDrivers();
 
-      const roleLabel = newRole === 'admin' ? 'Admin' : newRole === 'viewer' ? 'Viewer' : 'Driver';
-      alert.show('Updated', `${driverToChangeRole.displayName} is now a ${roleLabel}`);
+      const roleLabel = newRole === 'admin' ? t('manager.roleAdmin') : newRole === 'viewer' ? t('manager.roleViewer') : t('manager.roleDriver');
+      alert.show(t('manager.roleUpdated'), t('manager.roleUpdatedMessage', { name: driverToChangeRole.displayName, role: roleLabel }));
     } catch (error) {
       console.error('[Manager] Role change error:', error);
-      alert.show(t('manager.error'), 'Could not update role');
+      alert.show(t('manager.error'), t('manager.errorUpdateRole'));
     } finally {
       setProcessing(null);
       setDriverToChangeRole(null);
@@ -829,13 +831,13 @@ export default function ManagerScreen() {
         setShowRegisterModal(false);
         setDeviceNickname('');
         await loadCompanyDevices();
-        alert.show('Device Registered', 'This device is now registered as company-owned. Login activity will be tracked.');
+        alert.show(t('manager.deviceRegistered'), t('manager.deviceRegisteredMessage'));
       } else {
-        alert.show('Error', result.error || 'Could not register device');
+        alert.show(t('manager.error'), t('manager.errorRegisterDevice'));
       }
     } catch (error) {
       console.error('[Manager] Register device error:', error);
-      alert.show('Error', 'Could not register device');
+      alert.show(t('manager.error'), t('manager.errorRegisterDevice'));
     } finally {
       setProcessing(null);
     }
@@ -858,13 +860,13 @@ export default function ManagerScreen() {
               const result = await removeCompanyDevice(device.deviceId);
               if (result.success) {
                 await loadCompanyDevices();
-                alert.show('Device Removed', `"${device.nickname}" has been removed from company devices.`);
+                alert.show(t('manager.deviceRemoved'), t('manager.deviceRemovedMessage', { name: device.nickname }));
               } else {
-                alert.show('Error', 'Could not remove device');
+                alert.show(t('manager.error'), t('manager.errorRemoveDevice'));
               }
             } catch (error) {
               console.error('[Manager] Remove device error:', error);
-              alert.show('Error', 'Could not remove device');
+              alert.show(t('manager.error'), t('manager.errorRemoveDevice'));
             } finally {
               setProcessing(null);
             }
@@ -921,7 +923,7 @@ export default function ManagerScreen() {
   const formatDate = (dateStr: string) => {
     try {
       const date = new Date(dateStr);
-      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return formatAppDateTime(date, { hour: '2-digit', minute: '2-digit' });
     } catch {
       return dateStr;
     }
@@ -941,16 +943,16 @@ export default function ManagerScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Register Company Device</Text>
+            <Text style={styles.modalTitle}>{t('manager.registerDeviceTitle')}</Text>
             <Text style={styles.modalSubtitle}>
-              This device will be tracked for login activity.
+              {t('manager.registerDeviceSubtitle')}
             </Text>
 
             <TextInput
               style={styles.modalInput}
               value={deviceNickname}
               onChangeText={setDeviceNickname}
-              placeholder="Device nickname (e.g., Truck 5 Tablet)"
+              placeholder={t('manager.deviceNicknamePlaceholder')}
               placeholderTextColor="#6B7280"
               autoFocus
             />
@@ -963,7 +965,7 @@ export default function ManagerScreen() {
                   setDeviceNickname('');
                 }}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
 
               {processing === 'register' ? (
@@ -973,7 +975,7 @@ export default function ManagerScreen() {
                   style={styles.modalRegisterButton}
                   onPress={handleRegisterDevice}
                 >
-                  <Text style={styles.modalRegisterText}>Register</Text>
+                  <Text style={styles.modalRegisterText}>{t('manager.register')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -990,14 +992,14 @@ export default function ManagerScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Approve Driver</Text>
+            <Text style={styles.modalTitle}>{t('manager.approveDriver')}</Text>
             <Text style={styles.modalSubtitle}>
-              Approve {pendingApproval?.displayName}?
+              {t('manager.approveName', { name: pendingApproval?.displayName })}
             </Text>
 
             {/* Role Selection */}
             <View style={styles.roleSelectionContainer}>
-              <Text style={styles.roleSelectionTitle}>Select Role:</Text>
+              <Text style={styles.roleSelectionTitle}>{t('manager.selectRole')}</Text>
 
               {/* Viewer Option */}
               <TouchableOpacity
@@ -1008,8 +1010,8 @@ export default function ManagerScreen() {
                   {selectedRole === 'viewer' && <View style={styles.roleRadioDot} />}
                 </View>
                 <View style={styles.roleOptionText}>
-                  <Text style={styles.roleOptionLabel}>Viewer</Text>
-                  <Text style={styles.roleOptionDesc}>Can view wells, cannot submit pulls</Text>
+                  <Text style={styles.roleOptionLabel}>{t('manager.roleViewer')}</Text>
+                  <Text style={styles.roleOptionDesc}>{t('manager.roleViewerDesc')}</Text>
                 </View>
               </TouchableOpacity>
 
@@ -1022,8 +1024,8 @@ export default function ManagerScreen() {
                   {selectedRole === 'user' && <View style={styles.roleRadioDot} />}
                 </View>
                 <View style={styles.roleOptionText}>
-                  <Text style={styles.roleOptionLabel}>Driver</Text>
-                  <Text style={styles.roleOptionDesc}>Can view wells and submit pulls</Text>
+                  <Text style={styles.roleOptionLabel}>{t('manager.roleDriver')}</Text>
+                  <Text style={styles.roleOptionDesc}>{t('manager.roleDriverDesc')}</Text>
                 </View>
               </TouchableOpacity>
 
@@ -1036,8 +1038,8 @@ export default function ManagerScreen() {
                   {selectedRole === 'admin' && <View style={styles.roleRadioDot} />}
                 </View>
                 <View style={styles.roleOptionText}>
-                  <Text style={styles.roleOptionLabel}>Admin</Text>
-                  <Text style={styles.roleOptionDesc}>Can manage drivers, view performance</Text>
+                  <Text style={styles.roleOptionLabel}>{t('manager.roleAdmin')}</Text>
+                  <Text style={styles.roleOptionDesc}>{t('manager.roleAdminDesc')}</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -1050,14 +1052,14 @@ export default function ManagerScreen() {
                   setPendingApproval(null);
                 }}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.modalApproveButton}
                 onPress={confirmApprove}
               >
-                <Text style={styles.modalRegisterText}>Approve</Text>
+                <Text style={styles.modalRegisterText}>{t('manager.approve')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1073,14 +1075,14 @@ export default function ManagerScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Change Role</Text>
+            <Text style={styles.modalTitle}>{t('manager.changeRole')}</Text>
             <Text style={styles.modalSubtitle}>
               {driverToChangeRole?.displayName}
             </Text>
 
             {/* Role Selection */}
             <View style={styles.roleSelectionContainer}>
-              <Text style={styles.roleSelectionTitle}>Select New Role:</Text>
+              <Text style={styles.roleSelectionTitle}>{t('manager.selectNewRole')}</Text>
 
               {/* Viewer Option */}
               <TouchableOpacity
@@ -1091,8 +1093,8 @@ export default function ManagerScreen() {
                   {newRole === 'viewer' && <View style={styles.roleRadioDot} />}
                 </View>
                 <View style={styles.roleOptionText}>
-                  <Text style={styles.roleOptionLabel}>Viewer</Text>
-                  <Text style={styles.roleOptionDesc}>Can view wells, cannot submit pulls</Text>
+                  <Text style={styles.roleOptionLabel}>{t('manager.roleViewer')}</Text>
+                  <Text style={styles.roleOptionDesc}>{t('manager.roleViewerDesc')}</Text>
                 </View>
               </TouchableOpacity>
 
@@ -1105,8 +1107,8 @@ export default function ManagerScreen() {
                   {newRole === 'user' && <View style={styles.roleRadioDot} />}
                 </View>
                 <View style={styles.roleOptionText}>
-                  <Text style={styles.roleOptionLabel}>Driver</Text>
-                  <Text style={styles.roleOptionDesc}>Can view wells and submit pulls</Text>
+                  <Text style={styles.roleOptionLabel}>{t('manager.roleDriver')}</Text>
+                  <Text style={styles.roleOptionDesc}>{t('manager.roleDriverDesc')}</Text>
                 </View>
               </TouchableOpacity>
 
@@ -1119,8 +1121,8 @@ export default function ManagerScreen() {
                   {newRole === 'admin' && <View style={styles.roleRadioDot} />}
                 </View>
                 <View style={styles.roleOptionText}>
-                  <Text style={styles.roleOptionLabel}>Admin</Text>
-                  <Text style={styles.roleOptionDesc}>Can manage drivers, view performance</Text>
+                  <Text style={styles.roleOptionLabel}>{t('manager.roleAdmin')}</Text>
+                  <Text style={styles.roleOptionDesc}>{t('manager.roleAdminDesc')}</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -1133,14 +1135,14 @@ export default function ManagerScreen() {
                   setDriverToChangeRole(null);
                 }}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.modalApproveButton}
                 onPress={confirmRoleChange}
               >
-                <Text style={styles.modalRegisterText}>Update</Text>
+                <Text style={styles.modalRegisterText}>{t('manager.update')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1164,10 +1166,10 @@ export default function ManagerScreen() {
           {activeTab === 'logs' && selectionMode && (
             <>
               <TouchableOpacity onPress={selectAllLogs} style={styles.actionButton}>
-                <Text style={styles.actionText}>All</Text>
+                <Text style={styles.actionText}>{t('manager.selectAll')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={cancelSelection} style={styles.actionButton}>
-                <Text style={styles.actionText}>Cancel</Text>
+                <Text style={styles.actionText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -1181,8 +1183,8 @@ export default function ManagerScreen() {
       >
         <Text style={styles.performanceButtonIcon}>📊</Text>
         <View style={styles.performanceButtonText}>
-          <Text style={styles.performanceButtonTitle}>Performance Tracker</Text>
-          <Text style={styles.performanceButtonSubtitle}>View prediction accuracy</Text>
+          <Text style={styles.performanceButtonTitle}>{t('manager.performanceTracker')}</Text>
+          <Text style={styles.performanceButtonSubtitle}>{t('manager.performanceSubtitle')}</Text>
         </View>
         <Text style={styles.performanceButtonArrow}>→</Text>
       </TouchableOpacity>
@@ -1298,15 +1300,15 @@ export default function ManagerScreen() {
                       <Text style={styles.driverName}>{driver.displayName}</Text>
                       {driver.isAdmin ? (
                         <View style={styles.adminBadge}>
-                          <Text style={styles.adminBadgeText}>ADMIN</Text>
+                          <Text style={styles.adminBadgeText}>{t('manager.badgeAdmin')}</Text>
                         </View>
                       ) : driver.isViewer ? (
                         <View style={styles.viewerBadge}>
-                          <Text style={styles.viewerBadgeText}>VIEWER</Text>
+                          <Text style={styles.viewerBadgeText}>{t('manager.badgeViewer')}</Text>
                         </View>
                       ) : (
                         <View style={styles.driverBadge}>
-                          <Text style={styles.driverBadgeText}>DRIVER</Text>
+                          <Text style={styles.driverBadgeText}>{t('manager.badgeDriver')}</Text>
                         </View>
                       )}
                     </View>
@@ -1321,7 +1323,7 @@ export default function ManagerScreen() {
                         style={styles.changeRoleButton}
                         onPress={() => handleChangeRole(driver)}
                       >
-                        <Text style={styles.changeRoleText}>Role</Text>
+                        <Text style={styles.changeRoleText}>{t('manager.role')}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.revokeButton}
@@ -1352,7 +1354,7 @@ export default function ManagerScreen() {
 
             {companyDevices.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No company devices registered</Text>
+                <Text style={styles.emptyText}>{t('manager.noDevices')}</Text>
                 <Text style={styles.emptySubtext}>
                   Register devices to track login activity
                 </Text>
@@ -1378,7 +1380,7 @@ export default function ManagerScreen() {
                           <Text style={styles.deviceName}>{device.nickname}</Text>
                           {isCurrentDevice && (
                             <View style={styles.currentDeviceBadge}>
-                              <Text style={styles.currentDeviceBadgeText}>THIS DEVICE</Text>
+                              <Text style={styles.currentDeviceBadgeText}>{t('manager.thisDevice')}</Text>
                             </View>
                           )}
                         </View>
@@ -1397,13 +1399,13 @@ export default function ManagerScreen() {
                     {isExpanded && (
                       <View style={styles.deviceExpanded}>
                         <Text style={styles.deviceIdText}>ID: {device.deviceId.slice(0, 16)}...</Text>
-                        <Text style={styles.deviceRegisteredText}>Registered: {formatDate(device.registeredAt)}</Text>
+                        <Text style={styles.deviceRegisteredText}>{t('manager.registeredAt', { date: formatDate(device.registeredAt) })}</Text>
 
                         {/* Login History */}
                         <View style={styles.loginHistorySection}>
-                          <Text style={styles.loginHistoryTitle}>Login History ({loginHistoryEntries.length})</Text>
+                          <Text style={styles.loginHistoryTitle}>{t('manager.loginHistory')} ({loginHistoryEntries.length})</Text>
                           {loginHistoryEntries.length === 0 ? (
-                            <Text style={styles.noHistoryText}>No logins recorded yet</Text>
+                            <Text style={styles.noHistoryText}>{t('manager.noLoginHistory')}</Text>
                           ) : (
                             loginHistoryEntries.slice(0, 10).map((entry) => (
                               <View key={entry.key} style={styles.loginHistoryEntry}>
@@ -1425,7 +1427,7 @@ export default function ManagerScreen() {
                             style={styles.removeDeviceButton}
                             onPress={() => handleRemoveDevice(device)}
                           >
-                            <Text style={styles.removeDeviceText}>Remove Device</Text>
+                            <Text style={styles.removeDeviceText}>{t('manager.removeDevice')}</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1467,7 +1469,7 @@ export default function ManagerScreen() {
 
             {productionData.length === 0 && !productionLoading ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No production data yet</Text>
+                <Text style={styles.emptyText}>{t('manager.noProductionData')}</Text>
                 <Text style={styles.emptySubtext}>
                   Production data will appear here after Cloud Functions are deployed and pulls are processed
                 </Text>
@@ -1486,11 +1488,11 @@ export default function ManagerScreen() {
                     <Text style={styles.prodDateHeader}>{date}</Text>
                     {/* Column headers */}
                     <View style={styles.prodHeaderRow}>
-                      <Text style={styles.prodHeaderWell}>Well</Text>
-                      <Text style={styles.prodHeaderValue}>AFR</Text>
-                      <Text style={styles.prodHeaderValue}>Win</Text>
-                      <Text style={styles.prodHeaderValue}>ON</Text>
-                      <Text style={styles.prodHeaderPulls}>Pulls</Text>
+                      <Text style={styles.prodHeaderWell}>{t('manager.colWell')}</Text>
+                      <Text style={styles.prodHeaderValue}>{t('manager.colAfr')}</Text>
+                      <Text style={styles.prodHeaderValue}>{t('manager.colWin')}</Text>
+                      <Text style={styles.prodHeaderValue}>ON</Text>{/* technical abbreviation */}
+                      <Text style={styles.prodHeaderPulls}>{t('manager.colPulls')}</Text>
                     </View>
                     {entries.map((entry, idx) => (
                         <View key={`${entry.wellName}-${idx}`} style={styles.prodRow}>
@@ -1519,19 +1521,19 @@ export default function ManagerScreen() {
                   style={[styles.logSourceBtn, logSourceFilter === 'all' && styles.logSourceBtnActive]}
                   onPress={() => setLogSourceFilter('all')}
                 >
-                  <Text style={[styles.logSourceBtnText, logSourceFilter === 'all' && styles.logSourceBtnTextActive]}>All</Text>
+                  <Text style={[styles.logSourceBtnText, logSourceFilter === 'all' && styles.logSourceBtnTextActive]}>{t('manager.filterAll')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.logSourceBtn, logSourceFilter === 'local' && styles.logSourceBtnActive]}
                   onPress={() => setLogSourceFilter('local')}
                 >
-                  <Text style={[styles.logSourceBtnText, logSourceFilter === 'local' && styles.logSourceBtnTextActive]}>Local</Text>
+                  <Text style={[styles.logSourceBtnText, logSourceFilter === 'local' && styles.logSourceBtnTextActive]}>{t('manager.filterLocal')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.logSourceBtn, logSourceFilter === 'system' && styles.logSourceBtnActive]}
                   onPress={() => setLogSourceFilter('system')}
                 >
-                  <Text style={[styles.logSourceBtnText, logSourceFilter === 'system' && styles.logSourceBtnTextActive]}>System</Text>
+                  <Text style={[styles.logSourceBtnText, logSourceFilter === 'system' && styles.logSourceBtnTextActive]}>{t('manager.filterSystem')}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1561,19 +1563,19 @@ export default function ManagerScreen() {
                   style={[styles.logLevelBtn, logLevelFilter === 'all' && styles.logLevelBtnActive]}
                   onPress={() => setLogLevelFilter('all')}
                 >
-                  <Text style={[styles.logLevelBtnText, logLevelFilter === 'all' && styles.logLevelBtnTextActive]}>All</Text>
+                  <Text style={[styles.logLevelBtnText, logLevelFilter === 'all' && styles.logLevelBtnTextActive]}>{t('manager.filterAll')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.logLevelBtn, logLevelFilter === 'warn' && styles.logLevelBtnActiveWarn]}
                   onPress={() => setLogLevelFilter('warn')}
                 >
-                  <Text style={[styles.logLevelBtnText, logLevelFilter === 'warn' && styles.logLevelBtnTextActiveWarn]}>Warn+</Text>
+                  <Text style={[styles.logLevelBtnText, logLevelFilter === 'warn' && styles.logLevelBtnTextActiveWarn]}>{t('manager.filterWarn')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.logLevelBtn, logLevelFilter === 'error' && styles.logLevelBtnActiveError]}
                   onPress={() => setLogLevelFilter('error')}
                 >
-                  <Text style={[styles.logLevelBtnText, logLevelFilter === 'error' && styles.logLevelBtnTextActiveError]}>Error</Text>
+                  <Text style={[styles.logLevelBtnText, logLevelFilter === 'error' && styles.logLevelBtnTextActiveError]}>{t('manager.filterError')}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1595,7 +1597,7 @@ export default function ManagerScreen() {
                   );
                 }}
               >
-                <Text style={styles.debugBtnText}>Debug</Text>
+                <Text style={styles.debugBtnText}>{t('manager.filterDebug')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -1627,7 +1629,7 @@ export default function ManagerScreen() {
                       <Text style={styles.selectAllCheckmark}>−</Text>
                     )}
                   </View>
-                  <Text style={styles.selectAllText}>All</Text>
+                  <Text style={styles.selectAllText}>{t('manager.selectAll')}</Text>
                 </TouchableOpacity>
 
                 {/* Selection count */}
@@ -1657,13 +1659,13 @@ export default function ManagerScreen() {
 
             {/* Hint for selection */}
             {!selectionMode && unifiedLogs.length > 0 && (
-              <Text style={styles.logHint}>Long-press any log to select</Text>
+              <Text style={styles.logHint}>{t('manager.longPressSelect')}</Text>
             )}
 
             {/* Log entries */}
             {unifiedLogs.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No logs</Text>
+                <Text style={styles.emptyText}>{t('manager.noLogs')}</Text>
                 <Text style={styles.emptySubtext}>
                   Local and system logs will appear here
                 </Text>
@@ -1703,7 +1705,7 @@ export default function ManagerScreen() {
                           </View>
                         </View>
                         <Text style={styles.logTime}>
-                          {log.timestamp.toLocaleDateString()} {log.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {formatAppDateTime(log.timestamp, { hour: '2-digit', minute: '2-digit' })}
                         </Text>
                       </View>
 

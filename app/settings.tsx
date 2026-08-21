@@ -470,8 +470,11 @@ export default function SettingsScreen() {
     let config = await fetchWellConfig();
 
     if (config) {
-      const { routes: assignedRoutes, wells: assignedWells } = await fetchDriverRouteAssignment();
-      config = filterWellConfigByAssignment(config, assignedRoutes, assignedWells);
+      const assignment = await fetchDriverRouteAssignment();
+      const session = await getDriverSession();
+      config = filterWellConfigByAssignment(config, assignment.routes, assignment.wells, {
+        unrestricted: !session?.companyId,
+      });
 
       // Group wells by route and track colors from config
       const routeMap: { [route: string]: { wells: string[], color: string } } = {};

@@ -1,60 +1,52 @@
 import { Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { isDriverVerified, revalidateDriverSession, clearDriverSession, getDriverSession } from '../src/services/driverAuth';
-import { fetchDriverRouteAssignment, driverHasRealRoutes } from '../src/services/wellConfig';
+import {
+  isDriverVerified,
+  revalidateDriverSessionClassified,
+  clearDriverSession,
+  getDriverSession,
+} from '../src/services/driverAuth';
+import { resolveCurrentEligibility } from '../src/services/wellConfig';
+import { decideBootstrapRoute, type BootstrapRoute } from '../src/services/eligibility';
 
 export default function Index() {
   const [checking, setChecking] = useState(true);
-  const [isVerified, setIsVerified] = useState(false);
-  const [blockedNoRoutes, setBlockedNoRoutes] = useState(false);
+  const [dest, setDest] = useState<BootstrapRoute>('/driver-login');
 
   useEffect(() => {
     const check = async () => {
-      // First check if we have a local session
       const hasLocalSession = await isDriverVerified();
-
-      if (hasLocalSession) {
-        // IMPORTANT: Revalidate against Firebase to catch revoked access
-        // This prevents the issue where SecureStore persists across reinstalls
-        // but the driver has been revoked in Firebase
-        console.log("[Index] Local session found, revalidating with Firebase...");
-        const stillValid = await revalidateDriverSession();
-
-        if (!stillValid) {
-          // Session was revoked or no longer valid in Firebase
-          console.log("[Index] Session no longer valid in Firebase, clearing local session");
-          await clearDriverSession();
-          setIsVerified(false);
-        } else {
-          console.log("[Index] Session revalidated successfully");
-
-          // Route-based access gate: unrouted drivers can't use WB M
-          const session = await getDriverSession();
-          if (session?.companyId) {
-            try {
-              const { routes } = await fetchDriverRouteAssignment();
-              if (!driverHasRealRoutes(routes)) {
-                console.log("[Index] Driver has no real routes — blocking WB M access");
-                setBlockedNoRoutes(true);
-                setChecking(false);
-                return;
-              }
-            } catch (err) {
-              // Network error — allow access (offline-friendly)
-              console.log("[Index] Route check failed, allowing access:", err);
-            }
-          }
-          // WB admin (no companyId) always gets through
-          setIsVerified(true);
-        }
-      } else {
-        setIsVerified(false);
+      if (!hasLocalSession) {
+        setDest('/driver-login');
+        setChecking(false);
+        return;
       }
 
+      const revalidation = await revalidateDriverSessionClassified();
+      if (revalidation === 'revoked') {
+        await clearDriverSession();
+        setDest('/driver-login');
+        setChecking(false);
+        return;
+      }
+
+      const session = await getDriverSession();
+      const eligibility = await resolveCurrentEligibility();
+      const route = decideBootstrapRoute({
+        hasLocalSession: true,
+        revalidation,
+        eligibility: eligibility.status,
+      });
+      void session;
+      setDest(route);
       setChecking(false);
     };
-    check();
+    check().catch((err) => {
+      console.log('[Index] bootstrap failed (keeping session if any):', err);
+      setDest('/session-verify');
+      setChecking(false);
+    });
   }, []);
 
   if (checking) {
@@ -65,11 +57,5 @@ export default function Index() {
     );
   }
 
-  if (blockedNoRoutes) {
-    return <Redirect href="/no-access" />;
-  }
-
-  // If driver is verified, go to welcome screen
-  // Otherwise, go to driver login/registration
-  return <Redirect href={isVerified ? '/welcome' : '/driver-login'} />;
+  return <Redirect href={dest} />;
 }

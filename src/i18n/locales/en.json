@@ -518,6 +518,16 @@
     "invalidCredentials": "Invalid name or passcode",
     "connectionError": "Connection error. Please check your internet.",
     "connectionErrorRetry": "Connection error. Please try again.",
+    "error_invalid_credentials": "Invalid name or passcode",
+    "error_deactivated": "This account has been deactivated",
+    "error_must_change": "Passcode reset required",
+    "error_no_network": "No network connection. Please try again.",
+    "error_timeout": "Connection timed out. Please try again.",
+    "error_unreachable": "Cannot reach the WellBuilt server.",
+    "error_auth_session": "Sign-in expired. Please sign in again.",
+    "error_permission": "Access denied. Contact your dispatcher.",
+    "error_server": "Server error. Please try again.",
+    "error_unknown": "Could not sign in. Please try again.",
     "invalidPasscode": "Invalid passcode",
     "enterDisplayName": "Please enter your display name",
     "displayNameTooShort": "Display name must be at least 2 characters",
@@ -676,6 +686,12 @@
     "message": "This app is for routed drivers who self-manage their wells.",
     "subMessage": "Contact your dispatcher if you believe this is an error.",
     "logOut": "Log Out"
+  },
+  "sessionVerify": {
+    "title": "Could not verify assignment",
+    "message": "Your sign-in is still valid. We could not confirm your well assignment. Check the connection and try again — this is not an access denial.",
+    "retry": "Try again",
+    "working": "Checking…"
   },
   "appSwitcher": {
     "notInstalledTitle": "Not Installed",

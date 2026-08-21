@@ -3,11 +3,22 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { diagnoseHttpStatus, diagnoseThrown } from "./connectionDiagnosis";
+import {
+  EligibilityStatus,
+  EligibilityVerdict,
+  evaluateAuthoritativeAssignedRoutes,
+  normalizeRouteList,
+  resolveEligibility,
+  unknownVerdict,
+  verdictFromAuthoritative,
+} from "./eligibility";
 
 const STORAGE_KEY = "@wellbuilt_well_config";
 const LAST_FETCH_KEY = "@wellbuilt_config_last_fetch";
 const ASSIGNED_ROUTES_KEY = "@wellbuilt_assigned_routes";
 const ASSIGNED_WELLS_KEY = "@wellbuilt_assigned_wells";
+const ELIGIBILITY_STATUS_KEY = "@wellbuilt_eligibility_status";
 const REFRESH_INTERVAL_DAYS = 3;
 
 // Firebase config
@@ -166,44 +177,112 @@ export async function getAllWellNames(): Promise<string[]> {
 let cachedAssignedRoutes: string[] | null = null;
 let cachedAssignedWells: string[] | null = null;
 
-/**
- * Fetch driver's assignedRoutes and assignedWells from Firebase.
- * Returns { routes, wells } arrays. Empty arrays = no restriction (sees all).
- */
-export async function fetchDriverRouteAssignment(): Promise<{ routes: string[]; wells: string[] }> {
+export async function readDurableEligibility(): Promise<EligibilityVerdict | null> {
+  try {
+    const raw = await AsyncStorage.getItem(ELIGIBILITY_STATUS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as EligibilityVerdict;
+    if (parsed?.status !== 'eligible' && parsed?.status !== 'ineligible' && parsed?.status !== 'unknown') {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function persistDurableEligibility(v: EligibilityVerdict): Promise<void> {
+  if (v.status === 'unknown') return; // never persist unknown as last-known denial/grant
+  await AsyncStorage.setItem(ELIGIBILITY_STATUS_KEY, JSON.stringify(v));
+  if (v.routes) {
+    cachedAssignedRoutes = v.routes;
+    await AsyncStorage.setItem(ASSIGNED_ROUTES_KEY, JSON.stringify(v.routes));
+  }
+  if (v.wells) {
+    cachedAssignedWells = v.wells;
+    await AsyncStorage.setItem(ASSIGNED_WELLS_KEY, JSON.stringify(v.wells));
+  }
+}
+
+export async function fetchAssignmentClassified(
+  fetchFn: typeof fetch = fetch,
+): Promise<EligibilityVerdict> {
   try {
     const driverId = await SecureStore.getItemAsync("driverId");
     if (!driverId) {
-      console.log("[WellConfig] No driverId, skipping route assignment fetch");
-      return { routes: [], wells: [] };
+      return unknownVerdict('missing_driver_id', true);
     }
-
-    const { getValidIdToken } = await import("./firebaseAuthSession");
-    const token = await getValidIdToken();
+    let token = 'missing';
+    try {
+      const { getValidIdToken } = await import("./firebaseAuthSession");
+      token = await getValidIdToken();
+    } catch (err) {
+      const d = diagnoseThrown(err);
+      return unknownVerdict(d.code || 'missing_token', d.retryable);
+    }
+    if (token === 'missing') {
+      return unknownVerdict('missing_token', true);
+    }
     const url = `${FIREBASE_DATABASE_URL}/drivers/profiles/${driverId}.json?auth=${encodeURIComponent(token)}`;
-    const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
-
+    const response = await fetchFn(url, { method: "GET", headers: { "Content-Type": "application/json" } });
     if (!response.ok) {
-      console.error("[WellConfig] Route assignment fetch failed:", response.status);
-      return { routes: cachedAssignedRoutes || [], wells: cachedAssignedWells || [] };
+      const d = diagnoseHttpStatus(response.status);
+      return unknownVerdict(d.code, d.retryable);
     }
-
     const data = await response.json();
-    const routes = Array.isArray(data?.assignedRoutes) ? data.assignedRoutes : [];
-    const wells = Array.isArray(data?.assignedWells) ? data.assignedWells : [];
-
-    // Cache locally
-    cachedAssignedRoutes = routes;
-    cachedAssignedWells = wells;
-    await AsyncStorage.setItem(ASSIGNED_ROUTES_KEY, JSON.stringify(routes));
-    await AsyncStorage.setItem(ASSIGNED_WELLS_KEY, JSON.stringify(wells));
-
-    console.log(`[WellConfig] Route assignment: ${routes.length} routes, ${wells.length} wells`);
-    return { routes, wells };
+    if (data == null) {
+      return unknownVerdict('null_profile', true);
+    }
+    const verdict = verdictFromAuthoritative(data.assignedRoutes, data.assignedWells);
+    if (verdict.status !== 'unknown') {
+      cachedAssignedRoutes = verdict.routes;
+      cachedAssignedWells = verdict.wells;
+      await persistDurableEligibility(verdict);
+    }
+    return verdict;
   } catch (error) {
-    console.error("[WellConfig] Route assignment fetch error:", error);
-    return { routes: cachedAssignedRoutes || [], wells: cachedAssignedWells || [] };
+    const d = diagnoseThrown(error);
+    return unknownVerdict(d.code, d.retryable);
   }
+}
+
+/**
+ * Resolve current eligibility: classified fetch + durable last-known + session.
+ * Unknown never becomes ineligible.
+ */
+export async function resolveCurrentEligibility(): Promise<EligibilityVerdict> {
+  const companyId = await SecureStore.getItemAsync("companyId");
+  const sessionRoutesRaw = await SecureStore.getItemAsync("assignedRoutes");
+  let sessionRoutes: unknown = null;
+  try { sessionRoutes = sessionRoutesRaw ? JSON.parse(sessionRoutesRaw) : null; } catch { sessionRoutes = null; }
+  const fetch = await fetchAssignmentClassified();
+  const durable = await readDurableEligibility();
+  return resolveEligibility({
+    hasCompanyId: !!companyId,
+    fetch,
+    durable,
+    sessionRoutes,
+  });
+}
+
+/**
+ * Fetch driver's assignedRoutes and assignedWells.
+ * Failed/unknown lookups do NOT collapse to [] (that was the false-denial).
+ * Callers that need a filter list should use verdict.routes when status is eligible.
+ */
+export async function fetchDriverRouteAssignment(): Promise<{
+  routes: string[];
+  wells: string[];
+  status: EligibilityStatus;
+  authoritative: boolean;
+}> {
+  const verdict = await resolveCurrentEligibility();
+  return {
+    routes: verdict.routes || [],
+    wells: verdict.wells || [],
+    status: verdict.status,
+    authoritative: verdict.source === 'authoritative',
+  };
 }
 
 /**
@@ -226,17 +305,21 @@ export async function getDriverRouteAssignment(): Promise<{ routes: string[]; we
 }
 
 /**
- * Filter well_config to only include wells matching driver's assigned routes/wells.
- * If no assignments (empty arrays), returns ALL wells (no restriction).
+ * Filter well_config to wells matching assigned routes/wells.
+ * Empty arrays are NOT "see everything" — that was the [] contradiction.
+ * Pass unrestricted:true only for no-company admin sessions.
  */
 export function filterWellConfigByAssignment(
   config: WellConfigMap,
   assignedRoutes: string[],
-  assignedWells: string[]
+  assignedWells: string[],
+  opts?: { unrestricted?: boolean },
 ): WellConfigMap {
-  // No assignments = see everything (WB admin or unassigned driver)
-  if (assignedRoutes.length === 0 && assignedWells.length === 0) {
+  if (opts?.unrestricted) {
     return config;
+  }
+  if (assignedRoutes.length === 0 && assignedWells.length === 0) {
+    return {};
   }
 
   const filtered: WellConfigMap = {};
@@ -258,16 +341,11 @@ export function filterWellConfigByAssignment(
 }
 
 /**
- * Check if a driver has "real" routes (not just Unrouted* variants).
- * Used to gate WB M access — Unrouted-only drivers use WB T, not WB M.
- *
- * - undefined = legacy driver, routes never assigned → allow access
- * - [] = explicitly no routes → no access
- * - ["Unrouted"] = unrouted only → no access
- * - ["North Loop", "Unrouted"] = has real route → allow access
+ * Authoritative-array helper only. Do NOT pass failed-lookup leftovers.
+ * Missing field → not a boolean denial (returns true for legacy "field absent"
+ * only when the caller already proved the fetch succeeded AND the field was
+ * omitted — prefer evaluateAuthoritativeAssignedRoutes).
  */
 export function driverHasRealRoutes(assignedRoutes: string[] | undefined | null): boolean {
-  if (assignedRoutes === undefined || assignedRoutes === null) return true;
-  if (assignedRoutes.length === 0) return false;
-  return assignedRoutes.some(r => !r.startsWith('Unrouted'));
+  return evaluateAuthoritativeAssignedRoutes(assignedRoutes) === 'eligible';
 }

@@ -68,4 +68,27 @@ describe('fish 2D wander', () => {
       expect(p.x <= excl.left + 0.01 || p.x >= excl.right - 0.01).toBe(true);
     }
   });
+
+  test('stays below the local FLIP surface at its x', () => {
+    let f = createFishWander(bounds, excl, rngSeq([0.2, 0.4, 0.7, 0.3, 0.1, 0.9]));
+    for (let i = 0; i < 80; i++) {
+      f = stepFishWander(f, 1 / 30, bounds, excl, rngSeq([0.3, 0.6, 0.2, 0.8, 0.4]), {
+        surfaceY: 40,
+      });
+      expect(f.y).toBeLessThanOrEqual(40 - 8 + 1e-6);
+    }
+  });
+
+  test('local current couples without throwing the fish out of bounds', () => {
+    let f = createFishWander(bounds, excl, rngSeq([0.2, 0.3, 0.4, 0.5, 0.2, 0.2]));
+    const before = { ...f };
+    f = stepFishWander(f, 1 / 30, bounds, excl, rngSeq([0.4, 0.5, 0.6, 0.5, 0.5]), {
+      currentVx: 80,
+      currentVy: -20,
+      surfaceY: bounds.maxY,
+    });
+    expect(f.vx).not.toBe(before.vx);
+    expect(f.x).toBeGreaterThanOrEqual(bounds.minX);
+    expect(f.x).toBeLessThanOrEqual(bounds.maxX);
+  });
 });

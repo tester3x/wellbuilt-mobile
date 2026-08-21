@@ -81,6 +81,7 @@ export function stepFishWander(
   bounds: WanderBounds,
   excl: ExclusionBand,
   rng: Rng,
+  fluid?: { currentVx?: number; currentVy?: number; surfaceY?: number },
 ): FishWander {
   const step = clamp(dt, 1 / 120, 1 / 20);
   let { x, y, vx, vy, wx, wy, speed, retargetIn } = fish;
@@ -101,6 +102,10 @@ export function stepFishWander(
   // Smooth steering, not a straight track.
   vx = vx * 0.82 + tx * 0.18;
   vy = vy * 0.82 + ty * 0.18;
+  const cvx = fluid?.currentVx ?? 0;
+  const cvy = fluid?.currentVy ?? 0;
+  vx += cvx * 0.12;
+  vy += cvy * 0.08;
   const vmag = Math.hypot(vx, vy) || 1;
   const cap = speed * 1.15;
   if (vmag > cap) {
@@ -119,6 +124,9 @@ export function stepFishWander(
   if (x < bounds.minX) { x = bounds.minX; vx = Math.abs(vx) * 0.5; }
   if (x > bounds.maxX) { x = bounds.maxX; vx = -Math.abs(vx) * 0.5; }
   if (y < bounds.minY) { y = bounds.minY; vy = Math.abs(vy) * 0.5; }
-  if (y > bounds.maxY) { y = bounds.maxY; vy = -Math.abs(vy) * 0.5; }
+  const localMax = fluid?.surfaceY != null
+    ? Math.min(bounds.maxY, Math.max(bounds.minY, fluid.surfaceY - 8))
+    : bounds.maxY;
+  if (y > localMax) { y = localMax; vy = -Math.abs(vy) * 0.5; }
   return { x, y, vx, vy, wx, wy, speed, retargetIn };
 }

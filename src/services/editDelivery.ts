@@ -20,19 +20,20 @@
 // deterministic per original.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readJsonPath } from './backendAccess';
+import { diagnoseThrown, formatDiagnosis } from './connectionDiagnosis';
 import { uploadEditPacket } from './firebase';
 import { confirmNewSecureEdit } from './editMarkers';
 import {
   isOnline,
   mutateQueuedPullInPlace,
   getQueuedPackets,
+  onConnectivityChange,
   onFlushComplete,
 } from './packetQueue';
 import { getPullHistory, setPullEditStatus } from './pullHistory';
 
 const EDIT_OPS_KEY = '@wellbuilt_edit_ops';
-const FIREBASE_DATABASE_URL = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
-const FIREBASE_API_KEY = 'AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI';
 
 export const EDIT_FAILED_THRESHOLD = 5;
 
@@ -182,27 +183,28 @@ export async function submitPullEdit(
   return { mode: 'uploading', submitted: op?.state === 'edit_submitted' || result.submitted > 0 };
 }
 
-async function readPath(path: string, fetchFn: typeof fetch): Promise<any | null> {
-  try {
-    let token = 'missing';
-    try {
-      const { getValidIdToken } = await import('./firebaseAuthSession');
-      token = await getValidIdToken();
-    } catch {
-      /* injected fetchFn in unit tests */
-    }
-    if (token === 'missing' && fetchFn === fetch) {
-      throw new Error('id_token_required');
-    }
-    const res = await fetchFn(`${FIREBASE_DATABASE_URL}/${path}.json?auth=${encodeURIComponent(token)}`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!res.ok) return null;
-    return (await res.json()) ?? null;
-  } catch {
-    return null;
-  }
+async function readPath(path: string, fetchFn: typeof fetch): Promise<{
+  data: any | null;
+  diagnosis: ReturnType<typeof diagnoseThrown> | null;
+}> {
+  const result = await readJsonPath(path, fetchFn);
+  return { data: result.found ? result.data : null, diagnosis: result.diagnosis };
+}
+
+let _editListeners: ((r: { submitted: number; confirmed: number; rejected: number; held: number }) => void)[] = [];
+export function onEditDeliveryResult(
+  listener: (r: { submitted: number; confirmed: number; rejected: number; held: number }) => void,
+): () => void {
+  _editListeners.push(listener);
+  return () => { _editListeners = _editListeners.filter(l => l !== listener); };
+}
+
+async function markConfirmed(op: EditOperation): Promise<void> {
+  op.state = 'edited';
+  op.updatedAt = Date.now();
+  await upsertOp(op);
+  await setPullEditStatus(op.originalPacketId, 'edited');
+  await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
 }
 
 let _processing = false;
@@ -222,7 +224,11 @@ export async function processEditOperations(
   if (_processing) return { submitted: 0, confirmed: 0, rejected: 0, held: 0 };
   _processing = true;
   try {
-    return await processEditOperationsInner(fetchFn);
+    const result = await processEditOperationsInner(fetchFn);
+    for (const l of _editListeners) {
+      try { l(result); } catch {}
+    }
+    return result;
   } finally {
     _processing = false;
   }
@@ -254,11 +260,18 @@ async function processEditOperationsInner(
       }
       if (!online) { held++; continue; }
       const processed = await readPath(`packets/processed/${op.originalPacketId}`, fetchFn);
-      if (!processed) {
+      if (!processed.data) {
+        if (processed.diagnosis && (processed.diagnosis.kind === 'auth_session' || processed.diagnosis.kind === 'permission')) {
+          op.lastError = formatDiagnosis(processed.diagnosis);
+          op.updatedAt = Date.now();
+          await upsertOp(op);
+          held++;
+          continue;
+        }
         const rejectedOriginal = await readPath(`packets/rejected/${op.originalPacketId}`, fetchFn);
-        if (rejectedOriginal) {
+        if (rejectedOriginal.data) {
           op.state = 'edit_blocked';
-          op.blockedReason = `Original pull was rejected by the server (${rejectedOriginal.reason || 'unknown'}) — edit held for review.`;
+          op.blockedReason = `Original pull was rejected by the server (${rejectedOriginal.data.reason || 'unknown'}) — edit held for review.`;
           op.updatedAt = Date.now();
           await upsertOp(op);
           await setPullEditStatus(op.originalPacketId, 'edit_pending', op.blockedReason);
@@ -269,25 +282,23 @@ async function processEditOperationsInner(
         continue;
       }
       // Original is processed → release the dependent edit.
+      // Idempotent: the server incoming key is deterministic per original.
       try {
         const uploadResult = await uploadEditPacket(op.payload);
         if (confirmNewSecureEdit(uploadResult)) {
-          op.state = 'edited';
-          op.updatedAt = Date.now();
-          await upsertOp(op);
-          await setPullEditStatus(op.originalPacketId, 'edited');
+          await markConfirmed(op);
           confirmed++;
-          await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
         } else {
           op.state = 'edit_submitted';
           op.updatedAt = Date.now();
+          op.lastError = null;
           await upsertOp(op);
           await setPullEditStatus(op.originalPacketId, 'edit_submitted');
           submitted++;
         }
       } catch (err: any) {
         op.attempts += 1;
-        op.lastError = String(err?.message || err || 'unknown');
+        op.lastError = formatDiagnosis(diagnoseThrown(err), String(err?.message || err || 'unknown'));
         op.updatedAt = Date.now();
         await upsertOp(op);
         if (op.attempts >= EDIT_FAILED_THRESHOLD) {
@@ -297,24 +308,26 @@ async function processEditOperationsInner(
       continue;
     }
 
-    // edit_submitted → confirm or detect rejection.
+    // edit_submitted → confirm or detect rejection. Never re-uploads:
+    // a second submit of an already-accepted edit would be a duplicate.
     if (op.state === 'edit_submitted') {
       if (!online) { held++; continue; }
       const processedOrig = await readPath(`packets/processed/${op.originalPacketId}`, fetchFn);
       // New secure edits confirm ONLY via confirmNewSecureEdit proofs.
       // Legacy editedAt / wasEdited / editedByPacketId / isEdit do not confirm.
-      if (confirmNewSecureEdit(processedOrig)) {
-        op.state = 'edited';
-        op.updatedAt = Date.now();
-        await upsertOp(op);
-        await setPullEditStatus(op.originalPacketId, 'edited');
+      if (confirmNewSecureEdit(processedOrig.data)) {
+        await markConfirmed(op);
         confirmed++;
-        // Fully confirmed — the op has served its purpose.
-        await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
         continue;
       }
       const wellClean = op.wellName.replace(/\s+/g, '');
       const editKey = `edit_${op.payload.originalPacketTimestamp}_${wellClean}`;
+      const processedEdit = await readPath(`packets/processed/${editKey}`, fetchFn);
+      if (confirmNewSecureEdit(processedEdit.data)) {
+        await markConfirmed(op);
+        confirmed++;
+        continue;
+      }
       try {
         const { getFieldCommandStatus } = await import('./secureOperationalApi');
         const receipt = await getFieldCommandStatus({
@@ -322,28 +335,43 @@ async function processEditOperationsInner(
           idempotencyKey: editKey,
         });
         if (confirmNewSecureEdit(receipt)) {
-          op.state = 'edited';
-          op.updatedAt = Date.now();
-          await upsertOp(op);
-          await setPullEditStatus(op.originalPacketId, 'edited');
+          await markConfirmed(op);
           confirmed++;
-          await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
           continue;
         }
-      } catch {
-        /* receipt lookup is not confirmation */
+      } catch (err) {
+        const d = diagnoseThrown(err);
+        if (d.kind === 'auth_session' || d.kind === 'permission') {
+          op.lastError = formatDiagnosis(d);
+          op.updatedAt = Date.now();
+          await upsertOp(op);
+          held++;
+          continue;
+        }
+        /* other receipt lookup failures are not confirmation */
       }
       const rejectedEdit = await readPath(`packets/rejected/${editKey}`, fetchFn);
-      if (rejectedEdit) {
+      if (rejectedEdit.data) {
         op.state = 'edit_rejected';
-        op.rejectionReason = [rejectedEdit.reason, rejectedEdit.readableReason].filter(Boolean).join(': ') || 'rejected by server';
+        op.rejectionReason = [rejectedEdit.data.reason, rejectedEdit.data.readableReason].filter(Boolean).join(': ') || 'rejected by server';
         op.updatedAt = Date.now();
         await upsertOp(op); // evidence PRESERVED — never deleted
         await setPullEditStatus(op.originalPacketId, 'edit_rejected', op.rejectionReason);
         rejected++;
         continue;
       }
-      held++; // still awaiting the server
+      if (processedOrig.diagnosis && (processedOrig.diagnosis.kind === 'auth_session' || processedOrig.diagnosis.kind === 'permission')) {
+        op.lastError = formatDiagnosis(processedOrig.diagnosis);
+        op.updatedAt = Date.now();
+        await upsertOp(op);
+      }
+      // Still in packets/incoming → in flight. Do NOT resubmit.
+      const incoming = await readPath(`packets/incoming/${editKey}`, fetchFn);
+      if (incoming.data) {
+        held++;
+        continue;
+      }
+      held++; // still awaiting the server — no duplicate upload
     }
   }
   return { submitted, confirmed, rejected, held };
@@ -369,6 +397,9 @@ export function startEditDelivery(): void {
   _started = true;
   onFlushComplete(() => {
     processEditOperations().catch(() => {});
+  });
+  onConnectivityChange((online) => {
+    if (online) processEditOperations().catch(() => {});
   });
   setTimeout(() => {
     processEditOperations().catch(() => {});

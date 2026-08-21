@@ -26,6 +26,8 @@ import {
   completeRegistration,
   clearPendingRegistration,
 } from '../src/services/driverAuth';
+import { diagnoseThrown } from '../src/services/connectionDiagnosis';
+import { userFacingErrorMessage } from '../src/i18n/userFacingError';
 import { hp, spacing, wp } from '../src/ui/layout';
 
 type Mode =
@@ -201,7 +203,8 @@ export default function DriverLoginScreen() {
     } catch (err) {
       console.error('[DriverLogin] Login error:', err);
       setMode('error');
-      setError(t('driverLogin.connectionError'));
+      const d = diagnoseThrown(err);
+      setError(`${userFacingErrorMessage(err, t)}${d.code ? ` (${d.code})` : ''}`);
     }
   };
 
@@ -259,7 +262,8 @@ export default function DriverLoginScreen() {
     } catch (err) {
       console.error('[DriverLogin] Registration error:', err);
       setMode('register');
-      setError(t('driverLogin.connectionErrorRetry'));
+      const d = diagnoseThrown(err);
+      setError(`${userFacingErrorMessage(err, t)}${d.code ? ` (${d.code})` : ''}`);
     }
   };
 
@@ -279,7 +283,8 @@ export default function DriverLoginScreen() {
     } catch (err) {
       console.error('[DriverLogin] Complete registration error:', err);
       setMode('error');
-      setError(t('driverLogin.connectionErrorRetry'));
+      const d = diagnoseThrown(err);
+      setError(`${userFacingErrorMessage(err, t)}${d.code ? ` (${d.code})` : ''}`);
     }
   };
 

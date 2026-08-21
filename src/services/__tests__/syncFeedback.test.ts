@@ -207,6 +207,12 @@ describe('badge — route-aware and immediately fresh', () => {
   test('refreshes immediately on reconcile results', () => {
     expect(badgeSrc).toContain('onReconcileResult(');
   });
+
+  test('opens Sync Status with the same filter the badge is counting', () => {
+    expect(badgeSrc).toContain('badgeOpenFilter');
+    expect(badgeSrc).toContain("pathname: '/sync-status'");
+    expect(badgeSrc).toContain('params: { filter }');
+  });
 });
 
 describe('sync-status screen — freshness wiring', () => {

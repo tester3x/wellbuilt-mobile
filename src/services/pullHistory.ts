@@ -594,6 +594,7 @@ export async function setPullEditStatus(
   if (reason !== undefined) entry.editStatusReason = reason;
   if (editStatus === 'edited') {
     entry.status = 'edited'; // server-confirmed — legacy marker may appear
+    if (!entry.editedAt) entry.editedAt = new Date().toISOString();
   }
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
   console.log('[PullHistory] editStatus:', packetId, '→', editStatus);

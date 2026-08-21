@@ -6,7 +6,7 @@
 // for locally queued transport failures and reuses the same stable
 // packetId; server-rejected packets have no retry.
 
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RefreshControl,
@@ -19,13 +19,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
+  DeliveryFilter,
   DeliveryItem,
   getDeliveryItems,
   onReconcileResult,
   reconcileSubmittedPulls,
   recoverStuckSubmission,
+  selectDeliveryItems,
 } from '../src/services/deliveryStatus';
-import { processEditOperations } from '../src/services/editDelivery';
+import { onEditDeliveryResult, processEditOperations } from '../src/services/editDelivery';
 import { retryPacketNow } from '../src/services/packetQueue';
 import { formatAppDateTime } from '../src/i18n/format';
 
@@ -45,17 +47,27 @@ export default function SyncStatusScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
+  const params = useLocalSearchParams<{ filter?: string }>();
+  const filter: DeliveryFilter =
+    params.filter === 'attention' || params.filter === 'pending' ? params.filter : 'all';
   const [items, setItems] = useState<DeliveryItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const load = useCallback(async (reconcile: boolean) => {
     try {
-      if (reconcile) await reconcileSubmittedPulls();
+      if (reconcile) {
+        await reconcileSubmittedPulls();
+        await processEditOperations();
+      }
     } catch {
-      // offline — show local truth anyway
+      // offline / auth — show local truth anyway
     }
-    setItems(await getDeliveryItems());
+    try {
+      setItems(await getDeliveryItems());
+    } catch {
+      // storage hiccup — keep the last known list rather than flash empty
+    }
   }, []);
 
   // Freshness contract (field-test fix: a pull kept showing "Submitted —
@@ -77,13 +89,16 @@ export default function SyncStatusScreen() {
       const unsubReconcile = onReconcileResult(() => {
         getDeliveryItems().then(setItems).catch(() => {});
       });
+      const unsubEdits = onEditDeliveryResult(() => {
+        getDeliveryItems().then(setItems).catch(() => {});
+      });
       const timer = setInterval(() => {
         const awaiting = itemsRef.current.some(
           (i) => i.status === 'submitted' || i.status === 'edit_submitted',
         );
         if (awaiting) load(true);
       }, POLL_WHILE_VISIBLE_MS);
-      return () => { unsubReconcile(); clearInterval(timer); };
+      return () => { unsubReconcile(); unsubEdits(); clearInterval(timer); };
     }, [load]),
   );
 
@@ -127,10 +142,17 @@ export default function SyncStatusScreen() {
         style={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
       >
-        {items.length === 0 && (
-          <Text style={styles.empty}>{t('syncStatus.emptyFull')}</Text>
-        )}
-        {items.map((item) => {
+        {(() => {
+          const visible = selectDeliveryItems(items, filter);
+          if (visible.length === 0) {
+            const emptyKey = filter === 'attention'
+              ? 'syncStatus.emptyAttention'
+              : filter === 'pending'
+                ? 'syncStatus.emptyPending'
+                : 'syncStatus.emptyFull';
+            return <Text style={styles.empty}>{t(emptyKey)}</Text>;
+          }
+          return visible.map((item) => {
           const color = STATUS_COLORS[item.status];
           const statusKey = `syncStatus.${item.status}` as const;
           const actionKey =
@@ -182,7 +204,8 @@ export default function SyncStatusScreen() {
               )}
             </View>
           );
-        })}
+          });
+        })()}
       </ScrollView>
     </View>
   );

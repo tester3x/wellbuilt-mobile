@@ -289,6 +289,12 @@
     "avgLevel": "avg level",
     "editedDetailWithTime": "This packet was edited ({{when}}). Detailed before/after values are unavailable for older records.",
     "editedDetailNoTime": "This packet was edited. Detailed before/after values are unavailable for older records.",
+    "editPending": "(edit pending)",
+    "editFailed": "(edit failed)",
+    "editRejected": "(edit rejected)",
+    "editPendingDetail": "This correction is saved on the phone and is waiting for server confirmation. It is not marked Edited yet.",
+    "editFailedDetail": "This correction failed to send. Use Sync Status to retry. It is not marked Edited.",
+    "editRejectedDetail": "The server rejected this correction. It is not marked Edited.",
     "pullsCount_one": "{{count}} pull",
     "pullsCount_other": "{{count}} pulls",
     "footerTotals": "{{pulls}} • {{bbls}} BBLs"
@@ -632,7 +638,16 @@
     "title": "WellBuilt System Offline",
     "cannotConnect": "Cannot connect to server",
     "queuedHint": "Pulls will be saved locally and submitted when connection is restored",
-    "dismiss": "Dismiss"
+    "dismiss": "Retry",
+    "authTitle": "Sign-in expired",
+    "authMessage": "Your session is no longer valid. Sign in again to sync.",
+    "authHint": "Queued work is kept on this phone until you reconnect.",
+    "permissionTitle": "Access denied",
+    "permissionMessage": "This account cannot reach that data. Contact your dispatcher.",
+    "timeoutTitle": "Server timed out",
+    "timeoutMessage": "The WellBuilt server did not answer in time.",
+    "networkTitle": "No network",
+    "networkMessage": "This phone is offline. Pulls will wait on the device."
   },
   "syncStatus": {
     "title": "Sync Status",
@@ -652,7 +667,9 @@
     "refresh": "Refresh",
     "needsAttention": "Needs attention",
     "working": "Working…",
-    "emptyFull": "All pulls are confirmed synced. Nothing needs attention."
+    "emptyFull": "All pulls are confirmed synced. Nothing needs attention.",
+    "emptyPending": "Nothing is waiting to send.",
+    "emptyAttention": "Nothing needs attention."
   },
   "noAccess": {
     "title": "WellBuilt Mobile",
@@ -724,8 +741,15 @@
   },
   "errors": {
     "network": "Network error. Please try again.",
+    "noNetwork": "No network connection. Please try again.",
     "server": "Server error. Please try again.",
     "timeout": "Connection timed out. Please try again.",
+    "unreachable": "Cannot reach the WellBuilt server. Please try again.",
+    "authSession": "Sign-in expired. Please sign in again.",
+    "permission": "Access denied. Contact your dispatcher.",
+    "serverRejection": "The server rejected this item.",
+    "malformed": "This saved item is incomplete and cannot be sent as-is.",
+    "retryableQueued": "Saved on this phone. It will retry automatically.",
     "unknown": "Something went wrong. Please try again.",
     "firebaseRead": "Could not load data. Please try again.",
     "firebaseWrite": "Could not save data. Please try again.",

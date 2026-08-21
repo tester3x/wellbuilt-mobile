@@ -1,4 +1,4 @@
-import { packetShowsEditBadge, hasEditedMarkerWithoutDetail, selectVisibleHistoryPackets, confirmNewSecureEdit } from '../editMarkers';
+import { packetShowsEditBadge, hasEditedMarkerWithoutDetail, selectVisibleHistoryPackets, confirmNewSecureEdit, historyEditPresentation } from '../editMarkers';
 
 describe('packetShowsEditBadge (badge-only tranche)', () => {
   test('modern editedAt badges (e.g. Mikezfold rows)', () => {
@@ -40,6 +40,28 @@ describe('packetShowsEditBadge (badge-only tranche)', () => {
     expect(confirmNewSecureEdit({ status: 'committed' })).toBe(true);
     expect(confirmNewSecureEdit({ status: 'pending' })).toBe(false);
     expect(confirmNewSecureEdit(null)).toBe(false);
+  });
+});
+
+describe('Job History presentation', () => {
+  test('pending edit is not Edited', () => {
+    expect(historyEditPresentation({ editStatus: 'edit_pending', status: 'sent' })).toBe('pending');
+    expect(historyEditPresentation({ editStatus: 'edit_submitted', status: 'sent' })).toBe('pending');
+  });
+  test('confirmed edited wins after server confirmation', () => {
+    expect(historyEditPresentation({ editStatus: 'edited', status: 'edited' })).toBe('edited');
+    expect(historyEditPresentation({
+      status: 'sent',
+      editCommitted: true,
+      editCommittedReceiptKey: 'r1',
+    })).toBe('edited');
+  });
+  test('failed/rejected never look successful', () => {
+    expect(historyEditPresentation({ editStatus: 'edit_failed', status: 'sent' })).toBe('failed');
+    expect(historyEditPresentation({ editStatus: 'edit_rejected', status: 'sent' })).toBe('rejected');
+  });
+  test('legacy historical editedAt still badges after the fact', () => {
+    expect(historyEditPresentation({ status: 'sent', editedAt: '2026-08-16T00:00:00.000Z' })).toBe('edited');
   });
 });
 

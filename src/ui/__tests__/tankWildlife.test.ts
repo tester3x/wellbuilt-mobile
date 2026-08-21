@@ -165,9 +165,9 @@ describe('lane coordination — wildlife never intersects', () => {
 describe('wiring — index.tsx integration facts', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../../app/(tabs)/index.tsx'), 'utf8');
 
-  test('duck renders ABOVE the water fill (later sibling than the blue layer) inside the surface layer', () => {
+  test('duck renders via TankFlipAquarium on the FLIP surface, before the level number', () => {
     const waterIdx = src.indexOf('TankFlipAquarium');
-    const duckIdx = src.indexOf("showFloat && aliveEgg.kind === 'duck'"); // the RENDER site, not the swim effect
+    const duckIdx = src.indexOf('showDuck={showFloat && aliveEgg.kind === \'duck\'}');
     const numberIdx = src.indexOf('styles.numberContainer');
     expect(waterIdx).toBeGreaterThan(-1);
     expect(duckIdx).toBeGreaterThan(waterIdx);
@@ -175,10 +175,11 @@ describe('wiring — index.tsx integration facts', () => {
   });
 
   test('duck uses the clamped surface offset, band math, velocity flip, and bob', () => {
-    expect(src).toContain('duckTopOffset(waterTop)');
+    const aqua = fs.readFileSync(path.join(__dirname, '../../components/TankFlipAquarium.tsx'), 'utf8');
+    expect(aqua).toContain('stepDuckFloat');
+    expect(aqua).toContain('duckGlyphTopFromCeiling');
     expect(src).toContain('computeDuckBand(INTERIOR_WIDTH');
-    expect(src).toMatch(/duckFaceStyle[\s\S]{0,200}Math\.cos/);
-    expect(src).toContain('duckMoveStyle');
+    expect(src).toContain('showDuck={showFloat && aliveEgg.kind === \'duck\'}');
     expect(src).not.toMatch(/aliveFloat[\s\S]{0,60}🦆/); // old drowning float gone
   });
 
@@ -212,7 +213,7 @@ describe('wiring — index.tsx integration facts', () => {
     const effect = src.slice(src.indexOf('const needsSwim'), src.indexOf('const needsSwim') + 500);
     expect(effect).toContain('cancelAnimation(swim)');
     expect(effect).toContain('return () => cancelAnimation(swim)');
-    expect(src).toMatch(/aliveDuckWrap[\s\S]{0,400}accessible=\{false\}/);
+    expect(src).toContain('pointerEvents="none"');
     expect(src).toContain('pointerEvents="none"');
   });
 

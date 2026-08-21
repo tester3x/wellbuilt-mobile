@@ -10,7 +10,9 @@
 // reconciles them directly by the STABLE packet id. Rejected packets are
 // evidence: their reason is preserved and they are never auto-retried.
 
-import { EDIT_FAILED_THRESHOLD, EditOperation, getEditOperations } from './editDelivery';
+import { displayTimeFromPacketId, readJsonPath } from './backendAccess';
+import { ConnectionDiagnosis, ConnectionKind, formatDiagnosis } from './connectionDiagnosis';
+import { EDIT_FAILED_THRESHOLD, EditOperation, getEditOperations, processEditOperations } from './editDelivery';
 import {
   QueuedPacket,
   SYNC_FAILED_THRESHOLD,
@@ -24,9 +26,6 @@ import {
 } from './packetQueue';
 import { PullHistoryEntry, getPullHistory, setPullSyncStatus } from './pullHistory';
 
-const FIREBASE_DATABASE_URL = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
-const FIREBASE_API_KEY = 'AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI';
-
 /** A packet stuck in 'submitted' longer than this needs attention — the
  *  server normally answers in seconds. It stays preserved either way. */
 export const SUBMITTED_ATTENTION_MS = 15 * 60 * 1000;
@@ -35,27 +34,25 @@ export const SUBMITTED_ATTENTION_MS = 15 * 60 * 1000;
 const RECONCILE_BATCH_LIMIT = 25;
 
 async function readPath(path: string, fetchFn: typeof fetch): Promise<any | null> {
-  try {
-    let token = 'missing';
-    try {
-      const { getValidIdToken } = await import('./firebaseAuthSession');
-      token = await getValidIdToken();
-    } catch {
-      /* injected fetchFn in unit tests */
-    }
-    if (token === 'missing' && fetchFn === fetch) {
-      throw new Error('id_token_required');
-    }
-    const res = await fetchFn(`${FIREBASE_DATABASE_URL}/${path}.json?auth=${encodeURIComponent(token)}`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!res.ok) return null;
-    const body = await res.json();
-    return body ?? null;
-  } catch {
-    return null; // offline/transient — try again next pass
+  const result = await readJsonPath(path, fetchFn);
+  if (result.diagnosis && result.diagnosis.kind !== 'ok') {
+    rememberReadFailure(path, result.diagnosis);
   }
+  return result.found ? result.data : null;
+}
+
+/** Last classified read failure per path, used so the list can show
+ *  auth/permission instead of a fake "awaiting server". */
+const _readFailures = new Map<string, ConnectionDiagnosis>();
+function rememberReadFailure(path: string, d: ConnectionDiagnosis): void {
+  _readFailures.set(path, d);
+}
+function failureForPacket(packetId: string | null): ConnectionDiagnosis | null {
+  if (!packetId) return null;
+  return _readFailures.get(`packets/processed/${packetId}`)
+    || _readFailures.get(`packets/rejected/${packetId}`)
+    || _readFailures.get(`packets/incoming/${packetId}`)
+    || null;
 }
 
 /**
@@ -136,7 +133,7 @@ async function reconcileSubmittedPullsInner(
 }
 
 export interface DeliveryCounts {
-  /** Locally queued, still within the retry threshold. */
+  /** Locally unsent (pending_sync + edit_pending) — same set as filter 'pending'. */
   pending: number;
   /** Locally queued with >= SYNC_FAILED_THRESHOLD transport failures. */
   failed: number;
@@ -144,9 +141,13 @@ export interface DeliveryCounts {
   submittedTooLong: number;
   /** Server-quarantined with a preserved reason. */
   rejected: number;
-  /** failed + submittedTooLong + rejected — what the badge must surface. */
+  /** Rows where needsAttention is true — same set as filter 'attention'. */
   attention: number;
 }
+
+/** Badge and Sync Status share this filter. A nonzero badge must open
+ *  the matching non-empty list. */
+export type DeliveryFilter = 'pending' | 'attention' | 'all';
 
 /**
  * Pure count computation (unit-testable without storage) — DERIVED from
@@ -167,16 +168,18 @@ export function computeDeliveryCounts(
 ): DeliveryCounts {
   const items = buildDeliveryItems(queue, history, editOps, nowMs);
   const failed = items.filter(i => i.status === 'sync_failed').length;
-  const pending = items.filter(i => i.status === 'pending_sync').length;
-  const submittedTooLong = items.filter(i => i.status === 'submitted' && i.needsAttention).length;
-  const rejected = items.filter(i => i.status === 'rejected').length;
+  const pending = selectDeliveryItems(items, 'pending').length;
+  const submittedTooLong = items.filter(
+    i => (i.status === 'submitted' || i.status === 'edit_submitted') && i.needsAttention,
+  ).length;
+  const rejected = items.filter(i => i.status === 'rejected' || i.status === 'edit_rejected').length;
   return {
     pending,
     failed,
     submittedTooLong,
     rejected,
-    // THE invariant: badge count === attention rows visible on the screen.
-    attention: items.filter(i => i.needsAttention).length,
+    // THE invariant: badge attention === attention rows the opened list shows.
+    attention: selectDeliveryItems(items, 'attention').length,
   };
 }
 
@@ -246,6 +249,29 @@ export interface DeliveryItem {
   /** Canonical actionable flag — the badge counts EXACTLY the rows where
    *  this is true, so the two surfaces can never contradict. */
   needsAttention: boolean;
+  /** Classified failure (auth/permission/timeout/…) when known. */
+  errorKind?: ConnectionKind | null;
+  errorCode?: string | null;
+}
+
+export function isPendingBadgeItem(item: DeliveryItem): boolean {
+  return item.status === 'pending_sync' || item.status === 'edit_pending';
+}
+
+export function selectDeliveryItems(
+  items: DeliveryItem[],
+  filter: DeliveryFilter,
+): DeliveryItem[] {
+  if (filter === 'attention') return items.filter(i => i.needsAttention);
+  if (filter === 'pending') return items.filter(isPendingBadgeItem);
+  return items;
+}
+
+/** Filter the badge itself should open. Attention wins when both exist. */
+export function badgeOpenFilter(counts: DeliveryCounts): DeliveryFilter | null {
+  if (counts.attention > 0) return 'attention';
+  if (counts.pending > 0) return 'pending';
+  return null;
 }
 
 /**
@@ -329,6 +355,7 @@ export function buildDeliveryItems(
   // count (the frozen-attempts ghost was the badge/screen contradiction).
   for (const op of editOps) {
     if (op.state === 'edited') continue;
+    const orig = history.find(e => e.packetId === op.originalPacketId || e.id === op.originalPacketId);
     const transportFailed = op.attempts >= EDIT_FAILED_THRESHOLD;
     const status: DeliveryItem['status'] =
       op.state === 'edit_blocked' ? 'edit_blocked'
@@ -336,20 +363,48 @@ export function buildDeliveryItems(
       : op.state === 'edit_submitted' ? 'edit_submitted'
       : transportFailed ? 'edit_failed'
       : 'edit_pending';
+    const stuckSubmitted = status === 'edit_submitted'
+      && (op.updatedAt < nowMs - SUBMITTED_ATTENTION_MS);
+    const bblsFinite = typeof op.payload.bblsTaken === 'number' && Number.isFinite(op.payload.bblsTaken);
+    const malformed = !op.originalPacketId || op.originalPacketId.startsWith('queued_')
+      ? false
+      : !bblsFinite && orig?.bblsTaken == null;
+    const displayTime = op.payload.dateTime
+      || orig?.dateTime
+      || displayTimeFromPacketId(op.originalPacketId)
+      || displayTimeFromPacketId(op.payload.originalPacketTimestamp)
+      || '';
+    const bblsTaken = bblsFinite ? op.payload.bblsTaken : (typeof orig?.bblsTaken === 'number' ? orig.bblsTaken : null);
+    const readFail = failureForPacket(op.originalPacketId);
+    const classified = op.lastError ? null : readFail;
+    const lastError = op.rejectionReason
+      ?? op.blockedReason
+      ?? op.lastError
+      ?? (malformed ? formatDiagnosis({ kind: 'malformed', code: 'malformed_edit', retryable: false }) : null)
+      ?? (stuckSubmitted ? 'No server confirmation yet — needs attention' : null)
+      ?? (classified ? formatDiagnosis(classified) : null);
     items.push({
       packetId: op.originalPacketId,
       queueId: null,
       wellName: op.wellName,
-      dateTime: op.payload.dateTime || '',
-      bblsTaken: op.payload.bblsTaken,
+      dateTime: displayTime,
+      bblsTaken,
       type: 'edit',
       status,
       attempts: op.attempts,
-      lastError: op.rejectionReason ?? op.blockedReason ?? op.lastError,
+      lastError,
       lastAttemptAt: op.updatedAt,
-      action: op.state === 'edit_pending' && op.attempts > 0 ? 'retryEdit' : null,
+      action: (op.state === 'edit_pending' && op.attempts > 0) || status === 'edit_submitted'
+        ? 'retryEdit'
+        : null,
       needsAttention:
-        status === 'edit_blocked' || status === 'edit_rejected' || status === 'edit_failed',
+        status === 'edit_blocked' || status === 'edit_rejected' || status === 'edit_failed'
+        || stuckSubmitted || malformed
+        || (classified != null && classified.kind === 'auth_session')
+        || (classified != null && classified.kind === 'permission')
+        || (classified != null && classified.kind === 'malformed'),
+      errorKind: classified?.kind ?? (malformed ? 'malformed' : null),
+      errorCode: classified?.code ?? (malformed ? 'malformed_edit' : null),
     });
   }
 
@@ -373,16 +428,18 @@ let _reconcilerStarted = false;
 export function startDeliveryReconciler(): void {
   if (_reconcilerStarted) return;
   _reconcilerStarted = true;
-  onFlushComplete(() => {
+  const pass = () => {
     reconcileSubmittedPulls().catch(() => {});
-  });
+    processEditOperations().catch(() => {});
+  };
+  onFlushComplete(pass);
   // Reconnect: outcomes may have settled server-side while we were dark.
+  // Edits must reconcile here too — pulls-only reconnect stranded
+  // "Edit submitted — awaiting server" rows after a session drop.
   onConnectivityChange((online) => {
-    if (online) reconcileSubmittedPulls().catch(() => {});
+    if (online) pass();
   });
   // Startup pass — catch outcomes that landed while the app was closed.
-  setTimeout(() => {
-    reconcileSubmittedPulls().catch(() => {});
-  }, 3000);
+  setTimeout(pass, 3000);
   console.log('[DeliveryStatus] Reconciler started');
 }

@@ -45,10 +45,12 @@ jest.mock('../driverAuth', () => ({
 
 import {
   SUBMITTED_ATTENTION_MS,
+  badgeOpenFilter,
   buildDeliveryItems,
   computeDeliveryCounts,
   getDeliveryCounts,
   getDeliveryItems,
+  selectDeliveryItems,
 } from '../deliveryStatus';
 import { EDIT_FAILED_THRESHOLD, EditOperation } from '../editDelivery';
 import { QueuedPacket, SYNC_FAILED_THRESHOLD } from '../packetQueue';
@@ -110,9 +112,21 @@ function assertParity(
 ) {
   const counts = computeDeliveryCounts(queue, history, NOW, editOps);
   const items = buildDeliveryItems(queue, history, editOps, NOW);
-  const attentionRows = items.filter(i => i.needsAttention);
+  const attentionRows = selectDeliveryItems(items, 'attention');
+  const pendingRows = selectDeliveryItems(items, 'pending');
   expect(counts.attention).toBe(attentionRows.length);
-  return { counts, items, attentionRows };
+  expect(counts.pending).toBe(pendingRows.length);
+  const open = badgeOpenFilter(counts);
+  if (open) {
+    const opened = selectDeliveryItems(items, open);
+    expect(opened.length).toBeGreaterThan(0);
+    if (open === 'attention') expect(opened.length).toBe(counts.attention);
+    if (open === 'pending') expect(opened.length).toBe(counts.pending);
+  } else {
+    expect(counts.pending).toBe(0);
+    expect(counts.attention).toBe(0);
+  }
+  return { counts, items, attentionRows, pendingRows };
 }
 
 describe('badge ↔ Sync Status parity', () => {
@@ -209,5 +223,71 @@ describe('badge ↔ Sync Status parity', () => {
     expect(counts.attention).toBe(3);
     expect(attentionRows).toHaveLength(3);
     expect(items).toHaveLength(4); // the pending edit is visible but not flagged
+    expect(counts.pending).toBe(1);
+  });
+
+  test('nonzero pending badge never opens an empty list', () => {
+    const q = queued({ retryCount: 0, data: { wellName: 'Atlas 2-19', dateTime: 'x', bblsTaken: 10 } });
+    const { counts, pendingRows } = assertParity([q], [], []);
+    expect(counts.pending).toBe(1);
+    expect(counts.attention).toBe(0);
+    expect(badgeOpenFilter(counts)).toBe('pending');
+    expect(pendingRows).toHaveLength(1);
+  });
+
+  test('stuck edit_submitted is attention, not an empty destination', () => {
+    const op = editOp({
+      state: 'edit_submitted',
+      wellName: 'Gabriel 3',
+      originalPacketId: '20260819_135505_Gabriel3_zj6ije',
+      updatedAt: NOW - SUBMITTED_ATTENTION_MS - 1,
+      payload: { dateTime: '', bblsTaken: 140 } as EditOperation['payload'],
+    });
+    const hist = historyEntry({
+      packetId: '20260819_135505_Gabriel3_zj6ije',
+      wellName: 'Gabriel 3',
+      dateTime: '8/19/2026 1:55 PM',
+      bblsTaken: 140,
+      syncStatus: 'sent',
+    });
+    const { counts, items, attentionRows } = assertParity([], [hist], [op]);
+    expect(counts.attention).toBe(1);
+    expect(attentionRows).toHaveLength(1);
+    expect(selectDeliveryItems(items, 'attention')[0].wellName).toBe('Gabriel 3');
+    expect(attentionRows[0].dateTime).toMatch(/8\/19\/2026/);
+    expect(attentionRows[0].bblsTaken).toBe(140);
+  });
+
+  test('empty edit dateTime falls back to history then packet-id time; 0 BBL is preserved', () => {
+    const g5 = editOp({
+      state: 'edit_submitted',
+      wellName: 'Gabriel 5',
+      originalPacketId: '20260819_113203_Gabriel5_7ndycj',
+      updatedAt: NOW - 1000,
+      payload: { dateTime: '', dateTimeUTC: '', bblsTaken: 0 } as EditOperation['payload'],
+    });
+    const hist = historyEntry({
+      packetId: '20260819_113203_Gabriel5_7ndycj',
+      wellName: 'Gabriel 5',
+      dateTime: '8/19/2026 11:32 AM',
+      bblsTaken: 95,
+      syncStatus: 'sent',
+    });
+    const items = buildDeliveryItems([], [hist], [g5], NOW);
+    expect(items).toHaveLength(1);
+    expect(items[0].dateTime).toBe('8/19/2026 11:32 AM');
+    expect(items[0].bblsTaken).toBe(0); // payload 0 is real, not replaced by history
+    expect(items[0].needsAttention).toBe(false); // fresh submit, not yet stuck
+  });
+
+  test('attention filter wins when both pending and attention exist', () => {
+    const q = queued({ retryCount: 0 });
+    const rejected = historyEntry({ syncStatus: 'rejected', rejectionReason: 'STALE' });
+    const { counts, items } = assertParity([q], [rejected], []);
+    expect(counts.pending).toBe(1);
+    expect(counts.attention).toBe(1);
+    expect(badgeOpenFilter(counts)).toBe('attention');
+    expect(selectDeliveryItems(items, 'attention')).toHaveLength(1);
+    expect(selectDeliveryItems(items, 'pending')).toHaveLength(1);
   });
 });

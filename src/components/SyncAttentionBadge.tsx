@@ -8,7 +8,7 @@ import { usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DeliveryCounts, getDeliveryCounts, onReconcileResult } from '../services/deliveryStatus';
+import { badgeOpenFilter, DeliveryCounts, getDeliveryCounts, onReconcileResult } from '../services/deliveryStatus';
 import { onFlushComplete } from '../services/packetQueue';
 import { badgeLeftOffset, badgePlacementForRoute, badgeRightOffset, badgeTopOffset } from '../ui/safeAreaBadge';
 
@@ -66,7 +66,14 @@ export function SyncAttentionBadge() {
           ? { left: badgeLeftOffset(insets.left) }
           : { right: badgeRightOffset(insets.right) },
       ]}
-      onPress={() => router.push('/sync-status')}
+      onPress={() => {
+        const filter = counts ? badgeOpenFilter(counts) : null;
+        if (filter && filter !== 'all') {
+          router.push({ pathname: '/sync-status', params: { filter } });
+        } else {
+          router.push('/sync-status');
+        }
+      }}
       accessibilityRole="button"
       accessibilityLabel="Open sync status"
     >

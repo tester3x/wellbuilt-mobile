@@ -6,8 +6,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { resolveCurrentEligibility } from '../src/services/wellConfig';
-import { decideBootstrapRoute } from '../src/services/eligibility';
+import { authorizeEstablishedSession } from '../src/services/postAuthGate';
 import { revalidateDriverSessionClassified } from '../src/services/driverAuth';
 
 export default function SessionVerifyScreen() {
@@ -20,13 +19,11 @@ export default function SessionVerifyScreen() {
     setBusy(true);
     try {
       const revalidation = await revalidateDriverSessionClassified();
-      const eligibility = await resolveCurrentEligibility();
-      const dest = decideBootstrapRoute({
-        hasLocalSession: true,
-        revalidation: revalidation === 'revoked' ? 'revoked' : revalidation,
-        eligibility: eligibility.status,
+      const dest = await authorizeEstablishedSession({
+        eligibleDestination: '/welcome',
+        revalidation,
       });
-      setCode(eligibility.reason);
+      setCode(dest);
       if (dest !== '/session-verify') {
         router.replace(dest);
         return;

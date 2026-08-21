@@ -22,7 +22,8 @@ jest.mock('../firebaseAuthSession', () => ({
 }));
 
 import { fetchAssignmentClassified, persistDurableEligibility, resolveCurrentEligibility } from '../wellConfig';
-import { decideBootstrapRoute } from '../eligibility';
+import { decideBootstrapRoute, decidePostAuthRoute } from '../eligibility';
+import { authorizeEstablishedSession } from '../postAuthGate';
 
 function jsonRes(status: number, body: unknown) {
   return {
@@ -98,6 +99,36 @@ describe('classified assignment fetch never becomes [] denial', () => {
     expect(v.status).toBe('eligible');
     expect(v.source).toBe('durable');
     expect(v.routes).toEqual(['East']);
+  });
+
+  test('authorizeEstablishedSession: durable eligible + 401 still grants, never flashes tabs/welcome', async () => {
+    await persistDurableEligibility({
+      status: 'eligible',
+      source: 'authoritative',
+      routes: ['East'],
+      wells: [],
+      reason: 'real_route',
+      retryable: false,
+    });
+    mockGetValidIdToken.mockRejectedValue(Object.assign(new Error('missing'), { name: 'AuthSessionError' }));
+    const manual = await authorizeEstablishedSession({ eligibleDestination: '/welcome', revalidation: 'valid' });
+    const sso = await authorizeEstablishedSession({ eligibleDestination: '/(tabs)', revalidation: 'valid' });
+    const cold = await authorizeEstablishedSession({ eligibleDestination: '/welcome', revalidation: 'unknown' });
+    expect(manual).toBe('/welcome');
+    expect(sso).toBe('/(tabs)');
+    expect(cold).toBe('/welcome');
+  });
+
+  test('authorizeEstablishedSession: explicit empty routes → /no-access for manual and SSO', async () => {
+    const fetch = jest.fn(async () => jsonRes(200, { assignedRoutes: [] }));
+    const v = await fetchAssignmentClassified(fetch);
+    expect(v.status).toBe('ineligible');
+    expect(decidePostAuthRoute({
+      hasLocalSession: true, revalidation: 'valid', eligibility: v.status, eligibleDestination: '/welcome',
+    })).toBe('/no-access');
+    expect(decidePostAuthRoute({
+      hasLocalSession: true, revalidation: 'valid', eligibility: v.status, eligibleDestination: '/(tabs)',
+    })).toBe('/no-access');
   });
 });
 

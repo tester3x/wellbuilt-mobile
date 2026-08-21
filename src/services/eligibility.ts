@@ -7,7 +7,8 @@
 
 export type EligibilityStatus = 'eligible' | 'ineligible' | 'unknown';
 
-export type BootstrapRoute = '/welcome' | '/no-access' | '/driver-login' | '/session-verify';
+export type EligibleDestination = '/welcome' | '/(tabs)';
+export type BootstrapRoute = EligibleDestination | '/no-access' | '/driver-login' | '/session-verify';
 
 export interface EligibilityVerdict {
   status: EligibilityStatus;
@@ -121,17 +122,32 @@ export function resolveEligibility(opts: {
   return opts.fetch.status === 'unknown' ? opts.fetch : unknownVerdict(opts.fetch.reason);
 }
 
+/**
+ * Shared post-auth authorization. Manual, SSO, and cold start MUST use this.
+ * Eligible destinations may differ (welcome vs tabs); ineligible/unknown
+ * handling is identical. Never send unknown/ineligible to welcome or tabs.
+ */
+export function decidePostAuthRoute(opts: {
+  hasLocalSession: boolean;
+  revalidation: 'valid' | 'revoked' | 'unknown';
+  eligibility: EligibilityStatus;
+  eligibleDestination?: EligibleDestination;
+}): BootstrapRoute {
+  const intended = opts.eligibleDestination ?? '/welcome';
+  if (!opts.hasLocalSession) return '/driver-login';
+  if (opts.revalidation === 'revoked') return '/driver-login';
+  if (opts.eligibility === 'ineligible' && opts.revalidation === 'valid') return '/no-access';
+  if (opts.eligibility === 'eligible') return intended;
+  return '/session-verify';
+}
+
+/** Cold-start helper — same verdict as post-auth with welcome as eligible dest. */
 export function decideBootstrapRoute(opts: {
   hasLocalSession: boolean;
   revalidation: 'valid' | 'revoked' | 'unknown';
   eligibility: EligibilityStatus;
 }): BootstrapRoute {
-  if (!opts.hasLocalSession) return '/driver-login';
-  if (opts.revalidation === 'revoked') return '/driver-login';
-  if (opts.eligibility === 'ineligible' && opts.revalidation === 'valid') return '/no-access';
-  if (opts.eligibility === 'eligible') return '/welcome';
-  if (opts.revalidation === 'unknown' || opts.eligibility === 'unknown') return '/session-verify';
-  return '/session-verify';
+  return decidePostAuthRoute({ ...opts, eligibleDestination: '/welcome' });
 }
 
 /** Same data → same verdict regardless of login method. */

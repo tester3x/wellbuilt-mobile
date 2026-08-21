@@ -20,6 +20,8 @@ import {
   saveDriverSession,
   completeAuthenticatedSession,
   isDriverVerified,
+  revalidateDriverSessionClassified,
+  clearDriverSession,
   submitRegistration,
   isPasscodeAvailable,
   getPendingRegistration,
@@ -29,6 +31,7 @@ import {
 } from '../src/services/driverAuth';
 import { diagnoseThrown } from '../src/services/connectionDiagnosis';
 import { userFacingErrorMessage } from '../src/i18n/userFacingError';
+import { authorizeEstablishedSession } from '../src/services/postAuthGate';
 import { hp, spacing, wp } from '../src/ui/layout';
 
 type Mode =
@@ -116,7 +119,11 @@ export default function DriverLoginScreen() {
             // Auto-complete registration and go to app
             const result = await completeRegistration();
             if (result.success) {
-              router.replace('/welcome');
+              const dest = await authorizeEstablishedSession({
+                eligibleDestination: '/welcome',
+                revalidation: 'valid',
+              });
+              router.replace(dest);
             } else {
               setMode('approved'); // Fallback to manual continue
             }
@@ -146,7 +153,17 @@ export default function DriverLoginScreen() {
       // Already logged in?
       const verified = await isDriverVerified();
       if (verified) {
-        router.replace('/welcome');
+        const revalidation = await revalidateDriverSessionClassified();
+        if (revalidation === 'revoked') {
+          await clearDriverSession();
+          setMode('login');
+          return;
+        }
+        const dest = await authorizeEstablishedSession({
+          eligibleDestination: '/welcome',
+          revalidation,
+        });
+        router.replace(dest);
         return;
       }
 
@@ -204,7 +221,11 @@ export default function DriverLoginScreen() {
           assignedRoutes: result.assignedRoutes,
           authMethod: 'manual',
         });
-        router.replace('/welcome');
+        const dest = await authorizeEstablishedSession({
+          eligibleDestination: '/welcome',
+          revalidation: 'valid',
+        });
+        router.replace(dest);
       } else if (!result.valid) {
         setMode('login');
         const key = `driverLogin.error_${result.errorKind}` as const;
@@ -289,7 +310,11 @@ export default function DriverLoginScreen() {
       const result = await completeRegistration();
 
       if (result.success) {
-        router.replace('/welcome');
+        const dest = await authorizeEstablishedSession({
+          eligibleDestination: '/welcome',
+          revalidation: 'valid',
+        });
+        router.replace(dest);
       } else {
         setMode('error');
         setError(result.error || t('driverLogin.completionFailed'));

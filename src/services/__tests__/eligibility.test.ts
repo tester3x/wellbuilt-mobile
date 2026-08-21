@@ -8,6 +8,7 @@ jest.mock('expo-device', () => ({ modelName: 'test' }));
 
 import {
   decideBootstrapRoute,
+  decidePostAuthRoute,
   eligibilityFromSameProfile,
   evaluateAuthoritativeAssignedRoutes,
   normalizeRouteList,
@@ -141,19 +142,76 @@ describe('index bootstrap source pins', () => {
   const path = require('path') as typeof import('path');
   const indexSrc = fs.readFileSync(path.join(__dirname, '../../../app/index.tsx'), 'utf8');
   test('does not treat empty assignment arrays as ineligibility', () => {
-    expect(indexSrc).toContain('resolveCurrentEligibility');
-    expect(indexSrc).toContain('decideBootstrapRoute');
+    expect(indexSrc).toContain('authorizeEstablishedSession');
     expect(indexSrc).not.toContain('driverHasRealRoutes');
     expect(indexSrc).not.toContain("href=\"/no-access\"");
     expect(indexSrc).toContain('revalidateDriverSessionClassified');
   });
-  test('manual login and SSO both completeAuthenticatedSession', () => {
+  test('manual login and SSO both completeAuthenticatedSession then the shared gate', () => {
     const login = fs.readFileSync(path.join(__dirname, '../../../app/driver-login.tsx'), 'utf8');
     const sso = fs.readFileSync(path.join(__dirname, '../../../app/sso-callback.tsx'), 'utf8');
     expect(login).toContain('completeAuthenticatedSession');
     expect(sso).toContain('completeAuthenticatedSession');
+    expect(login).toContain('authorizeEstablishedSession');
+    expect(sso).toContain('authorizeEstablishedSession');
     expect(sso).toContain("authMethod: 'sso'");
     expect(login).toContain("authMethod: 'manual'");
+    expect(login).not.toMatch(/router\.replace\('\/welcome'\)/);
+    expect(sso).not.toMatch(/router\.replace\('\/\(tabs\)'\)/);
+    expect(login).toContain('router.replace(dest)');
+    expect(sso).toContain('router.replace(dest)');
+  });
+});
+
+describe('post-auth vs cold-start same authorization verdict', () => {
+  const cases: Array<{ eligibility: 'eligible' | 'ineligible' | 'unknown'; expected: string }> = [
+    { eligibility: 'eligible', expected: '/welcome' },
+    { eligibility: 'ineligible', expected: '/no-access' },
+    { eligibility: 'unknown', expected: '/session-verify' },
+  ];
+  for (const c of cases) {
+    test(`immediate post-auth and cold start agree for ${c.eligibility}`, () => {
+      const postAuth = decidePostAuthRoute({
+        hasLocalSession: true,
+        revalidation: 'valid',
+        eligibility: c.eligibility,
+        eligibleDestination: '/welcome',
+      });
+      const cold = decideBootstrapRoute({
+        hasLocalSession: true,
+        revalidation: 'valid',
+        eligibility: c.eligibility,
+      });
+      expect(postAuth).toBe(c.expected);
+      expect(cold).toBe(postAuth);
+    });
+  }
+
+  test('SSO eligible dest may be tabs; ineligible/unknown still never enter', () => {
+    expect(decidePostAuthRoute({
+      hasLocalSession: true, revalidation: 'valid', eligibility: 'eligible', eligibleDestination: '/(tabs)',
+    })).toBe('/(tabs)');
+    expect(decidePostAuthRoute({
+      hasLocalSession: true, revalidation: 'valid', eligibility: 'ineligible', eligibleDestination: '/(tabs)',
+    })).toBe('/no-access');
+    expect(decidePostAuthRoute({
+      hasLocalSession: true, revalidation: 'valid', eligibility: 'unknown', eligibleDestination: '/(tabs)',
+    })).toBe('/session-verify');
+  });
+
+  test('authoritative empty, unrouted-only, missing field, and lookup failures share the gate', () => {
+    const empty = decidePostAuthRoute({
+      hasLocalSession: true, revalidation: 'valid', eligibility: 'ineligible', eligibleDestination: '/welcome',
+    });
+    const unrouted = decidePostAuthRoute({
+      hasLocalSession: true, revalidation: 'valid', eligibility: 'ineligible', eligibleDestination: '/(tabs)',
+    });
+    const missing = decidePostAuthRoute({
+      hasLocalSession: true, revalidation: 'valid', eligibility: 'unknown', eligibleDestination: '/welcome',
+    });
+    expect(empty).toBe('/no-access');
+    expect(unrouted).toBe('/no-access');
+    expect(missing).toBe('/session-verify');
   });
 });
 

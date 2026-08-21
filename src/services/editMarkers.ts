@@ -76,6 +76,28 @@ export function selectVisibleHistoryPackets(
   return out;
 }
 
+/** Job History presentation. Pending/failed must never look like Edited. */
+export type HistoryEditPresentation = 'edited' | 'pending' | 'failed' | 'rejected' | 'none';
+
+export function historyEditPresentation(entry: {
+  editStatus?: string | null;
+  status?: string;
+  editedAt?: string | number | null;
+  editCount?: number;
+  wasEdited?: boolean;
+  isEdit?: boolean;
+  requestType?: string;
+  editCommitted?: boolean;
+  editCommittedReceiptKey?: string | null;
+} | null | undefined): HistoryEditPresentation {
+  if (!entry) return 'none';
+  if (entry.editStatus === 'edit_rejected') return 'rejected';
+  if (entry.editStatus === 'edit_failed') return 'failed';
+  if (entry.editStatus === 'edit_pending' || entry.editStatus === 'edit_submitted') return 'pending';
+  if (packetShowsEditBadge(entry)) return 'edited';
+  return 'none';
+}
+
 /** True when we only know "was edited" without field-level trail data. */
 export function hasEditedMarkerWithoutDetail(p: {
   editedAt?: string | null;

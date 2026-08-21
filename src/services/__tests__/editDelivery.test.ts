@@ -423,3 +423,105 @@ describe('submitted-timeout same-ID recovery (§7)', () => {
     expect(rawQueue()).toHaveLength(0);
   });
 });
+
+describe('edit acknowledgment + lost receipt + duplicates', () => {
+  test('lost acknowledgment is recovered from getFieldCommandStatus without a second upload', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+
+    mockGetFieldCommandStatus.mockResolvedValueOnce({ committed: true });
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(rawOps()).toHaveLength(0);
+    expect((await getPullHistory())[0].status).toBe('edited');
+    expect((await getPullHistory())[0].editStatus).toBe('edited');
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1); // no duplicate
+  });
+
+  test('processed edit-key commit recovers a lost original-row marker', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    const editKey = `edit_${PID.slice(0, 15)}_Gunslinger3`;
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: { packetId: PID },
+      [`packets/processed/${editKey}`]: {
+        committed: true,
+        editCommitted: true,
+        editCommittedReceiptKey: 'r-edit-row',
+      },
+    }));
+    expect(rawOps()).toHaveLength(0);
+    expect((await getPullHistory())[0].editStatus).toBe('edited');
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+  });
+
+  test('incoming edit key blocks a duplicate resubmit', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    const editKey = `edit_${PID.slice(0, 15)}_Gunslinger3`;
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: { packetId: PID },
+      [`packets/incoming/${editKey}`]: { packetId: editKey },
+    }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+  });
+
+  test('auth failure while confirming is not treated as awaiting-server silence', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    mockGetFieldCommandStatus.mockRejectedValueOnce(Object.assign(new Error('missing'), { name: 'AuthSessionError' }));
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+    expect(rawOps()[0].lastError).toMatch(/auth_session/);
+    expect((await getPullHistory())[0].status).not.toBe('edited');
+  });
+
+  test('retry after restart does not duplicate a confirmed edit', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    mockGetFieldCommandStatus.mockResolvedValue({ status: 'committed' });
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(rawOps()).toHaveLength(0);
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: {
+        packetId: PID,
+        editCommitted: true,
+        editCommittedReceiptKey: 'r1',
+      },
+    }));
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect((await getPullHistory())[0].editStatus).toBe('edited');
+  });
+
+  test('offline-to-online recovery confirms without a new upload', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    mockOnline.value = false;
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: {
+        packetId: PID,
+        editCommitted: true,
+        editCommittedReceiptKey: 'r-online',
+      },
+    }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+    mockOnline.value = true;
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: {
+        packetId: PID,
+        editCommitted: true,
+        editCommittedReceiptKey: 'r-online',
+      },
+    }));
+    expect(rawOps()).toHaveLength(0);
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+  });
+});

@@ -40,7 +40,8 @@ import {
 import { getBblPerFootSync, getAllWellNames, loadWellConfig } from "../src/services/wellConfig";
 import { isCurrentUserViewer } from "../src/services/driverAuth";
 import { hp, spacing, wp } from "../src/ui/layout";
-import { packetShowsEditBadge } from "../src/services/editMarkers";
+import { historyEditPresentation } from "../src/services/editMarkers";
+import { onEditDeliveryResult } from "../src/services/editDelivery";
 import { formatAppDateTime, formatAppNumber } from "../src/i18n/format";
 
 // Format level for display
@@ -119,14 +120,29 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
   const bottomLevel = getBottomLevel(entry.wellName, entry.tankLevelFeet, entry.bblsTaken);
   // Historical badge only. New secure edits confirm via confirmNewSecureEdit,
   // not these legacy markers.
-  const isEdited = packetShowsEditBadge({
+  const presentation = historyEditPresentation({
+    editStatus: entry.editStatus,
     status: entry.status,
     editedAt: entry.editedAt,
     editCount: entry.editCount,
     wasEdited: (entry as { wasEdited?: boolean }).wasEdited,
     isEdit: (entry as { isEdit?: boolean }).isEdit,
     requestType: (entry as { requestType?: string }).requestType,
+    editCommitted: (entry as { editCommitted?: boolean }).editCommitted,
+    editCommittedReceiptKey: (entry as { editCommittedReceiptKey?: string }).editCommittedReceiptKey,
   });
+  const pendingEdit = presentation === 'pending' || presentation === 'failed';
+  const failedEdit = presentation === 'rejected';
+  const isEdited = presentation === 'edited';
+  const editBadgeLabel = failedEdit
+    ? t('history.editRejected')
+    : presentation === 'failed'
+      ? t('history.editFailed')
+      : presentation === 'pending'
+        ? t('history.editPending')
+        : isEdited
+          ? t('history.edited')
+          : '';
 
   return (
     <Swipeable
@@ -150,8 +166,8 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
             <Text style={styles.entryWellName}>{entry.wellName}</Text>
             <Text style={styles.entryTime}>
               {entry.dateTime}
-              {isEdited && (
-                <Text style={styles.editedBadge}> {t('history.edited')}</Text>
+              {!!editBadgeLabel && (
+                <Text style={[styles.editedBadge, (pendingEdit || failedEdit) && styles.pendingEditBadge]}> {editBadgeLabel}</Text>
               )}
             </Text>
             {/* Review header under well name + date: historical fallback only (badge-only). */}
@@ -163,6 +179,22 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
                         when: formatAppDateTime(entry.editedAt),
                       })
                     : t('history.editedDetailNoTime')}
+                </Text>
+              </View>
+            )}
+            {isExpanded && pendingEdit && (
+              <View style={styles.editedHeaderNote}>
+                <Text style={styles.editedHeaderNoteText}>
+                  {entry.editStatus === 'edit_failed'
+                    ? t('history.editFailedDetail')
+                    : t('history.editPendingDetail')}
+                </Text>
+              </View>
+            )}
+            {isExpanded && failedEdit && (
+              <View style={styles.editedHeaderNote}>
+                <Text style={styles.editedHeaderNoteText}>
+                  {entry.editStatusReason || t('history.editRejectedDetail')}
                 </Text>
               </View>
             )}
@@ -303,8 +335,9 @@ export default function HistoryScreen() {
     useCallback(() => {
       loadHistory();
       setExpandedId(null);
-      // Check if user is viewer
       isCurrentUserViewer().then(setIsViewer);
+      const unsub = onEditDeliveryResult(() => { loadHistory(); });
+      return () => { unsub(); };
     }, [loadHistory])
   );
 
@@ -1139,6 +1172,10 @@ const styles = StyleSheet.create({
   },
   editedBadge: {
     color: "#F59E0B",
+    fontStyle: "italic",
+  },
+  pendingEditBadge: {
+    color: "#93c5fd",
     fontStyle: "italic",
   },
   entryRight: {

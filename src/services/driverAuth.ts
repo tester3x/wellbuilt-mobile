@@ -648,7 +648,9 @@ export async function completeAuthenticatedSession(input: {
  */
 export const clearDriverSession = async (): Promise<void> => {
   const { clearAuthSession } = await import('./firebaseAuthSession');
+  const { clearWellConfigCache } = await import('./wellConfig');
   await clearAuthSession();
+  await clearWellConfigCache();
   await SecureStore.deleteItemAsync("driverId");
   await SecureStore.deleteItemAsync("driverName");
   await SecureStore.deleteItemAsync("passcodeHash");

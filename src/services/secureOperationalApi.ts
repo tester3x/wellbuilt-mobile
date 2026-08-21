@@ -8,8 +8,8 @@ function unsupportedFieldCommand(name: string): never {
 }
 
 /**
- * Pull packets only. Envelope matches deployed ingestDriverPacket:
- * `{ packet, driverHash? }`. Driver identity is stamped server-side.
+ * Pull packets only. Dedicated canonical WB-M callable ingestWbmPull.
+ * Envelope `{ packet }`. Driver identity is stamped server-side.
  */
 export async function secureIngestPacket(packet: Record<string, unknown>) {
   const requestType = typeof packet.requestType === 'string' && packet.requestType
@@ -19,7 +19,7 @@ export async function secureIngestPacket(packet: Record<string, unknown>) {
     unsupportedFieldCommand(requestType);
   }
   return authorizedCallable<{ ok: boolean; key?: string; packetId?: string; duplicate?: boolean }>(
-    'ingestDriverPacket',
+    'ingestWbmPull',
     { packet },
   );
 }
@@ -28,7 +28,15 @@ export async function secureIngestPacket(packet: Record<string, unknown>) {
  * Only actual pull packets may be redirected to ingestDriverPacket.
  * Edit/history/control commands stay explicitly unavailable.
  */
-export async function secureSubmitFieldCommand(packet: Record<string, unknown>) {
+export async function secureSubmitFieldCommand(packet: Record<string, unknown>): Promise<{
+  ok: boolean;
+  key?: string;
+  packetId?: string;
+  duplicate?: boolean;
+  committed?: boolean;
+  receiptKey?: string;
+  status?: string;
+}> {
   const requestType = typeof packet.requestType === 'string' ? packet.requestType : '';
   if (requestType === 'pull') {
     return secureIngestPacket(packet);

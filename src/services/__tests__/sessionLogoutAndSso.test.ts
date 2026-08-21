@@ -15,6 +15,7 @@ describe('WB-M session, SSO, registration, listener', () => {
     const end = driverAuth.indexOf('export const isPasscodeAvailable');
     const fn = driverAuth.slice(start, end);
     expect(fn).toMatch(/clearAuthSession/);
+    expect(fn).toMatch(/clearWellConfigCache/);
     expect(session).toMatch(/signOut\(getFirebaseAuth\(\)\)/);
   });
 

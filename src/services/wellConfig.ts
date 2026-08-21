@@ -19,7 +19,46 @@ const LAST_FETCH_KEY = "@wellbuilt_config_last_fetch";
 const ASSIGNED_ROUTES_KEY = "@wellbuilt_assigned_routes";
 const ASSIGNED_WELLS_KEY = "@wellbuilt_assigned_wells";
 const ELIGIBILITY_STATUS_KEY = "@wellbuilt_eligibility_status";
+const CACHE_BINDER_KEY = "@wellbuilt_well_config_binder";
 const REFRESH_INTERVAL_DAYS = 3;
+
+export type WbmCacheBinder = {
+  driverId: string;
+  companyId: string;
+  digest: string;
+};
+
+export function scopeDigest(routes: unknown, wells: unknown): string {
+  return JSON.stringify({ r: routes ?? null, w: wells ?? null });
+}
+
+export function cacheMatchesSession(
+  binder: WbmCacheBinder | null,
+  session: WbmCacheBinder | null,
+): boolean {
+  if (!binder || !session) return false;
+  if (!binder.driverId || !session.driverId) return false;
+  return binder.driverId === session.driverId
+    && binder.companyId === session.companyId
+    && binder.digest === session.digest;
+}
+
+async function currentSessionBinder(): Promise<WbmCacheBinder | null> {
+  const driverId = (await SecureStore.getItemAsync("driverId")) || "";
+  const companyId = (await SecureStore.getItemAsync("companyId")) || "";
+  if (!driverId) return null;
+  let routes: unknown = null;
+  let wells: unknown = null;
+  try {
+    const raw = await AsyncStorage.getItem(ELIGIBILITY_STATUS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as EligibilityVerdict;
+      routes = parsed.routes;
+      wells = parsed.wells;
+    }
+  } catch { /* binder uses empty digest */ }
+  return { driverId, companyId, digest: scopeDigest(routes, wells) };
+}
 
 // Firebase config
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
@@ -45,6 +84,7 @@ const DEFAULT_CONFIG: WellConfig = {
 };
 
 let cachedConfig: WellConfigMap | null = null;
+let cachedBinder: WbmCacheBinder | null = null;
 
 export class WellConfigUnavailableError extends Error {
   reason: string;
@@ -74,23 +114,44 @@ export function wellConfigFailureReason(error: unknown): string {
 
 export function resetWellConfigCacheForTests(): void {
   cachedConfig = null;
+  cachedBinder = null;
   lastWellConfigError = null;
+}
+
+/** Test helper — install a bound in-memory catalog as Driver A would. */
+export function seedWellConfigCacheForTests(config: WellConfigMap, binder: WbmCacheBinder): void {
+  cachedConfig = config;
+  cachedBinder = binder;
+  lastWellConfigError = null;
+}
+
+export function peekWellConfigCacheForTests(): { config: WellConfigMap | null; binder: WbmCacheBinder | null } {
+  return { config: cachedConfig, binder: cachedBinder };
 }
 
 export async function loadWellConfig(
   forceRefresh: boolean = false
 ): Promise<WellConfigMap | null> {
   try {
-    if (!forceRefresh && cachedConfig) {
+    const session = await currentSessionBinder();
+    if (!forceRefresh && cachedConfig && cacheMatchesSession(cachedBinder, session)) {
       lastWellConfigError = null;
       return cachedConfig;
     }
+    if (cachedConfig && !cacheMatchesSession(cachedBinder, session)) {
+      cachedConfig = null;
+      cachedBinder = null;
+    }
 
     const stored = await AsyncStorage.getItem(STORAGE_KEY);
+    const storedBinderRaw = await AsyncStorage.getItem(CACHE_BINDER_KEY);
     const lastFetch = await AsyncStorage.getItem(LAST_FETCH_KEY);
+    let storedBinder: WbmCacheBinder | null = null;
+    try { storedBinder = storedBinderRaw ? JSON.parse(storedBinderRaw) as WbmCacheBinder : null; } catch { storedBinder = null; }
 
-    if (stored && !forceRefresh) {
+    if (stored && !forceRefresh && cacheMatchesSession(storedBinder, session)) {
       cachedConfig = JSON.parse(stored);
+      cachedBinder = storedBinder;
 
       if (lastFetch && !needsRefresh(lastFetch)) {
         console.log("[WellConfig] Using cached config");
@@ -102,19 +163,24 @@ export async function loadWellConfig(
     console.log("[WellConfig] Fetching fresh config from Firebase...");
     const freshConfig = await fetchConfigFromFirebase();
     cachedConfig = freshConfig;
+    cachedBinder = session;
     lastWellConfigError = null;
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(freshConfig));
     await AsyncStorage.setItem(LAST_FETCH_KEY, new Date().toISOString());
+    if (session) await AsyncStorage.setItem(CACHE_BINDER_KEY, JSON.stringify(session));
     console.log("[WellConfig] Config updated and cached");
     return freshConfig;
   } catch (error) {
     const reason = wellConfigFailureReason(error);
     lastWellConfigError = reason;
     console.error("[WellConfig] Error loading config:", error);
-    if (cachedConfig && !forceRefresh) {
-      console.log("[WellConfig] Fetch failed, using stale in-memory cache");
+    const session = await currentSessionBinder();
+    if (cachedConfig && !forceRefresh && cacheMatchesSession(cachedBinder, session)) {
+      console.log("[WellConfig] Fetch failed, using stale in-memory cache for this driver");
       return cachedConfig;
     }
+    cachedConfig = null;
+    cachedBinder = null;
     throw new WellConfigUnavailableError(reason);
   }
 }
@@ -180,8 +246,16 @@ export async function forceRefreshWellConfig(): Promise<boolean> {
 
 export async function clearWellConfigCache(): Promise<void> {
   cachedConfig = null;
+  cachedBinder = null;
+  cachedAssignedRoutes = null;
+  cachedAssignedWells = null;
+  lastWellConfigError = null;
   await AsyncStorage.removeItem(STORAGE_KEY);
   await AsyncStorage.removeItem(LAST_FETCH_KEY);
+  await AsyncStorage.removeItem(CACHE_BINDER_KEY);
+  await AsyncStorage.removeItem(ASSIGNED_ROUTES_KEY);
+  await AsyncStorage.removeItem(ASSIGNED_WELLS_KEY);
+  await AsyncStorage.removeItem(ELIGIBILITY_STATUS_KEY);
 }
 
 export async function getAllWellNames(): Promise<string[]> {

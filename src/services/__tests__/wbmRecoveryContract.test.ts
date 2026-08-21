@@ -69,7 +69,7 @@ describe('pull ingest uses deployed ingestDriverPacket envelope', () => {
   it('secureIngestPacket calls ingestDriverPacket with { packet }', async () => {
     const packet = { requestType: 'pull', wellName: 'Gabriel 1', idempotencyKey: 'abc12345' };
     await secureIngestPacket(packet);
-    expect(mockCallable).toHaveBeenCalledWith('ingestDriverPacket', { packet });
+    expect(mockCallable).toHaveBeenCalledWith('ingestWbmPull', { packet });
   });
 
   it('edit/history/control commands fail explicitly', async () => {
@@ -83,7 +83,7 @@ describe('pull ingest uses deployed ingestDriverPacket envelope', () => {
   it('source no longer references nonexistent production callables', () => {
     const api = src('secureOperationalApi.ts');
     const firebase = src('firebase.ts');
-    expect(api).toMatch(/'ingestDriverPacket'/);
+    expect(api).toMatch(/'ingestWbmPull'/);
     expect(api).not.toMatch(/authorizedCallable\([^)]*'submitFieldCommand'/);
     expect(api).not.toMatch(/authorizedCallable\([^)]*'getFieldCommandStatus'/);
     expect(firebase).toMatch(/secureIngestPacket/);
@@ -120,6 +120,14 @@ describe('fresh install does not depend on cached well_config', () => {
     const wells = await loadWellConfig(true);
     expect(mockCallable).toHaveBeenCalledWith('getDriverWellConfig', {});
     expect(Object.keys(wells || {})).toEqual(['Gabriel 1']);
+  });
+});
+
+describe('session-verify Settings regression', () => {
+  it('failure screen has Settings and logout, not only retry', () => {
+    const src = rootSrc('app/session-verify.tsx');
+    expect(src).toMatch(/router\.push\('\/settings'\)/);
+    expect(src).toMatch(/clearDriverSession/);
   });
 });
 

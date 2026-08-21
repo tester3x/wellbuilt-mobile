@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { authorizeEstablishedSession } from '../src/services/postAuthGate';
-import { revalidateDriverSessionClassified } from '../src/services/driverAuth';
+import { clearDriverSession, revalidateDriverSessionClassified } from '../src/services/driverAuth';
 
 export default function SessionVerifyScreen() {
   const router = useRouter();
@@ -42,6 +42,19 @@ export default function SessionVerifyScreen() {
       {code ? <Text style={styles.code}>{code}</Text> : null}
       <Pressable style={styles.btn} onPress={retry} disabled={busy}>
         <Text style={styles.btnText}>{busy ? t('sessionVerify.working') : t('sessionVerify.retry')}</Text>
+      </Pressable>
+      <Pressable style={styles.btn} onPress={() => router.push('/settings')} disabled={busy}>
+        <Text style={styles.btnText}>{t('common.settings', 'Settings')}</Text>
+      </Pressable>
+      <Pressable
+        style={styles.btn}
+        onPress={async () => {
+          await clearDriverSession();
+          router.replace('/driver-login');
+        }}
+        disabled={busy}
+      >
+        <Text style={styles.btnText}>{t('common.logOut', 'Log out')}</Text>
       </Pressable>
     </View>
   );

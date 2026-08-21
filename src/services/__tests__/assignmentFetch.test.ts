@@ -21,7 +21,7 @@ jest.mock('../firebaseAuthSession', () => ({
   authorizedCallable: jest.fn(async () => { throw new Error('no_live'); }),
 }));
 
-import { fetchAssignmentClassified, persistBootstrapEnvelope, resetWellConfigCacheForTests, resolveCurrentEligibility, seedWellConfigCacheForTests } from '../wellConfig';
+import { fetchAssignmentClassified, persistBootstrapEnvelopeForTests, resetWellConfigCacheForTests, resolveCurrentEligibility, seedWellConfigCacheForTests } from '../wellConfig';
 import { decideBootstrapRoute, decidePostAuthRoute } from '../eligibility';
 import { authorizeEstablishedSession } from '../postAuthGate';
 import { snapshotToEnvelope, type WbmBootstrapSnapshot } from '../wbmBootstrapCache';
@@ -87,14 +87,14 @@ describe('classified assignment fetch never becomes [] denial', () => {
   test('durable last-known eligibility after bootstrap envelope', async () => {
     const env = snapshotToEnvelope(snap(['East'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
     seedWellConfigCacheForTests(env);
-    await persistBootstrapEnvelope(snap(['East'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
+    await persistBootstrapEnvelopeForTests(snap(['East'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
     const v = await resolveCurrentEligibility();
     expect(v.status).toBe('eligible');
     expect(v.routes).toEqual(['East']);
   });
 
   test('authorizeEstablishedSession: durable eligible + live fail still grants', async () => {
-    await persistBootstrapEnvelope(snap(['East'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
+    await persistBootstrapEnvelopeForTests(snap(['East'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
     const manual = await authorizeEstablishedSession({ eligibleDestination: '/welcome', revalidation: 'valid' });
     expect(manual).toBe('/welcome');
   });

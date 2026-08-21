@@ -38,7 +38,8 @@ import {
   installBootstrapSnapshot,
   loadWellConfig,
   peekWellConfigCacheForTests,
-  persistBootstrapEnvelope,
+  persistBootstrapEnvelopeForTests,
+  setEnvelopeRemovePauseForTests,
   resetWellConfigCacheForTests,
   seedWellConfigCacheForTests,
   setHasAuthSessionForTests,
@@ -228,6 +229,13 @@ describe('in-flight bootstrap generation fence', () => {
     mockSecure.companyId = 'liquid-gold';
     mockCallable.mockResolvedValue(snap('driver-a'));
 
+    let releasePause: () => void = () => undefined;
+    let paused = false;
+    setEnvelopeRemovePauseForTests(() => new Promise((resolve) => {
+      paused = true;
+      releasePause = () => resolve();
+    }));
+
     let releaseSet: () => void = () => undefined;
     (AsyncStorage.setItem as jest.Mock).mockImplementationOnce((k: string, v: string) => new Promise((resolve) => {
       releaseSet = () => {
@@ -241,23 +249,18 @@ describe('in-flight bootstrap generation fence', () => {
 
     mockSecure.driverId = 'driver-b';
     bumpSessionGeneration();
-
-    const getItem = AsyncStorage.getItem as jest.Mock;
-    const getCountBeforeCleanup = getItem.mock.calls.length;
-    let releaseGet: () => void = () => undefined;
-    getItem.mockImplementationOnce((k: string) => new Promise((resolve) => {
-      releaseGet = () => resolve(k in asyncStore ? asyncStore[k] : null);
-    }));
-
     releaseSet();
-    await waitForMockCalls(getItem, getCountBeforeCleanup + 1);
 
-    mockSecure.driverId = 'driver-b';
-    await persistBootstrapEnvelope(snap('driver-b'));
-    expect(JSON.parse(asyncStore[WBM_ENVELOPE_KEY]).driverId).toBe('driver-b');
+    for (let i = 0; i < 80 && !paused; i += 1) await Promise.resolve();
+    expect(paused).toBe(true);
 
-    releaseGet();
+    const pendingB = persistBootstrapEnvelopeForTests(snap('driver-b'));
+    await Promise.resolve();
+    expect(JSON.parse(asyncStore[WBM_ENVELOPE_KEY]).driverId).toBe('driver-a');
+
+    releasePause();
     await expect(pendingA).rejects.toThrow(/stale_bootstrap/);
+    await pendingB;
     expect(JSON.parse(asyncStore[WBM_ENVELOPE_KEY]).driverId).toBe('driver-b');
     expect(peekWellConfigCacheForTests().envelope?.driverId).toBe('driver-b');
   });

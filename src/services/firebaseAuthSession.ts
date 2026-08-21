@@ -15,6 +15,7 @@ import {
   User,
 } from 'firebase/auth';
 import { Database, getDatabase } from 'firebase/database';
+import { beginLoginTransition } from './wbmSessionFence';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI',
@@ -86,10 +87,12 @@ export async function persistCustomTokenSession(customToken: string): Promise<{
   idToken: string;
   refreshToken: string;
 }> {
-  const cred = await signInWithCustomToken(getFirebaseAuth(), customToken);
-  const idToken = await cred.user.getIdToken();
-  await SecureStore.setItemAsync('wb_auth_uid', cred.user.uid);
-  return { idToken, refreshToken: cred.user.refreshToken || '' };
+  return beginLoginTransition(async () => {
+    const cred = await signInWithCustomToken(getFirebaseAuth(), customToken);
+    const idToken = await cred.user.getIdToken();
+    await SecureStore.setItemAsync('wb_auth_uid', cred.user.uid);
+    return { idToken, refreshToken: cred.user.refreshToken || '' };
+  });
 }
 
 export async function clearAuthSession(): Promise<void> {

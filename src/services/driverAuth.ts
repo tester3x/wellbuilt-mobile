@@ -21,7 +21,14 @@ import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
 import { diagnoseThrown } from "./connectionDiagnosis";
 import { normalizeRouteList } from "./eligibility";
-import { invalidateWbmMemoryCache, wipeDurableWellConfigCache } from "./wellConfig";
+import { wipeDurableWellConfigCache, clearWbmMemoryCatalog } from "./wellConfig";
+import {
+  claimSessionGeneration,
+  getSessionGeneration,
+  permitGenerationCurrent,
+  runSessionTransition,
+  type SessionLogoutPermit,
+} from "./wbmSessionFence";
 
 // Firebase configuration (same as firebase.ts)
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
@@ -613,8 +620,8 @@ export async function completeAuthenticatedSession(input: {
   const nextCo = merged.companyId || '';
   if (identityChanged({ driverId: prevId, companyId: prevCo }, { driverId: nextId, companyId: nextCo })) {
     try {
-      const { clearWellConfigCache } = await import('./wellConfig');
-      await clearWellConfigCache();
+      clearWbmMemoryCatalog();
+      await wipeDurableWellConfigCache();
     } catch { /* cache isolation must not block login */ }
   }
   try {
@@ -658,34 +665,144 @@ export async function completeAuthenticatedSession(input: {
   return session;
 }
 
+const SESSION_SECURE_KEYS = [
+  "driverId",
+  "driverName",
+  "passcodeHash",
+  "driverVerifiedAt",
+  "authMethod",
+  "isAdmin",
+  "isViewer",
+  "companyId",
+  "companyName",
+  "tier",
+  "roles",
+  "assignedRoutes",
+  "assignedCustomers",
+  "driverPin",
+  "driverEmail",
+] as const;
+
+async function readLiveAuthUid(): Promise<string | null> {
+  try {
+    const { getFirebaseAuth } = await import('./firebaseAuthSession');
+    const live = getFirebaseAuth().currentUser?.uid;
+    if (live) return live;
+  } catch { /* fall through */ }
+  try {
+    return (await SecureStore.getItemAsync('wb_auth_uid')) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function readLiveSessionFields(): Promise<{
+  driverId: string | null;
+  companyId: string | null;
+  authMethod: string | null;
+  driverVerifiedAt: string | null;
+  authUid: string | null;
+}> {
+  return {
+    driverId: await SecureStore.getItemAsync('driverId'),
+    companyId: await SecureStore.getItemAsync('companyId'),
+    authMethod: await SecureStore.getItemAsync('authMethod'),
+    driverVerifiedAt: await SecureStore.getItemAsync('driverVerifiedAt'),
+    authUid: await readLiveAuthUid(),
+  };
+}
+
+export async function captureCurrentSessionPermit(): Promise<SessionLogoutPermit | null> {
+  const live = await readLiveSessionFields();
+  if (!live.driverId || !live.authMethod || !live.driverVerifiedAt || !live.authUid) return null;
+  return {
+    generation: getSessionGeneration(),
+    driverId: live.driverId,
+    companyId: live.companyId || '',
+    authMethod: live.authMethod,
+    driverVerifiedAt: live.driverVerifiedAt,
+    authUid: live.authUid,
+  };
+}
+
+function identityMatchesPermit(
+  permit: SessionLogoutPermit,
+  live: { driverId: string | null; companyId: string | null; authMethod: string | null; driverVerifiedAt: string | null; authUid: string | null },
+): boolean {
+  return permit.driverId === live.driverId
+    && permit.companyId === (live.companyId || '')
+    && permit.authMethod === live.authMethod
+    && permit.driverVerifiedAt === live.driverVerifiedAt
+    && permit.authUid === live.authUid;
+}
+
+async function sessionStolenByOther(permit: SessionLogoutPermit): Promise<boolean> {
+  const live = await readLiveSessionFields();
+  if (live.driverId && live.driverId !== permit.driverId) return true;
+  if (live.authUid && live.authUid !== permit.authUid) return true;
+  if (live.driverVerifiedAt && live.driverVerifiedAt !== permit.driverVerifiedAt) return true;
+  return false;
+}
+
+async function deleteOwnedSecureStore(permit: SessionLogoutPermit): Promise<boolean> {
+  const driverId = await SecureStore.getItemAsync('driverId');
+  if (driverId && driverId !== permit.driverId) return false;
+  const uid = await SecureStore.getItemAsync('wb_auth_uid');
+  if (uid && uid !== permit.authUid) return false;
+  for (const key of SESSION_SECURE_KEYS) {
+    await SecureStore.deleteItemAsync(key);
+  }
+  await clearPendingRegistration();
+  return true;
+}
+
 /**
- * Clear driver session (logout)
+ * Destructive logout of exactly the session named by the permit.
+ * Stale or mismatched permits perform no sign-out, SecureStore deletion,
+ * or cache deletion. Serialized with login via the session-transition gate.
+ */
+export async function performPermittedLogout(permit: SessionLogoutPermit): Promise<boolean> {
+  return runSessionTransition(async () => {
+    if (!permitGenerationCurrent(permit)) return false;
+    const liveBefore = await readLiveSessionFields();
+    if (!identityMatchesPermit(permit, liveBefore)) return false;
+
+    const claimed = claimSessionGeneration();
+
+    const liveAfterClaim = await readLiveSessionFields();
+    if (!identityMatchesPermit(permit, liveAfterClaim)) return false;
+
+    const { clearAuthSession, getFirebaseAuth } = await import('./firebaseAuthSession');
+    let uid: string | null = null;
+    try {
+      uid = getFirebaseAuth().currentUser?.uid || null;
+    } catch {
+      uid = null;
+    }
+    if (uid !== permit.authUid) return false;
+
+    await clearAuthSession();
+
+    if (getSessionGeneration() !== claimed) return false;
+    if (await sessionStolenByOther(permit)) return false;
+
+    await wipeDurableWellConfigCache();
+
+    if (getSessionGeneration() !== claimed) return false;
+    if (await sessionStolenByOther(permit)) return false;
+
+    return deleteOwnedSecureStore(permit);
+  });
+}
+
+/**
+ * Manual logout of the exact current session. No-ops if identity cannot
+ * be bound (avoids clearing a newer driver).
  */
 export const clearDriverSession = async (): Promise<void> => {
-  // Generation + in-memory catalog MUST invalidate before the first await
-  // (including before clearAuthSession/signOut). Durable wipe does not bump
-  // again — a second bump could invalidate Driver B while signOut is deferred.
-  invalidateWbmMemoryCache();
-  const { clearAuthSession } = await import('./firebaseAuthSession');
-  await clearAuthSession();
-  await wipeDurableWellConfigCache();
-  await SecureStore.deleteItemAsync("driverId");
-  await SecureStore.deleteItemAsync("driverName");
-  await SecureStore.deleteItemAsync("passcodeHash");
-  await SecureStore.deleteItemAsync("driverVerifiedAt");
-  await SecureStore.deleteItemAsync("authMethod");
-  await SecureStore.deleteItemAsync("isAdmin");
-  await SecureStore.deleteItemAsync("isViewer");
-  await SecureStore.deleteItemAsync("companyId");
-  await SecureStore.deleteItemAsync("companyName");
-  await SecureStore.deleteItemAsync("tier");
-  await SecureStore.deleteItemAsync("roles");
-  await SecureStore.deleteItemAsync("assignedRoutes");
-  await SecureStore.deleteItemAsync("assignedCustomers");
-  // Legacy cleanup
-  await SecureStore.deleteItemAsync("driverPin");
-  await SecureStore.deleteItemAsync("driverEmail");
-  await clearPendingRegistration();
+  const permit = await captureCurrentSessionPermit();
+  if (!permit) return;
+  await performPermittedLogout(permit);
 };
 
 // --- Registration ---

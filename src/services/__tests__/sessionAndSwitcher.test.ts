@@ -15,6 +15,7 @@ describe('canonical session replaces hash session', () => {
 
   it('cascade logout uses identity-bound live bootstrap, not a profile GET', () => {
     expect(layout).toMatch(/checkCanonicalSsoLogout/);
+    expect(layout).toMatch(/performPermittedLogout/);
     expect(layout).not.toMatch(/drivers\/approved\/\$\{hash\}\/logoutAt/);
     expect(layout).not.toMatch(/drivers\/profiles\/\$\{driverId\}\/logoutAt/);
   });

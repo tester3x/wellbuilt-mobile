@@ -21,7 +21,7 @@ import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/s
 import { startDeliveryReconciler } from '../src/services/deliveryStatus';
 import { startEditDelivery } from '../src/services/editDelivery';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
-import { clearDriverSession } from '../src/services/driverAuth';
+import { performPermittedLogout } from '../src/services/driverAuth';
 import { checkCanonicalSsoLogout } from '../src/services/ssoLogout';
 
 // Lazy import to avoid expo-notifications warning in Expo Go
@@ -59,13 +59,12 @@ export default function RootLayout() {
     const appStateSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         hideNavBar();
-        checkCanonicalSsoLogout().then((shouldLogout) => {
-          if (shouldLogout) {
-            console.log('[WBM] Canonical Suite logoutAt newer than this SSO session');
-            clearDriverSession().then(() => {
-              router.replace('/driver-login');
-            });
-          }
+        checkCanonicalSsoLogout().then((permit) => {
+          if (!permit) return;
+          console.log('[WBM] Canonical Suite logoutAt newer than this SSO session');
+          performPermittedLogout(permit).then((loggedOut) => {
+            if (loggedOut) router.replace('/driver-login');
+          });
         }).catch(() => {});
       }
     });

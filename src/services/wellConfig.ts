@@ -26,10 +26,13 @@ import {
 } from './wbmBootstrapCache';
 import {
   bootstrapResponseAdmissible,
-  bumpSessionGeneration,
   captureBootstrapTicket,
+  claimSessionGeneration,
   getSessionGeneration,
+  registerWbmCatalogClear,
   resetSessionGenerationForTests,
+  runEnvelopeOp,
+  runEnvelopeRemovePauseForTests,
   sessionFenceHolds,
   type BootstrapTicket,
 } from './wbmSessionFence';
@@ -42,7 +45,14 @@ export {
   WBM_BOOTSTRAP_SCHEMA,
   WBM_ENVELOPE_KEY,
 };
-export { bumpSessionGeneration, getSessionGeneration, resetSessionGenerationForTests } from './wbmSessionFence';
+export {
+  bumpSessionGeneration,
+  claimSessionGeneration,
+  getSessionGeneration,
+  resetSessionGenerationForTests,
+  setEnvelopeRemovePauseForTests,
+  beginLoginTransition,
+} from './wbmSessionFence';
 
 const STORAGE_KEY = "@wellbuilt_well_config";
 const LAST_FETCH_KEY = "@wellbuilt_config_last_fetch";
@@ -121,21 +131,28 @@ async function hasAuthSession(): Promise<boolean> {
   }
 }
 
-export function resetWellConfigCacheForTests(): void {
-  cachedConfig = null;
-  cachedEnvelope = null;
-  lastWellConfigError = null;
-  resetSessionGenerationForTests();
-  authSessionProbe = () => true;
-}
-
-export function invalidateWbmMemoryCache(): void {
-  bumpSessionGeneration();
+function clearWbmMemoryFields(): void {
   cachedConfig = null;
   cachedEnvelope = null;
   cachedAssignedRoutes = null;
   cachedAssignedWells = null;
   lastWellConfigError = null;
+}
+
+registerWbmCatalogClear(clearWbmMemoryFields);
+
+export function resetWellConfigCacheForTests(): void {
+  clearWbmMemoryFields();
+  resetSessionGenerationForTests();
+  authSessionProbe = () => true;
+}
+
+export function clearWbmMemoryCatalog(): void {
+  clearWbmMemoryFields();
+}
+
+export function invalidateWbmMemoryCache(): void {
+  claimSessionGeneration();
 }
 
 export function seedWellConfigCacheForTests(env: WbmBootstrapEnvelope): void {
@@ -243,28 +260,36 @@ function uninstallEnvelopeMemoryIfExact(env: WbmBootstrapEnvelope): void {
   }
 }
 
-export async function persistBootstrapEnvelope(snap: WbmBootstrapSnapshot): Promise<WbmBootstrapEnvelope> {
-  const env = snapshotToEnvelope(snap);
-  await AsyncStorage.setItem(WBM_ENVELOPE_KEY, JSON.stringify(env));
-  installEnvelopeMemory(env);
-  return env;
+async function readEnvelopeInsideGate(): Promise<WbmBootstrapEnvelope | null> {
+  try {
+    const raw = await AsyncStorage.getItem(WBM_ENVELOPE_KEY);
+    return parseBootstrapEnvelope(raw ? JSON.parse(raw) : null);
+  } catch {
+    return null;
+  }
+}
+
+async function removeExactInsideGate(expected: WbmBootstrapEnvelope): Promise<void> {
+  const current = await readEnvelopeInsideGate();
+  if (!envelopeExactMatch(current, expected)) return;
+  await runEnvelopeRemovePauseForTests();
+  await AsyncStorage.removeItem(WBM_ENVELOPE_KEY);
+}
+
+/** Test-only durable seed. Goes through the cache-operation gate; not a ticketed production install. */
+export async function persistBootstrapEnvelopeForTests(snap: WbmBootstrapSnapshot): Promise<WbmBootstrapEnvelope> {
+  return runEnvelopeOp(async () => {
+    const env = snapshotToEnvelope(snap);
+    await AsyncStorage.setItem(WBM_ENVELOPE_KEY, JSON.stringify(env));
+    installEnvelopeMemory(env);
+    return env;
+  });
 }
 
 export async function removeEnvelopeIfExact(expected: WbmBootstrapEnvelope): Promise<void> {
-  let raw: string | null = null;
-  try {
-    raw = await AsyncStorage.getItem(WBM_ENVELOPE_KEY);
-  } catch {
-    return;
-  }
-  let current: WbmBootstrapEnvelope | null = null;
-  try {
-    current = parseBootstrapEnvelope(raw ? JSON.parse(raw) : null);
-  } catch {
-    return;
-  }
-  if (!envelopeExactMatch(current, expected)) return;
-  await AsyncStorage.removeItem(WBM_ENVELOPE_KEY);
+  return runEnvelopeOp(async () => {
+    await removeExactInsideGate(expected);
+  });
 }
 
 export async function installBootstrapSnapshot(
@@ -272,23 +297,22 @@ export async function installBootstrapSnapshot(
   ticket: BootstrapTicket,
 ): Promise<WbmBootstrapEnvelope | null> {
   if (!(await fenceHolds(ticket, snap))) return null;
-  const env = snapshotToEnvelope(snap);
-  await AsyncStorage.setItem(WBM_ENVELOPE_KEY, JSON.stringify(env));
-  if (!(await fenceHolds(ticket, snap))) {
-    await removeEnvelopeIfExact(env);
-    return null;
-  }
-  if (!(await fenceHolds(ticket, snap))) {
-    await removeEnvelopeIfExact(env);
-    return null;
-  }
-  installEnvelopeMemory(env);
-  if (!(await fenceHolds(ticket, snap))) {
-    uninstallEnvelopeMemoryIfExact(env);
-    await removeEnvelopeIfExact(env);
-    return null;
-  }
-  return env;
+  return runEnvelopeOp(async () => {
+    if (!(await fenceHolds(ticket, snap))) return null;
+    const env = snapshotToEnvelope(snap);
+    await AsyncStorage.setItem(WBM_ENVELOPE_KEY, JSON.stringify(env));
+    if (!(await fenceHolds(ticket, snap))) {
+      await removeExactInsideGate(env);
+      return null;
+    }
+    installEnvelopeMemory(env);
+    if (!(await fenceHolds(ticket, snap))) {
+      uninstallEnvelopeMemoryIfExact(env);
+      await removeExactInsideGate(env);
+      return null;
+    }
+    return env;
+  });
 }
 
 export async function readMatchingEnvelope(
@@ -298,14 +322,11 @@ export async function readMatchingEnvelope(
   if (cachedEnvelope && envelopeMatchesSession(cachedEnvelope, driverId, companyId)) {
     return cachedEnvelope;
   }
-  try {
-    const raw = await AsyncStorage.getItem(WBM_ENVELOPE_KEY);
-    const env = parseBootstrapEnvelope(raw ? JSON.parse(raw) : null);
-    if (envelopeMatchesSession(env, driverId, companyId)) {
-      return env;
-    }
-  } catch { /* unversioned or malformed */ }
-  return null;
+  return runEnvelopeOp(async () => {
+    const env = await readEnvelopeInsideGate();
+    if (envelopeMatchesSession(env, driverId, companyId)) return env;
+    return null;
+  });
 }
 
 /**
@@ -329,26 +350,27 @@ export async function readFencedDurableEnvelope(): Promise<WbmBootstrapEnvelope 
     if (await fenceHolds(ticket, mem)) return mem;
   }
 
-  let env: WbmBootstrapEnvelope | null = null;
-  try {
-    const raw = await AsyncStorage.getItem(WBM_ENVELOPE_KEY);
-    env = parseBootstrapEnvelope(raw ? JSON.parse(raw) : null);
-  } catch {
-    return null;
-  }
-  if (!env) return null;
-
-  const identAfter = await sessionIdentity();
-  if (!envelopeMatchesSession(env, identAfter.driverId, identAfter.companyId)) return null;
-  if (!(await fenceHolds(ticket, env))) return null;
-
-  if (!(await fenceHolds(ticket, env))) return null;
-  installEnvelopeMemory(env);
-  if (!(await fenceHolds(ticket, env))) {
-    uninstallEnvelopeMemoryIfExact(env);
-    return null;
-  }
-  return env;
+  return runEnvelopeOp(async () => {
+    const identNow = await sessionIdentity();
+    if (!sessionFenceHolds({
+      ticket,
+      current: identNow,
+      hasAuthSession: await hasAuthSession(),
+    })) {
+      return null;
+    }
+    const env = await readEnvelopeInsideGate();
+    if (!env) return null;
+    const identAfter = await sessionIdentity();
+    if (!envelopeMatchesSession(env, identAfter.driverId, identAfter.companyId)) return null;
+    if (!(await fenceHolds(ticket, env))) return null;
+    installEnvelopeMemory(env);
+    if (!(await fenceHolds(ticket, env))) {
+      uninstallEnvelopeMemoryIfExact(env);
+      return null;
+    }
+    return env;
+  });
 }
 
 export async function getWellConfig(wellName: string): Promise<WellConfig> {
@@ -389,13 +411,15 @@ export async function forceRefreshWellConfig(): Promise<boolean> {
 }
 
 export async function wipeDurableWellConfigCache(): Promise<void> {
-  await AsyncStorage.removeItem(STORAGE_KEY);
-  await AsyncStorage.removeItem(LAST_FETCH_KEY);
-  await AsyncStorage.removeItem(CACHE_BINDER_KEY);
-  await AsyncStorage.removeItem(ASSIGNED_ROUTES_KEY);
-  await AsyncStorage.removeItem(ASSIGNED_WELLS_KEY);
-  await AsyncStorage.removeItem(ELIGIBILITY_STATUS_KEY);
-  await AsyncStorage.removeItem(WBM_ENVELOPE_KEY);
+  return runEnvelopeOp(async () => {
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    await AsyncStorage.removeItem(LAST_FETCH_KEY);
+    await AsyncStorage.removeItem(CACHE_BINDER_KEY);
+    await AsyncStorage.removeItem(ASSIGNED_ROUTES_KEY);
+    await AsyncStorage.removeItem(ASSIGNED_WELLS_KEY);
+    await AsyncStorage.removeItem(ELIGIBILITY_STATUS_KEY);
+    await AsyncStorage.removeItem(WBM_ENVELOPE_KEY);
+  });
 }
 
 export async function clearWellConfigCache(): Promise<void> {

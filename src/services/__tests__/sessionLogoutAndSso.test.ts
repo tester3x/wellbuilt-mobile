@@ -11,18 +11,22 @@ const secure = readFileSync(join(__dirname, '..', 'secureDriverAuth.ts'), 'utf8'
 
 describe('WB-M session, SSO, registration, listener', () => {
   it('logout clears Firebase Auth before the next driver can inherit the session', () => {
-    const start = driverAuth.indexOf('export const clearDriverSession');
-    const end = driverAuth.indexOf('export const isPasscodeAvailable');
+    const start = driverAuth.indexOf('export async function performPermittedLogout');
+    const end = driverAuth.indexOf('export const clearDriverSession');
     const fn = driverAuth.slice(start, end);
-    const firstAwait = fn.indexOf('await ');
-    const bumpAt = fn.indexOf('invalidateWbmMemoryCache');
-    expect(bumpAt).toBeGreaterThan(-1);
-    expect(firstAwait).toBeGreaterThan(-1);
-    expect(bumpAt).toBeLessThan(firstAwait);
-    expect(fn).toMatch(/clearAuthSession/);
+    const claimAt = fn.indexOf('claimSessionGeneration');
+    const signOutAt = fn.indexOf('await clearAuthSession');
+    expect(claimAt).toBeGreaterThan(-1);
+    expect(signOutAt).toBeGreaterThan(claimAt);
+    expect(fn).toMatch(/permitGenerationCurrent/);
     expect(fn).toMatch(/wipeDurableWellConfigCache/);
-    expect(fn).not.toMatch(/clearWellConfigCache/);
+    expect(fn).toMatch(/sessionStolenByOther/);
+    expect(driverAuth).toMatch(/captureCurrentSessionPermit/);
     expect(session).toMatch(/signOut\(getFirebaseAuth\(\)\)/);
+    expect(session).toMatch(/beginLoginTransition/);
+    const persist = session.slice(session.indexOf('export async function persistCustomTokenSession'));
+    expect(persist.indexOf('beginLoginTransition')).toBeGreaterThan(-1);
+    expect(persist.indexOf('beginLoginTransition')).toBeLessThan(persist.indexOf('signInWithCustomToken'));
   });
 
   it('SSO callback bootstraps authoritative profile and does not hardcode isAdmin false', () => {

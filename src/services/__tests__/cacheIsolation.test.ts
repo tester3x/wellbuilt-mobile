@@ -29,7 +29,7 @@ import {
   loadWellConfig,
   parseBootstrapEnvelope,
   peekWellConfigCacheForTests,
-  persistBootstrapEnvelope,
+  persistBootstrapEnvelopeForTests,
   resetWellConfigCacheForTests,
   seedWellConfigCacheForTests,
 } from '../wellConfig';
@@ -76,7 +76,7 @@ describe('WB-M versioned bootstrap cache', () => {
   it('same driver, new assignment revision rejects the old catalog', async () => {
     mockSecure.driverId = 'driver-a';
     mockSecure.companyId = 'liquid-gold';
-    await persistBootstrapEnvelope(snap({
+    await persistBootstrapEnvelopeForTests(snap({
       driverId: 'driver-a',
       assignmentRevision: 1,
       assignmentDigest: 'dig-1',
@@ -110,7 +110,7 @@ describe('WB-M versioned bootstrap cache', () => {
 
   it('logout clears every WB-M authorization/cache key', async () => {
     mockSecure.driverId = 'driver-a';
-    await persistBootstrapEnvelope(snap({ driverId: 'driver-a', assignmentRevision: 1, assignmentDigest: 'd' }));
+    await persistBootstrapEnvelopeForTests(snap({ driverId: 'driver-a', assignmentRevision: 1, assignmentDigest: 'd' }));
     await clearWellConfigCache();
     expect(peekWellConfigCacheForTests()).toEqual({ config: null, envelope: null });
     expect(envelopeMatchesSession(null, 'driver-a', 'liquid-gold')).toBe(false);

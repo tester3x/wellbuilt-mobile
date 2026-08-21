@@ -34,6 +34,7 @@ function captureA(extra: Partial<BoundSsoLogoutCapture> = {}): BoundSsoLogoutCap
     companyId: 'liquid-gold',
     authMethod: 'sso',
     driverVerifiedAt: String(verified),
+    authUid: 'uid-a',
     ...extra,
   };
 }
@@ -83,6 +84,8 @@ describe('Suite-owned SSO logout', () => {
     const sso = readFileSync(join(__dirname, '../ssoLogout.ts'), 'utf8');
     expect(layout).not.toMatch(/drivers\/profiles\/\$\{/);
     expect(layout).toMatch(/checkCanonicalSsoLogout/);
+    expect(layout).toMatch(/performPermittedLogout/);
+    expect(layout).not.toMatch(/clearDriverSession\(\)/);
     expect(sso).toMatch(/bootstrapWbmSession/);
     expect(sso).not.toMatch(/drivers\/profiles\/\$\{/);
     expect(wellConfig).not.toMatch(/drivers\/profiles\/\$\{/);
@@ -169,6 +172,12 @@ describe('identity-bound live SSO logout', () => {
       response: matchingResponse,
       hasAuthSession: false,
     })).toBe('keep');
+    expect(evaluateBoundSsoLogout({
+      capture: captureA(),
+      current: { ...captureA(), authUid: 'uid-other' },
+      response: matchingResponse,
+      hasAuthSession: true,
+    })).toBe('keep');
   });
 });
 
@@ -182,6 +191,8 @@ describe('live Suite logout callable is bound to the starting identity', () => {
     mockSecure.companyId = 'liquid-gold';
     mockSecure.authMethod = 'sso';
     mockSecure.driverVerifiedAt = String(verified);
+    mockSecure.wb_auth_uid = 'uid-a';
+    mockUser = { uid: 'uid-a' };
   });
 
   it('Driver A live logout request is deferred; session changes to B; A resolves with a newer logoutAt; B is not logged out', async () => {
@@ -207,7 +218,7 @@ describe('live Suite logout callable is bound to the starting identity', () => {
       companyId: 'liquid-gold',
       logoutAt: newer,
     });
-    await expect(pending).resolves.toBe(false);
+    await expect(pending).resolves.toBeNull();
   });
 
   it('live response driverId differs from the captured session; no logout', async () => {
@@ -216,7 +227,7 @@ describe('live Suite logout callable is bound to the starting identity', () => {
       companyId: 'liquid-gold',
       logoutAt: newer,
     });
-    await expect(checkCanonicalSsoLogout()).resolves.toBe(false);
+    await expect(checkCanonicalSsoLogout()).resolves.toBeNull();
   });
 
   it('live response companyId differs from the captured session; no logout', async () => {
@@ -225,15 +236,21 @@ describe('live Suite logout callable is bound to the starting identity', () => {
       companyId: 'other-co',
       logoutAt: newer,
     });
-    await expect(checkCanonicalSsoLogout()).resolves.toBe(false);
+    await expect(checkCanonicalSsoLogout()).resolves.toBeNull();
   });
 
-  it('matching live identity with newer logoutAt still logs out', async () => {
+  it('matching live identity with newer logoutAt issues an A permit', async () => {
     mockCallable.mockResolvedValue({
       driverId: 'driver-a',
       companyId: 'liquid-gold',
       logoutAt: newer,
     });
-    await expect(checkCanonicalSsoLogout()).resolves.toBe(true);
+    await expect(checkCanonicalSsoLogout()).resolves.toMatchObject({
+      driverId: 'driver-a',
+      companyId: 'liquid-gold',
+      authMethod: 'sso',
+      authUid: 'uid-a',
+      generation: 0,
+    });
   });
 });

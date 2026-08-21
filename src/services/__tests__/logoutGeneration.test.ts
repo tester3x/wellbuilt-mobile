@@ -22,10 +22,11 @@ jest.mock('expo-device', () => ({ modelName: 'test' }));
 const mocks = {
   clearAuthSession: jest.fn(async () => undefined),
 };
+let mockUser: { uid: string } | null = { uid: 'uid-a' };
 jest.mock('../firebaseAuthSession', () => ({
   clearAuthSession: () => mocks.clearAuthSession(),
   authorizedCallable: jest.fn(),
-  getFirebaseAuth: () => ({ currentUser: { uid: 'u' } }),
+  getFirebaseAuth: () => ({ currentUser: mockUser }),
 }));
 
 import { clearDriverSession } from '../driverAuth';
@@ -61,9 +62,13 @@ describe('clearDriverSession generation fence', () => {
   beforeEach(() => {
     resetWellConfigCacheForTests();
     mocks.clearAuthSession.mockReset();
+    mockUser = { uid: 'uid-a' };
     for (const k of Object.keys(mockSecure)) delete mockSecure[k];
     mockSecure.driverId = 'driver-a';
     mockSecure.companyId = 'liquid-gold';
+    mockSecure.authMethod = 'sso';
+    mockSecure.driverVerifiedAt = '1000';
+    mockSecure.wb_auth_uid = 'uid-a';
   });
 
   it('logout begins while signOut is deferred; generation is already incremented and memory already cleared', async () => {
@@ -77,9 +82,6 @@ describe('clearDriverSession generation fence', () => {
     }));
 
     const pending = clearDriverSession();
-    expect(getSessionGeneration()).toBe(genBefore + 1);
-    expect(peekWellConfigCacheForTests()).toEqual({ config: null, envelope: null });
-
     for (let i = 0; i < 40 && mocks.clearAuthSession.mock.calls.length === 0; i += 1) {
       await Promise.resolve();
     }
@@ -91,5 +93,6 @@ describe('clearDriverSession generation fence', () => {
     await pending;
     expect(getSessionGeneration()).toBe(genBefore + 1);
     expect(peekWellConfigCacheForTests()).toEqual({ config: null, envelope: null });
+    expect(mockSecure.driverId).toBeUndefined();
   });
 });

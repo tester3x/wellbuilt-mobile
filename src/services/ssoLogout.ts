@@ -1,9 +1,10 @@
 /**
  * Suite-owned SSO logout. Manual WB-M login ignores Suite logoutAt.
  * Decision uses a LIVE bootstrap logoutAt, never a cached envelope.
- * The live decision is bound to the exact session that started the check.
+ * The live decision is bound to the exact session that started the check
+ * and is handed off as an identity-bound permit, never a bare boolean.
  */
-import { getSessionGeneration } from './wbmSessionFence';
+import { getSessionGeneration, type SessionLogoutPermit } from './wbmSessionFence';
 
 export type BoundSsoLogoutCapture = {
   generation: number;
@@ -11,6 +12,7 @@ export type BoundSsoLogoutCapture = {
   companyId: string;
   authMethod: string;
   driverVerifiedAt: string;
+  authUid: string;
 };
 
 export type BoundSsoLogoutCurrent = {
@@ -19,7 +21,10 @@ export type BoundSsoLogoutCurrent = {
   companyId: string | null;
   authMethod: string | null;
   driverVerifiedAt: string | null;
+  authUid: string | null;
 };
+
+export type { SessionLogoutPermit };
 
 export function evaluateSsoLogout(input: {
   authMethod: string | null;
@@ -61,6 +66,7 @@ export function evaluateBoundSsoLogout(input: {
   if (capture.companyId !== (current.companyId || '')) return 'keep';
   if (capture.authMethod !== 'sso' || current.authMethod !== 'sso') return 'keep';
   if (!capture.driverVerifiedAt || capture.driverVerifiedAt !== current.driverVerifiedAt) return 'keep';
+  if (!capture.authUid || capture.authUid !== current.authUid) return 'keep';
   if (!response || typeof response !== 'object') return 'keep';
   if (typeof response.driverId !== 'string' || !response.driverId) return 'keep';
   if (typeof response.companyId !== 'string') return 'keep';
@@ -75,11 +81,20 @@ export function evaluateBoundSsoLogout(input: {
   });
 }
 
+function readLiveAuthUid(getFirebaseAuth: () => { currentUser?: { uid?: string } | null }): string | null {
+  try {
+    return getFirebaseAuth().currentUser?.uid || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Live Suite logout check. Captures generation + identity BEFORE the
- * callable, then re-reads the session after it resolves.
+ * Live Suite logout check. Captures generation + identity + Auth UID
+ * BEFORE the callable, then re-reads after it resolves.
+ * Returns an identity-bound permit or null (KEEP). Does not log out.
  */
-export async function checkCanonicalSsoLogout(): Promise<boolean> {
+export async function checkCanonicalSsoLogout(): Promise<SessionLogoutPermit | null> {
   try {
     const SecureStore = await import('expo-secure-store');
     const { authorizedCallable, getFirebaseAuth } = await import('./firebaseAuthSession');
@@ -88,7 +103,9 @@ export async function checkCanonicalSsoLogout(): Promise<boolean> {
     const companyId = (await SecureStore.getItemAsync('companyId')) || '';
     const authMethod = await SecureStore.getItemAsync('authMethod');
     const driverVerifiedAt = await SecureStore.getItemAsync('driverVerifiedAt');
-    if (authMethod !== 'sso' || !driverId || !driverVerifiedAt) return false;
+    const authUid = readLiveAuthUid(getFirebaseAuth)
+      || (await SecureStore.getItemAsync('wb_auth_uid'));
+    if (authMethod !== 'sso' || !driverId || !driverVerifiedAt || !authUid) return null;
 
     const generation = getSessionGeneration();
 
@@ -104,22 +121,29 @@ export async function checkCanonicalSsoLogout(): Promise<boolean> {
       companyId: await SecureStore.getItemAsync('companyId'),
       authMethod: await SecureStore.getItemAsync('authMethod'),
       driverVerifiedAt: await SecureStore.getItemAsync('driverVerifiedAt'),
+      authUid: readLiveAuthUid(getFirebaseAuth)
+        || (await SecureStore.getItemAsync('wb_auth_uid')),
     };
 
-    let hasAuthSession = false;
-    try {
-      hasAuthSession = !!getFirebaseAuth().currentUser;
-    } catch {
-      hasAuthSession = false;
-    }
-
-    return evaluateBoundSsoLogout({
-      capture: { generation, driverId, companyId, authMethod, driverVerifiedAt },
+    const hasAuthSession = !!current.authUid;
+    if (evaluateBoundSsoLogout({
+      capture: { generation, driverId, companyId, authMethod, driverVerifiedAt, authUid },
       current,
       response: snap,
       hasAuthSession,
-    }) === 'logout';
+    }) !== 'logout') {
+      return null;
+    }
+
+    return {
+      generation,
+      driverId,
+      companyId,
+      authMethod,
+      driverVerifiedAt,
+      authUid,
+    };
   } catch {
-    return false;
+    return null;
   }
 }

@@ -22,33 +22,7 @@ import { startDeliveryReconciler } from '../src/services/deliveryStatus';
 import { startEditDelivery } from '../src/services/editDelivery';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
 import { clearDriverSession } from '../src/services/driverAuth';
-
-const FIREBASE_DB = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
-
-/**
- * Check if WB S wrote a logoutAt signal to RTDB that's newer than our session.
- * Returns true if the driver should be auto-logged out.
- * Only applies to SSO sessions — manual logins are owned by the driver, not WB S.
- */
-async function checkCanonicalSsoLogout(): Promise<boolean> {
-  try {
-    const { evaluateSsoLogout, normalizeLogoutAt } = await import('../src/services/ssoLogout');
-    const authMethod = await SecureStore.getItemAsync('authMethod');
-    const driverId = await SecureStore.getItemAsync('driverId');
-    const verifiedAt = await SecureStore.getItemAsync('driverVerifiedAt');
-    if (authMethod !== 'sso' || !driverId || !verifiedAt) return false;
-
-    const { authorizedCallable } = await import('../src/services/firebaseAuthSession');
-    const snap = await authorizedCallable<{ logoutAt?: number | null }>('bootstrapWbmSession', {});
-    return evaluateSsoLogout({
-      authMethod,
-      verifiedAtMs: Number(verifiedAt),
-      liveLogoutAtMs: normalizeLogoutAt(snap?.logoutAt),
-    }) === 'logout';
-  } catch {
-    return false;
-  }
-}
+import { checkCanonicalSsoLogout } from '../src/services/ssoLogout';
 
 // Lazy import to avoid expo-notifications warning in Expo Go
 // Notifications only work in development builds anyway

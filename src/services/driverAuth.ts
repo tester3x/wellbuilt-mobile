@@ -21,6 +21,7 @@ import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
 import { diagnoseThrown } from "./connectionDiagnosis";
 import { normalizeRouteList } from "./eligibility";
+import { invalidateWbmMemoryCache, wipeDurableWellConfigCache } from "./wellConfig";
 
 // Firebase configuration (same as firebase.ts)
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
@@ -661,10 +662,13 @@ export async function completeAuthenticatedSession(input: {
  * Clear driver session (logout)
  */
 export const clearDriverSession = async (): Promise<void> => {
+  // Generation + in-memory catalog MUST invalidate before the first await
+  // (including before clearAuthSession/signOut). Durable wipe does not bump
+  // again — a second bump could invalidate Driver B while signOut is deferred.
+  invalidateWbmMemoryCache();
   const { clearAuthSession } = await import('./firebaseAuthSession');
-  const { clearWellConfigCache } = await import('./wellConfig');
   await clearAuthSession();
-  await clearWellConfigCache();
+  await wipeDurableWellConfigCache();
   await SecureStore.deleteItemAsync("driverId");
   await SecureStore.deleteItemAsync("driverName");
   await SecureStore.deleteItemAsync("passcodeHash");

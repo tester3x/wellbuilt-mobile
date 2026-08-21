@@ -13,10 +13,10 @@ describe('canonical session replaces hash session', () => {
     expect(loginScreen).not.toMatch(/result\.passcodeHash/);
   });
 
-  it('cascade logout reads profiles/{driverId}/logoutAt with ID token', () => {
-    expect(layout).toMatch(/drivers\/profiles\/\$\{driverId\}\/logoutAt/);
+  it('cascade logout uses identity-bound live bootstrap, not a profile GET', () => {
+    expect(layout).toMatch(/checkCanonicalSsoLogout/);
     expect(layout).not.toMatch(/drivers\/approved\/\$\{hash\}\/logoutAt/);
-    expect(layout).toMatch(/getValidIdToken/);
+    expect(layout).not.toMatch(/drivers\/profiles\/\$\{driverId\}\/logoutAt/);
   });
 
   it('AppSwitcher identity uses driverId and never puts hash in a URL', () => {

@@ -14,8 +14,14 @@ describe('WB-M session, SSO, registration, listener', () => {
     const start = driverAuth.indexOf('export const clearDriverSession');
     const end = driverAuth.indexOf('export const isPasscodeAvailable');
     const fn = driverAuth.slice(start, end);
+    const firstAwait = fn.indexOf('await ');
+    const bumpAt = fn.indexOf('invalidateWbmMemoryCache');
+    expect(bumpAt).toBeGreaterThan(-1);
+    expect(firstAwait).toBeGreaterThan(-1);
+    expect(bumpAt).toBeLessThan(firstAwait);
     expect(fn).toMatch(/clearAuthSession/);
-    expect(fn).toMatch(/clearWellConfigCache/);
+    expect(fn).toMatch(/wipeDurableWellConfigCache/);
+    expect(fn).not.toMatch(/clearWellConfigCache/);
     expect(session).toMatch(/signOut\(getFirebaseAuth\(\)\)/);
   });
 

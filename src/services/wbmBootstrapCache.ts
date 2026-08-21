@@ -98,3 +98,17 @@ export function envelopeMatchesRevision(
   if (!env) return false;
   return env.assignmentRevision === revision && env.assignmentDigest === digest;
 }
+
+/** Exact identity + digest + write-instance match for conditional durable cleanup. */
+export function envelopeExactMatch(
+  a: WbmBootstrapEnvelope | null,
+  b: WbmBootstrapEnvelope | null,
+): boolean {
+  if (!a || !b) return false;
+  return a.schemaVersion === b.schemaVersion
+    && a.driverId === b.driverId
+    && a.companyId === b.companyId
+    && a.assignmentRevision === b.assignmentRevision
+    && a.assignmentDigest === b.assignmentDigest
+    && a.fetchedAt === b.fetchedAt;
+}

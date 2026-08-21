@@ -19,10 +19,12 @@ describe('WB-M session, SSO, registration, listener', () => {
   });
 
   it('SSO callback bootstraps authoritative profile and does not hardcode isAdmin false', () => {
-    expect(callback).toMatch(/bootstrapDriverSession/);
-    expect(callback).toMatch(/profile\.isAdmin === true/);
+    expect(callback).toMatch(/completeAuthenticatedSession/);
+    expect(callback).toMatch("authMethod: 'sso'");
     expect(callback).toMatch(/used\.current/);
     expect(callback).not.toMatch(/false,\s*\n\s*false,/);
+    expect(driverAuth).toMatch(/bootstrapDriverSession/);
+    expect(driverAuth).toMatch(/profile\.isAdmin === true/);
   });
 
   it('PKCE compares state before deleting the verifier and prevents overlapping attempts', () => {

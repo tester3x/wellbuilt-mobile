@@ -26,10 +26,18 @@ describe('FLIP aquarium lifecycle', () => {
     expect(imu).toContain('gSub.remove()');
   });
 
-  test('idle cadence avoids full-rate React updates when settled', () => {
-    expect(aqua).toContain('idleSkip');
-    expect(aqua).toContain('publish');
+  test('idle cadence avoids full-rate FLIP steps when settled', () => {
+    expect(aqua).toContain('SETTLED_MS = 250');
+    expect(aqua).toContain('if (!settled)');
+    expect(aqua).toContain('stepFlip(world, g, dt)');
     expect(aqua).toContain('kineticEnergy');
+  });
+
+  test('reduced-motion paintStill keeps fish instead of clearing them', () => {
+    expect(aqua).toContain('if (showFish && fishRef.current && fillNow > 0.08)');
+    const still = aqua.slice(aqua.indexOf('const paintStill'), aqua.indexOf('useEffect(() => {', aqua.indexOf('const paintStill')));
+    expect(still).toContain('fishRef.current.map');
+    expect(still).toContain('vx: 0');
   });
 
   test('fish sample local surface and current; duck rides FLIP hull', () => {

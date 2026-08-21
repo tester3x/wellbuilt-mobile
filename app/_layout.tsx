@@ -32,19 +32,21 @@ const FIREBASE_DB = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
  */
 async function checkRtdbLogoutSignal(): Promise<boolean> {
   try {
-    // Only SSO sessions respond to WB S cascade logout
     const authMethod = await SecureStore.getItemAsync('authMethod');
     if (authMethod !== 'sso') return false;
 
-    const hash = await SecureStore.getItemAsync('passcodeHash');
+    const driverId = await SecureStore.getItemAsync('driverId');
     const verifiedAt = await SecureStore.getItemAsync('driverVerifiedAt');
-    if (!hash || !verifiedAt) return false;
+    if (!driverId || !verifiedAt) return false;
 
+    const { getValidIdToken } = await import('../src/services/firebaseAuthSession');
+    const token = await getValidIdToken();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    const resp = await fetch(`${FIREBASE_DB}/drivers/approved/${hash}/logoutAt.json`, {
-      signal: controller.signal,
-    });
+    const resp = await fetch(
+      `${FIREBASE_DB}/drivers/profiles/${driverId}/logoutAt.json?auth=${encodeURIComponent(token)}`,
+      { signal: controller.signal },
+    );
     clearTimeout(timer);
     if (!resp.ok) return false;
 
@@ -191,9 +193,9 @@ export default function RootLayout() {
               badgeSource={require('../assets/images/app-switcher-badge.png')}
               selfScheme="wellbuilt-mobile"
               getIdentity={async () => {
-                const hash = await SecureStore.getItemAsync('passcodeHash');
+                const driverId = await SecureStore.getItemAsync('driverId');
                 const name = await SecureStore.getItemAsync('driverName');
-                return hash && name ? { hash, name } : null;
+                return driverId && name ? { hash: '', name, driverId } : null;
               }}
             />
           )}

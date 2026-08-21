@@ -1,13 +1,14 @@
 /**
- * Secure driver auth via Cloud Functions (callable REST).
- * Prefer over open RTDB hash login during dual-run; required after enforcement.
+ * WB-M secure login. Always uses authenticateDriver + a real Firebase session.
+ * Never falls back to drivers/approved/{hash}.
  */
+import { persistCustomTokenSession } from './firebaseAuthSession';
+
 const PROJECT_ID = 'wellbuilt-sync';
 const REGION = 'us-central1';
-const API_KEY = 'AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI';
 const CALLABLE_BASE = `https://${REGION}-${PROJECT_ID}.cloudfunctions.net`;
 
-async function callCallable<T>(name: string, data: Record<string, unknown>): Promise<T> {
+async function callUnauthed<T>(name: string, data: Record<string, unknown>): Promise<T> {
   const resp = await fetch(`${CALLABLE_BASE}/${name}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -21,8 +22,8 @@ async function callCallable<T>(name: string, data: Record<string, unknown>): Pro
 }
 
 export async function secureLogin(displayName: string, passcode: string) {
-  const data = await callCallable<{
-    customToken: string;
+  const data = await callUnauthed<{
+    customToken: string | null;
     driverId: string;
     displayName: string;
     legalName?: string;
@@ -32,20 +33,11 @@ export async function secureLogin(displayName: string, passcode: string) {
     isViewer?: boolean;
   }>('authenticateDriver', { displayName, passcode });
 
-  if (data.customToken) {
-    const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${API_KEY}`;
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: data.customToken, returnSecureToken: true }),
-    });
-    const body = await resp.json();
-    if (!resp.ok) throw new Error(body?.error?.message || 'Token exchange failed');
-    // Caller may persist body.idToken for authenticated FS/RTDB
-    (data as any).idToken = body.idToken;
-    (data as any).refreshToken = body.refreshToken;
+  if (!data.customToken) {
+    throw new Error('authenticateDriver did not return a Firebase custom token');
   }
-  return data;
+  const session = await persistCustomTokenSession(data.customToken);
+  return { ...data, idToken: session.idToken, refreshToken: session.refreshToken };
 }
 
 export async function secureRegister(params: {
@@ -54,8 +46,55 @@ export async function secureRegister(params: {
   companyName?: string;
   legalName?: string;
 }) {
-  return callCallable<{ pendingId: string; status: string }>('requestDriverRegistration', {
+  return callUnauthed<{ pendingId: string; status: string }>('requestDriverRegistration', {
     ...params,
     source: 'wbm',
   });
+}
+
+export async function checkDriverRegistrationStatus(pendingId: string) {
+  return callUnauthed<{ status: 'none' | 'pending' | 'approved' | 'rejected'; driverId?: string | null }>(
+    'checkDriverRegistrationStatus',
+    { pendingId },
+  );
+}
+
+export async function bootstrapDriverSession() {
+  const { authorizedCallable } = await import('./firebaseAuthSession');
+  return authorizedCallable<{
+    driverId: string;
+    companyId: string;
+    displayName: string | null;
+    legalName: string | null;
+    companyName: string | null;
+    isAdmin: boolean;
+    isViewer: boolean;
+    roles: string[];
+    tier: string | null;
+    assignedRoutes: unknown;
+    assignedCustomers: unknown;
+    dashboardUid: string | null;
+    dashboardRole: string | null;
+    defaultPackageId: string | null;
+    active: true;
+  }>('bootstrapDriverSession', {});
+}
+
+export async function exchangeSsoCode(params: {
+  code: string;
+  codeVerifier: string;
+}) {
+  const data = await callUnauthed<{
+    customToken: string;
+    driverId: string;
+    companyId: string;
+    displayName?: string | null;
+  }>('ssoExchangeAuthorizationCode', {
+    protocolVersion: 1,
+    audience: 'wellbuilt-mobile',
+    code: params.code,
+    codeVerifier: params.codeVerifier,
+  });
+  const session = await persistCustomTokenSession(data.customToken);
+  return { ...data, idToken: session.idToken, refreshToken: session.refreshToken };
 }

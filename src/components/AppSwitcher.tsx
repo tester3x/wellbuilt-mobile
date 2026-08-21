@@ -71,7 +71,7 @@ interface Props {
   /** Firestore db instance. If null, uses cached registry or hardcoded fallback. */
   firestoreDb?: any;
   /** Async function returning { hash, name } for SSO params. Falls back to AsyncStorage. */
-  getIdentity?: () => Promise<{ hash: string; name: string } | null>;
+  getIdentity?: () => Promise<{ hash?: string; name?: string; driverId?: string } | null>;
 }
 
 /** Format elapsed time as H:MM:SS */
@@ -326,30 +326,24 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
 
       // Don't send SSO params to the hub app (WB Suite) — it manages its own auth.
       if (app.deepLinkScheme !== HUB_SCHEME) {
-        // Use prop-based identity or fall back to WB T's getDriverIdentity + AsyncStorage
-        let identity: { hash: string; name: string } | null = null;
+        let identity: { hash?: string; name?: string; driverId?: string } | null = null;
         if (getIdentity) {
           identity = await getIdentity();
-        } else {
-          try {
-            const id = await getDriverIdentity();
-            if (id?.hash && id?.name) identity = { hash: id.hash, name: id.name };
-          } catch {}
         }
-        const hash = identity?.hash || await AsyncStorage.getItem('passcodeHash') || '';
-        const companyId = await AsyncStorage.getItem('selectedCompanyId') || '';
-        const vehicleRaw = await AsyncStorage.getItem('vehicleInfo');
-        const vehicle = vehicleRaw ? JSON.parse(vehicleRaw) : {};
-
-        if (hash && identity?.name) {
-          const params = new URLSearchParams({
-            hash,
-            name: identity.name,
-            ...(companyId ? { companyId } : {}),
-            ...(vehicle.truckNumber ? { truck: vehicle.truckNumber } : {}),
-            ...(vehicle.trailerNumber ? { trailer: vehicle.trailerNumber } : {}),
-          });
-          url = `${app.deepLinkScheme}://login?${params.toString()}`;
+        if (identity?.name || identity?.driverId) {
+          if (app.deepLinkScheme === 'wellbuilt-tickets') {
+            url = 'wellbuilt-tickets://sso-start';
+          } else if (app.deepLinkScheme === 'jsaapp') {
+            Alert.alert(
+              'Update required',
+              'JSA sign-in has moved to a secure authorization-code handoff. This build cannot launch JSA until that migration is complete. No passcode or hash is sent.',
+            );
+            return;
+          } else if (app.deepLinkScheme === 'wbewallet' || app.deepLinkScheme === 'wellbuiltequipment') {
+            url = `${app.deepLinkScheme}://`;
+          } else {
+            url = `${app.deepLinkScheme}://`;
+          }
         }
       }
 

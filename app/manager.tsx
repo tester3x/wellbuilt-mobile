@@ -39,44 +39,19 @@ import {
   getDeviceId,
 } from "../src/services/driverAuth";
 
-// Firebase configuration
-const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
-const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
-
+// Manager pending/approved/device/production/log RTDB paths are incompatible
+// with proposed authenticated rules. Do NOT attach the API key as RTDB auth.
+const MANAGER_AVAILABLE = false;
 const DRIVERS_PENDING = "drivers/pending";
 const DRIVERS_APPROVED = "drivers/approved";
 
-// Firebase helpers
-const buildFirebaseUrl = (path: string): string => {
-  let url = `${FIREBASE_DATABASE_URL}/${path}.json`;
-  if (FIREBASE_API_KEY) {
-    url += `?auth=${FIREBASE_API_KEY}`;
-  }
-  return url;
-};
+async function managerFeatureBlocked(_path?: string, _data?: unknown): Promise<never> {
+  throw new Error('update_required');
+}
 
-const firebaseGet = async (path: string): Promise<any> => {
-  const response = await fetch(buildFirebaseUrl(path));
-  if (!response.ok) throw new Error(`Firebase GET failed (${response.status})`);
-  return response.json();
-};
-
-const firebasePut = async (path: string, data: any): Promise<void> => {
-  const response = await fetch(buildFirebaseUrl(path), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error(`Firebase PUT failed (${response.status})`);
-};
-
-const firebaseDelete = async (path: string): Promise<void> => {
-  const response = await fetch(buildFirebaseUrl(path), {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!response.ok) throw new Error(`Firebase DELETE failed (${response.status})`);
-};
+const firebaseGet = managerFeatureBlocked;
+const firebasePut = managerFeatureBlocked;
+const firebaseDelete = managerFeatureBlocked;
 
 // Generate UUID
 const generateUUID = (): string => {
@@ -135,7 +110,38 @@ interface UnifiedLogEntry {
   driver?: string;
 }
 
+function ManagerUnavailable() {
+  const { t } = useTranslation();
+  const router = useRouter();
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Text style={styles.backText}>{"<"}</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('manager.title')}</Text>
+        <View style={styles.headerActions} />
+      </View>
+      <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28 }}>
+        <Text style={{ color: '#F9FAFB', fontSize: 22, fontWeight: '700', textAlign: 'center', marginBottom: 12 }}>
+          {t('common.updateRequired')}
+        </Text>
+        <Text style={{ color: '#9CA3AF', fontSize: 15, textAlign: 'center', lineHeight: 22 }}>
+          {t('common.updateRequiredBody')}
+        </Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 export default function ManagerScreen() {
+  if (!MANAGER_AVAILABLE) {
+    return <ManagerUnavailable />;
+  }
+  return <ManagerScreenInner />;
+}
+
+function ManagerScreenInner() {
   const { t } = useTranslation();
   const router = useRouter();
   const alert = useAppAlert();

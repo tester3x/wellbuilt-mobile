@@ -22,7 +22,9 @@ import * as Device from "expo-device";
 
 // Firebase configuration (same as firebase.ts)
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
-const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
+
+/** Device writes are incompatible with proposed read-only device rules. */
+export const DEVICE_MANAGEMENT_AVAILABLE = false;
 
 // Firebase paths
 const DRIVERS_PENDING = "drivers/pending";
@@ -43,7 +45,6 @@ export type CompanyTier = 'free' | 'field' | 'god';
 export interface DriverSession {
   driverId: string;
   displayName: string;
-  passcodeHash: string;
   isAdmin: boolean;
   isViewer: boolean;
   companyId?: string;
@@ -55,12 +56,10 @@ export interface DriverSession {
 
 const FETCH_TIMEOUT_MS = 10000; // 10s timeout prevents indefinite hangs
 
-const buildFirebaseUrl = (path: string): string => {
-  let url = `${FIREBASE_DATABASE_URL}/${path}.json`;
-  if (FIREBASE_API_KEY) {
-    url += `?auth=${FIREBASE_API_KEY}`;
-  }
-  return url;
+const buildFirebaseUrl = async (path: string): Promise<string> => {
+  const { getValidIdToken } = await import('./firebaseAuthSession');
+  const token = await getValidIdToken();
+  return `${FIREBASE_DATABASE_URL}/${path}.json?auth=${encodeURIComponent(token)}`;
 };
 
 /** fetch() with AbortController timeout — prevents app hang on slow/dead network. */
@@ -79,7 +78,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}): Promise
 };
 
 const firebaseGet = async (path: string): Promise<any> => {
-  const url = buildFirebaseUrl(path);
+  const url = await buildFirebaseUrl(path);
   const response = await fetchWithTimeout(url, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
@@ -93,7 +92,7 @@ const firebaseGet = async (path: string): Promise<any> => {
 };
 
 const firebasePost = async (path: string, data: any): Promise<string> => {
-  const url = buildFirebaseUrl(path);
+  const url = await buildFirebaseUrl(path);
   const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -109,7 +108,7 @@ const firebasePost = async (path: string, data: any): Promise<string> => {
 };
 
 const firebasePatch = async (path: string, data: any): Promise<void> => {
-  const url = buildFirebaseUrl(path);
+  const url = await buildFirebaseUrl(path);
   const response = await fetchWithTimeout(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -179,6 +178,8 @@ export const verifyLogin = async (
   companyId?: string;
   companyName?: string;
   tier?: CompanyTier;
+  roles?: string[];
+  assignedRoutes?: unknown;
   error?: string;
 }> => {
   console.log("[DriverAuth] Verifying login for:", displayName);
@@ -191,89 +192,19 @@ export const verifyLogin = async (
         valid: true,
         driverId: s.driverId,
         displayName: s.displayName,
-        passcodeHash: s.driverId,
         isAdmin: s.isAdmin === true,
         isViewer: s.isViewer === true,
         companyId: s.companyId || undefined,
         companyName: s.companyName || undefined,
+        roles: s.roles,
+        assignedRoutes: s.assignedRoutes,
       };
     } catch (secureErr: any) {
-      if (secureErr?.message && /reset required|Too many login/i.test(secureErr.message)) {
+      if (secureErr?.message && /reset required|Too many login|deactivated/i.test(secureErr.message)) {
         return { valid: false, error: secureErr.message };
       }
-      console.warn('[DriverAuth] Secure login miss, legacy fallback:', secureErr?.message);
+      return { valid: false, error: secureErr?.message || 'Invalid name or passcode' };
     }
-
-    const hash = await hashPasscode(passcode, displayName);
-    console.log("[DriverAuth] Hash:", hash.slice(0, 8) + "...");
-
-    // Look up by name+passcode hash
-    const driverData = await firebaseGet(`${DRIVERS_APPROVED}/${hash}`);
-
-    if (!driverData) {
-      console.log("[DriverAuth] No driver found with this passcode");
-      return { valid: false, error: "Invalid name or passcode" };
-    }
-
-    // Check if this is the new flat structure (has displayName directly)
-    if (driverData.displayName) {
-      // New structure: drivers/approved/{hash}/ = { displayName, active, ... }
-      if (driverData.active === false) {
-        return { valid: false, error: "This account has been deactivated" };
-      }
-
-      if (driverData.displayName.toLowerCase() !== displayName.toLowerCase()) {
-        console.log("[DriverAuth] Name mismatch");
-        return { valid: false, error: "Invalid name or passcode" };
-      }
-
-      console.log("[DriverAuth] Login verified for:", driverData.displayName);
-
-      // Update device tracking (fire and forget)
-      updateDeviceTracking(hash, driverData.displayName);
-
-      return {
-        valid: true,
-        driverId: hash,
-        displayName: driverData.displayName,
-        passcodeHash: hash,
-        isAdmin: driverData.isAdmin === true,
-        isViewer: driverData.isViewer === true,
-        companyId: driverData.companyId || undefined,
-        companyName: driverData.companyName || undefined,
-        tier: driverData.tier || undefined,
-      };
-    }
-
-    // Legacy structure: drivers/approved/{hash}/{deviceId}/ = { displayName, ... }
-    // Check each sub-entry for matching name
-    for (const key of Object.keys(driverData)) {
-      const entry = driverData[key];
-      if (
-        entry.displayName?.toLowerCase() === displayName.toLowerCase() &&
-        entry.active !== false
-      ) {
-        console.log("[DriverAuth] Login verified (legacy) for:", entry.displayName);
-
-        // Update device tracking (fire and forget)
-        updateDeviceTracking(hash, entry.displayName);
-
-        return {
-          valid: true,
-          driverId: hash,
-          displayName: entry.displayName,
-          passcodeHash: hash,
-          isAdmin: entry.isAdmin === true,
-          isViewer: entry.isViewer === true,
-          companyId: entry.companyId || undefined,
-          companyName: entry.companyName || undefined,
-          tier: entry.tier || undefined,
-        };
-      }
-    }
-
-    console.log("[DriverAuth] Name mismatch in legacy structure");
-    return { valid: false, error: "Invalid name or passcode" };
   } catch (error) {
     console.error("[DriverAuth] Error verifying login:", error);
     return { valid: false, error: "Connection error" };
@@ -296,6 +227,9 @@ export const verifyPasscodeWithName = async (passcode: string, displayName: stri
  * 2. Device login history: full trail of who used this device when
  */
 const updateDeviceTracking = async (passcodeHash: string, driverName: string): Promise<void> => {
+  if (!DEVICE_MANAGEMENT_AVAILABLE) {
+    return;
+  }
   try {
     const deviceId = await getDeviceId();
 
@@ -340,6 +274,9 @@ const updateDeviceTracking = async (passcodeHash: string, driverName: string): P
  * Check if current device is registered as company-owned
  */
 export const isCompanyDevice = async (): Promise<boolean> => {
+  if (!DEVICE_MANAGEMENT_AVAILABLE) {
+    return false;
+  }
   try {
     const deviceId = await getDeviceId();
     const companyDevice = await firebaseGet(`devices/company/${deviceId}`);
@@ -354,6 +291,9 @@ export const isCompanyDevice = async (): Promise<boolean> => {
  * Stores device info from expo-device for identification even after reinstall
  */
 export const registerCompanyDevice = async (nickname?: string): Promise<{ success: boolean; error?: string }> => {
+  if (!DEVICE_MANAGEMENT_AVAILABLE) {
+    return { success: false, error: "update_required" };
+  }
   try {
     const deviceId = await getDeviceId();
 
@@ -377,7 +317,7 @@ export const registerCompanyDevice = async (nickname?: string): Promise<{ succes
       osVersion: deviceInfo.osVersion,
     };
 
-    const url = buildFirebaseUrl(`devices/company/${deviceId}`);
+    const url = await buildFirebaseUrl(`devices/company/${deviceId}`);
     const response = await fetchWithTimeout(url, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -410,6 +350,9 @@ export const getCompanyDevices = async (): Promise<Record<string, {
   lastDriver?: string;
   lastLoginAt?: string;
 }> | null> => {
+  if (!DEVICE_MANAGEMENT_AVAILABLE) {
+    return null;
+  }
   try {
     return await firebaseGet("devices/company");
   } catch {
@@ -421,8 +364,11 @@ export const getCompanyDevices = async (): Promise<Record<string, {
  * Remove a company device (admin only)
  */
 export const removeCompanyDevice = async (deviceId: string): Promise<{ success: boolean }> => {
+  if (!DEVICE_MANAGEMENT_AVAILABLE) {
+    return { success: false };
+  }
   try {
-    const url = buildFirebaseUrl(`devices/company/${deviceId}`);
+    const url = await buildFirebaseUrl(`devices/company/${deviceId}`);
     const response = await fetchWithTimeout(url, {
       method: "DELETE",
     });
@@ -438,17 +384,22 @@ export const removeCompanyDevice = async (deviceId: string): Promise<{ success: 
 export const saveDriverSession = async (
   driverId: string,
   displayName: string,
-  passcodeHash: string,
+  _unusedPasscodeHash: string | undefined,
   isAdmin: boolean = false,
   isViewer: boolean = false,
   companyId?: string,
   companyName?: string,
   tier?: CompanyTier,
-  authMethod?: 'sso' | 'manual'
+  authMethod?: 'sso' | 'manual',
+  extra?: {
+    roles?: string[];
+    assignedRoutes?: unknown;
+    assignedCustomers?: unknown;
+  },
 ): Promise<void> => {
   await SecureStore.setItemAsync("driverId", driverId);
   await SecureStore.setItemAsync("driverName", displayName);
-  await SecureStore.setItemAsync("passcodeHash", passcodeHash);
+  await SecureStore.deleteItemAsync("passcodeHash");
   await SecureStore.setItemAsync("isAdmin", isAdmin ? "true" : "false");
   await SecureStore.setItemAsync("isViewer", isViewer ? "true" : "false");
   await SecureStore.setItemAsync("driverVerifiedAt", Date.now().toString());
@@ -458,6 +409,12 @@ export const saveDriverSession = async (
   else await SecureStore.deleteItemAsync("companyName");
   if (tier) await SecureStore.setItemAsync("tier", tier);
   else await SecureStore.deleteItemAsync("tier");
+  if (extra?.roles) await SecureStore.setItemAsync("roles", JSON.stringify(extra.roles));
+  else await SecureStore.deleteItemAsync("roles");
+  if (extra?.assignedRoutes) await SecureStore.setItemAsync("assignedRoutes", JSON.stringify(extra.assignedRoutes));
+  else await SecureStore.deleteItemAsync("assignedRoutes");
+  if (extra?.assignedCustomers) await SecureStore.setItemAsync("assignedCustomers", JSON.stringify(extra.assignedCustomers));
+  else await SecureStore.deleteItemAsync("assignedCustomers");
   // Track how driver logged in — SSO sessions are owned by WB S (cascade logout applies),
   // manual sessions are owned by the driver (WB S logout is ignored).
   if (authMethod) await SecureStore.setItemAsync("authMethod", authMethod);
@@ -472,18 +429,16 @@ export const saveDriverSession = async (
 export const getDriverSession = async (): Promise<DriverSession | null> => {
   const driverId = await SecureStore.getItemAsync("driverId");
   const displayName = await SecureStore.getItemAsync("driverName");
-  const passcodeHash = await SecureStore.getItemAsync("passcodeHash");
   const isAdminStr = await SecureStore.getItemAsync("isAdmin");
   const isViewerStr = await SecureStore.getItemAsync("isViewer");
   const companyId = await SecureStore.getItemAsync("companyId");
   const companyName = await SecureStore.getItemAsync("companyName");
   const tier = await SecureStore.getItemAsync("tier");
 
-  if (driverId && displayName && passcodeHash) {
+  if (driverId && displayName) {
     return {
       driverId,
       displayName,
-      passcodeHash,
       isAdmin: isAdminStr === "true",
       isViewer: isViewerStr === "true",
       companyId: companyId || undefined,
@@ -525,53 +480,13 @@ export const isDriverVerified = async (): Promise<boolean> => {
 export const revalidateDriverSession = async (): Promise<boolean> => {
   const session = await getDriverSession();
   if (!session) return false;
-
   try {
-    const hash = session.passcodeHash;
-    if (!hash) {
-      console.log("[DriverAuth] No passcodeHash in session");
-      return false;
-    }
-
-    console.log("[DriverAuth] Revalidating session for hash:", hash.slice(0, 8) + "...");
-    const driverData = await firebaseGet(`${DRIVERS_APPROVED}/${hash}`);
-
-    if (!driverData) {
-      console.log("[DriverAuth] Driver not found, clearing session...");
-      await clearDriverSession();
-      return false;
-    }
-
-    // Check new structure (displayName at root)
-    if (driverData.displayName) {
-      if (driverData.active === false) {
-        console.log("[DriverAuth] Driver deactivated, clearing session...");
-        await clearDriverSession();
-        return false;
-      }
-      return true;
-    }
-
-    // Check legacy structure (nested by deviceId)
-    for (const key of Object.keys(driverData)) {
-      const entry = driverData[key];
-      if (entry.displayName?.toLowerCase() === session.displayName.toLowerCase()) {
-        if (entry.active === false) {
-          console.log("[DriverAuth] Driver deactivated (legacy), clearing session...");
-          await clearDriverSession();
-          return false;
-        }
-        return true;
-      }
-    }
-
-    console.log("[DriverAuth] Driver name not found in approved list");
-    await clearDriverSession();
-    return false;
+    const { verifySessionOnServer } = await import('./firebaseAuthSession');
+    const live = await verifySessionOnServer();
+    return live.active === true && live.driverId === session.driverId;
   } catch (error) {
-    console.error("[DriverAuth] Error revalidating session:", error);
-    // Don't clear session on network error - allow offline use
-    return true;
+    console.error("[DriverAuth] Server revalidation failed:", error);
+    return false;
   }
 };
 
@@ -579,11 +494,21 @@ export const revalidateDriverSession = async (): Promise<boolean> => {
  * Clear driver session (logout)
  */
 export const clearDriverSession = async (): Promise<void> => {
+  const { clearAuthSession } = await import('./firebaseAuthSession');
+  await clearAuthSession();
   await SecureStore.deleteItemAsync("driverId");
   await SecureStore.deleteItemAsync("driverName");
   await SecureStore.deleteItemAsync("passcodeHash");
   await SecureStore.deleteItemAsync("driverVerifiedAt");
   await SecureStore.deleteItemAsync("authMethod");
+  await SecureStore.deleteItemAsync("isAdmin");
+  await SecureStore.deleteItemAsync("isViewer");
+  await SecureStore.deleteItemAsync("companyId");
+  await SecureStore.deleteItemAsync("companyName");
+  await SecureStore.deleteItemAsync("tier");
+  await SecureStore.deleteItemAsync("roles");
+  await SecureStore.deleteItemAsync("assignedRoutes");
+  await SecureStore.deleteItemAsync("assignedCustomers");
   // Legacy cleanup
   await SecureStore.deleteItemAsync("driverPin");
   await SecureStore.deleteItemAsync("driverEmail");
@@ -596,34 +521,12 @@ export const clearDriverSession = async (): Promise<void> => {
  * Check if a passcode is available (not already in use)
  */
 export const isPasscodeAvailable = async (
-  passcode: string,
-  name?: string
+  _passcode: string,
+  _name?: string
 ): Promise<{ available: boolean; reason?: string }> => {
-  try {
-    const hash = await hashPasscode(passcode, name);
-
-    // Check if name+passcode combo is already approved
-    const existingDriver = await firebaseGet(`${DRIVERS_APPROVED}/${hash}`);
-    if (existingDriver) {
-      return { available: false, reason: "This name and passcode combination is already registered" };
-    }
-
-    // Check pending registrations
-    const pendingDrivers = await firebaseGet(DRIVERS_PENDING);
-    if (pendingDrivers) {
-      for (const key of Object.keys(pendingDrivers)) {
-        const pending = pendingDrivers[key];
-        if (pending.passcodeHash === hash) {
-          return { available: false, reason: "A registration with this name and passcode is already pending" };
-        }
-      }
-    }
-
-    return { available: true };
-  } catch (error) {
-    console.error("[DriverAuth] Error checking passcode availability:", error);
-    return { available: false, reason: "Connection error" };
-  }
+  // Availability is decided by requestDriverRegistration. The client no
+  // longer reads drivers/approved or drivers/pending.
+  return { available: true };
 };
 
 // Legacy alias
@@ -642,53 +545,21 @@ export const submitRegistration = async (params: {
   console.log("[DriverAuth] Submitting registration for:", params.displayName);
 
   try {
-    try {
-      const { secureRegister } = await import('./secureDriverAuth');
-      const result = await secureRegister(params);
-      const hash = await hashPasscode(params.passcode, params.displayName);
-      await SecureStore.setItemAsync("pendingPasscodeHash", hash);
-      await SecureStore.setItemAsync("pendingDisplayName", params.displayName);
-      await SecureStore.setItemAsync("pendingRegistrationTime", Date.now().toString());
-      if (result.pendingId) {
-        await SecureStore.setItemAsync("pendingSecureId", result.pendingId);
-      }
-      console.log("[DriverAuth] Secure registration submitted");
-      return { success: true };
-    } catch (secureErr: any) {
-      if (secureErr?.message && /too many|invalid|already/i.test(secureErr.message)) {
-        return { success: false, error: secureErr.message };
-      }
-      console.warn('[DriverAuth] Secure register miss, legacy fallback:', secureErr?.message);
+    const { secureRegister } = await import('./secureDriverAuth');
+    const result = await secureRegister(params);
+    if (!result.pendingId) {
+      return { success: false, error: 'Registration did not return a pending id' };
     }
-
-    const hash = await hashPasscode(params.passcode, params.displayName);
-
-    const registrationData: Record<string, any> = {
-      displayName: params.displayName,
-      passcodeHash: hash,
-      requestedAt: new Date().toISOString(),
-      source: 'wbm',
-    };
-    if (params.companyName?.trim()) {
-      registrationData.companyName = params.companyName.trim();
-    }
-    if (params.legalName?.trim()) {
-      registrationData.legalName = params.legalName.trim();
-    }
-
-    // POST to pending registrations (Firebase generates key)
-    await firebasePost(DRIVERS_PENDING, registrationData);
-
-    // Save pending registration locally
-    await SecureStore.setItemAsync("pendingPasscodeHash", hash);
+    await SecureStore.setItemAsync("pendingSecureId", result.pendingId);
     await SecureStore.setItemAsync("pendingDisplayName", params.displayName);
     await SecureStore.setItemAsync("pendingRegistrationTime", Date.now().toString());
-
-    console.log("[DriverAuth] Registration submitted successfully (legacy)");
+    await SecureStore.deleteItemAsync("pendingPasscodeHash");
+    await SecureStore.deleteItemAsync("pendingPasscode");
+    console.log("[DriverAuth] Secure registration submitted");
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("[DriverAuth] Error submitting registration:", error);
-    return { success: false, error: "Connection error" };
+    return { success: false, error: error?.message || "Connection error" };
   }
 };
 
@@ -696,21 +567,20 @@ export const submitRegistration = async (params: {
  * Get pending registration info
  */
 export const getPendingRegistration = async (): Promise<{
-  passcodeHash: string;
+  pendingSecureId: string;
   displayName: string;
 } | null> => {
-  const passcodeHash = await SecureStore.getItemAsync("pendingPasscodeHash");
+  const pendingSecureId = await SecureStore.getItemAsync("pendingSecureId");
   const displayName = await SecureStore.getItemAsync("pendingDisplayName");
 
-  if (passcodeHash && displayName) {
-    return { passcodeHash, displayName };
+  if (pendingSecureId && displayName) {
+    return { pendingSecureId, displayName };
   }
   return null;
 };
 
 /**
- * Check registration status
- * Structure: drivers/approved/{passcodeHash}/ = { displayName, ... }
+ * Check registration status via checkDriverRegistrationStatus.
  */
 export const checkRegistrationStatus = async (): Promise<
   "pending" | "approved" | "rejected" | "none"
@@ -721,25 +591,12 @@ export const checkRegistrationStatus = async (): Promise<
   }
 
   try {
-    // Check if approved
-    const driver = await firebaseGet(`${DRIVERS_APPROVED}/${pending.passcodeHash}`);
-    if (driver) {
-      return "approved";
+    const { checkDriverRegistrationStatus } = await import('./secureDriverAuth');
+    const result = await checkDriverRegistrationStatus(pending.pendingSecureId);
+    if (result.status === 'approved' || result.status === 'rejected' || result.status === 'pending') {
+      return result.status;
     }
-
-    // Check if still in pending
-    const pendingDrivers = await firebaseGet(DRIVERS_PENDING);
-    if (pendingDrivers) {
-      for (const key of Object.keys(pendingDrivers)) {
-        const registration = pendingDrivers[key];
-        if (registration.passcodeHash === pending.passcodeHash) {
-          return "pending";
-        }
-      }
-    }
-
-    // Not in approved, not in pending = rejected
-    return "rejected";
+    return 'none';
   } catch (error) {
     console.error("[DriverAuth] Error checking registration status:", error);
     return "pending";
@@ -747,8 +604,7 @@ export const checkRegistrationStatus = async (): Promise<
 };
 
 /**
- * Complete registration after approval
- * Called when checkRegistrationStatus returns "approved"
+ * Complete registration after approval by authenticating normally.
  */
 export const completeRegistration = async (): Promise<{
   success: boolean;
@@ -762,23 +618,12 @@ export const completeRegistration = async (): Promise<{
   }
 
   try {
-    const driverData = await firebaseGet(`${DRIVERS_APPROVED}/${pending.passcodeHash}`);
-
-    if (!driverData) {
-      return { success: false, error: "Driver not found in approved list" };
+    const status = await checkRegistrationStatus();
+    if (status !== 'approved') {
+      return { success: false, error: 'Registration is not approved' };
     }
-
-    // New structure: displayName at root
-    const displayName = driverData.displayName || pending.displayName;
-    const isAdmin = driverData.isAdmin === true;
-    const isViewer = driverData.isViewer === true;
-
-    await saveDriverSession(pending.passcodeHash, displayName, pending.passcodeHash, isAdmin, isViewer, driverData.companyId, driverData.companyName, driverData.tier);
-    return {
-      success: true,
-      driverId: pending.passcodeHash,
-      displayName,
-    };
+    await clearPendingRegistration();
+    return { success: false, error: 'approved_login_required', displayName: pending.displayName };
   } catch (error) {
     console.error("[DriverAuth] Error completing registration:", error);
     return { success: false, error: "Connection error" };
@@ -789,6 +634,8 @@ export const completeRegistration = async (): Promise<{
  * Clear pending registration
  */
 export const clearPendingRegistration = async (): Promise<void> => {
+  await SecureStore.deleteItemAsync("pendingSecureId");
+  await SecureStore.deleteItemAsync("pendingPasscode");
   await SecureStore.deleteItemAsync("pendingPasscodeHash");
   await SecureStore.deleteItemAsync("pendingDisplayName");
   await SecureStore.deleteItemAsync("pendingRegistrationTime");
@@ -806,11 +653,11 @@ export const checkWellBuiltAccess = async (): Promise<{
   hasAccess: boolean;
   error?: string;
 }> => {
-  // With Firebase, we always have access (no OAuth needed)
   try {
-    const testResult = await firebaseGet("");
+    const { getValidIdToken } = await import('./firebaseAuthSession');
+    await getValidIdToken();
     return { hasAccess: true };
-  } catch (error) {
+  } catch {
     return { hasAccess: false, error: "Could not connect to server" };
   }
 };

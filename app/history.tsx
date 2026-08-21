@@ -117,11 +117,15 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
   };
 
   const bottomLevel = getBottomLevel(entry.wellName, entry.tankLevelFeet, entry.bblsTaken);
-  // Badge-only: modern editedAt/editCount + legacy status/isEdit — no editHistory fetch
+  // Historical badge only. New secure edits confirm via confirmNewSecureEdit,
+  // not these legacy markers.
   const isEdited = packetShowsEditBadge({
     status: entry.status,
     editedAt: entry.editedAt,
     editCount: entry.editCount,
+    wasEdited: (entry as { wasEdited?: boolean }).wasEdited,
+    isEdit: (entry as { isEdit?: boolean }).isEdit,
+    requestType: (entry as { requestType?: string }).requestType,
   });
 
   return (

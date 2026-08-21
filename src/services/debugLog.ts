@@ -2,11 +2,11 @@
 // Auto-flushes to Firebase when app goes to background
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDriverName } from './driverAuth';
 
-const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
-const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
 const LAST_FLUSH_KEY = '@wellbuilt_debug_last_flush';
+
+/** Remote debug flush is gated — proposed rules deny logs/debug writes. */
+export const DEBUG_LOG_REMOTE_AVAILABLE = false;
 
 interface LogEntry {
   timestamp: Date;
@@ -66,6 +66,11 @@ export function getLogsAsText(): string {
  */
 export async function flushLogsToFirebase(): Promise<boolean> {
   try {
+    if (!DEBUG_LOG_REMOTE_AVAILABLE) {
+      debugLog('[DebugLog] Remote flush unavailable', 'info');
+      return false;
+    }
+
     if (logs.length === 0) return false;
 
     // Only send if there's something interesting (warn or error)
@@ -75,39 +80,10 @@ export async function flushLogsToFirebase(): Promise<boolean> {
       return false;
     }
 
-    const driverName = await getDriverName() || 'Unknown';
-    const today = new Date().toISOString().split('T')[0]; // yyyy-mm-dd
-
-    // Build payload — convert Date objects to ISO strings for Firebase
-    const payload = logs.map(l => ({
-      t: l.timestamp.toISOString(),
-      l: l.level,
-      m: l.message,
-    }));
-
-    const path = `logs/debug/${encodeURIComponent(driverName)}/${today}`;
-    const url = `${FIREBASE_DATABASE_URL}/${path}.json?auth=${FIREBASE_API_KEY}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        flushedAt: new Date().toISOString(),
-        count: payload.length,
-        entries: payload,
-      }),
-    });
-
-    if (response.ok) {
-      console.log('[DebugLog] Flushed', payload.length, 'logs to Firebase for', driverName);
-      await AsyncStorage.setItem(LAST_FLUSH_KEY, new Date().toISOString());
-      return true;
-    } else {
-      console.log('[DebugLog] Flush failed:', response.status);
-      return false;
-    }
-  } catch (e) {
-    console.log('[DebugLog] Flush error:', e);
+    // Governed disable: do not write logs/debug with an API key.
+    debugLog('[DebugLog] Remote flush unavailable', 'info');
+    return false;
+  } catch {
     return false;
   }
 }

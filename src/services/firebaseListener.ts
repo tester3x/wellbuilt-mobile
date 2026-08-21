@@ -5,10 +5,11 @@
 // we subscribe once and Firebase pushes only CHANGES to us.
 // This reduces bandwidth by ~99%.
 
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import {
-  getDatabase,
   ref,
+  query,
+  orderByChild,
+  equalTo,
   onValue,
   onChildChanged,
   onChildAdded,
@@ -16,17 +17,10 @@ import {
   Database,
   Unsubscribe
 } from 'firebase/database';
+import { getFirebaseDatabase, waitForAuthUser } from './firebaseAuthSession';
+import * as SecureStore from 'expo-secure-store';
 
-// Firebase config - same as in firebase.ts
-const firebaseConfig = {
-  apiKey: "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI",
-  databaseURL: "https://wellbuilt-sync-default-rtdb.firebaseio.com",
-  projectId: "wellbuilt-sync",
-};
-
-// Singleton instances
-let app: FirebaseApp | null = null;
-let database: Database | null = null;
+void waitForAuthUser();
 
 // Active listeners
 const activeListeners: Map<string, Unsubscribe> = new Map();
@@ -62,18 +56,7 @@ function checkPendingWatchers(key: string, data: any): void {
 /**
  * Initialize Firebase SDK (singleton)
  */
-function getFirebaseDatabase(): Database {
-  if (!database) {
-    if (getApps().length === 0) {
-      app = initializeApp(firebaseConfig);
-    } else {
-      app = getApps()[0];
-    }
-    database = getDatabase(app);
-    console.log('[FirebaseListener] Database initialized');
-  }
-  return database;
-}
+
 
 /**
  * Subscribe to ALL outgoing responses with a single listener
@@ -86,7 +69,10 @@ export function subscribeToOutgoing(
   onInitial?: (responses: Record<string, any>) => void
 ): () => void {
   const db = getFirebaseDatabase();
-  const outgoingRef = ref(db, 'packets/outgoing');
+  let cancelled = false;
+  let unsubscribeValue: Unsubscribe | null = null;
+  let unsubscribeChildChanged: Unsubscribe | null = null;
+  let unsubscribeChildAdded: Unsubscribe | null = null;
 
   // Store callbacks for internal use
   onResponseUpdate = onUpdate;
@@ -94,9 +80,18 @@ export function subscribeToOutgoing(
 
   let initialLoadComplete = false;
 
+  (async () => {
+    const companyId = await SecureStore.getItemAsync('companyId');
+    if (cancelled) return;
+    if (!companyId) {
+      console.error('[FirebaseListener] missing companyId — refusing unscoped outgoing list');
+      return;
+    }
+    const outgoingRef = query(ref(db, 'packets/outgoing'), orderByChild('companyId'), equalTo(companyId));
+
   // Listen for the initial load and ALL changes
   // onValue fires once with current data, then again on any change
-  const unsubscribeValue = onValue(outgoingRef, (snapshot) => {
+  unsubscribeValue = onValue(outgoingRef, (snapshot) => {
     const data = snapshot.val();
 
     if (!initialLoadComplete) {
@@ -119,58 +114,43 @@ export function subscribeToOutgoing(
     console.error('[FirebaseListener] Error:', error);
   });
 
-  // Also listen for individual child changes for more granular updates
-  const unsubscribeChildChanged = onChildChanged(outgoingRef, (snapshot) => {
-    const key = snapshot.key;
-    const data = snapshot.val();
+    unsubscribeChildChanged = onChildChanged(outgoingRef, (snapshot) => {
+      const key = snapshot.key;
+      const data = snapshot.val();
 
-    if (key?.startsWith('response_') && data && data.wellName) {
-      console.log('[FirebaseListener] Response updated:', data.wellName);
+      if (key?.startsWith('response_') && data && data.wellName) {
+        console.log('[FirebaseListener] Response updated:', data.wellName);
+        checkPendingWatchers(key, data);
+        checkWellWatchers(key, data);
+        onUpdate(data.wellName, data);
+      }
+    });
 
-      // Check if anyone is waiting for this specific response
-      // (fixes bug where updates via onChildChanged weren't resolving waitForResponse promises)
-      checkPendingWatchers(key, data);
+    unsubscribeChildAdded = onChildAdded(outgoingRef, (snapshot) => {
+      if (!initialLoadComplete) return;
+      const key = snapshot.key;
+      const data = snapshot.val();
+      if (key?.startsWith('response_') && data && data.wellName) {
+        console.log('[FirebaseListener] New response added:', data.wellName);
+        checkPendingWatchers(key, data);
+        checkWellWatchers(key, data);
+        onUpdate(data.wellName, data);
+      }
+    });
 
-      // Check if anyone is waiting for ANY change to this well's response (used for edits)
-      checkWellWatchers(key, data);
-
-      onUpdate(data.wellName, data);
-    }
+    console.log('[FirebaseListener] Subscribed to packets/outgoing companyId=', companyId);
+  })().catch((err) => {
+    console.error('[FirebaseListener] Failed to subscribe with company query', err);
   });
 
-  // Listen for new responses added
-  const unsubscribeChildAdded = onChildAdded(outgoingRef, (snapshot) => {
-    // Skip during initial load (onValue handles that)
-    if (!initialLoadComplete) return;
-
-    const key = snapshot.key;
-    const data = snapshot.val();
-
-    if (key?.startsWith('response_') && data && data.wellName) {
-      console.log('[FirebaseListener] New response added:', data.wellName);
-
-      // Check if anyone is waiting for this specific response
-      checkPendingWatchers(key, data);
-
-      // Check if anyone is waiting for ANY change to this well's response (used for edits)
-      checkWellWatchers(key, data);
-
-      // Also notify general update callback
-      onUpdate(data.wellName, data);
-    }
-  });
-
-  // Store for cleanup
   const listenerId = 'outgoing_main';
   activeListeners.set(listenerId, () => {
-    unsubscribeValue();
-    unsubscribeChildChanged();
-    unsubscribeChildAdded();
+    cancelled = true;
+    unsubscribeValue?.();
+    unsubscribeChildChanged?.();
+    unsubscribeChildAdded?.();
   });
 
-  console.log('[FirebaseListener] Subscribed to packets/outgoing');
-
-  // Return unsubscribe function
   return () => {
     const unsub = activeListeners.get(listenerId);
     if (unsub) {
@@ -191,24 +171,27 @@ export function subscribeToWell(
 ): () => void {
   const db = getFirebaseDatabase();
   const wellNameClean = wellName.replace(/\s+/g, '');
+  let cancelled = false;
+  let unsubscribe: Unsubscribe | null = null;
 
-  // We can't query by wellName directly without an index,
-  // so we listen to the whole outgoing and filter
-  // This is still efficient because Firebase only sends changes
-  const outgoingRef = ref(db, 'packets/outgoing');
-
-  const unsubscribe = onChildChanged(outgoingRef, (snapshot) => {
-    const key = snapshot.key;
-    const data = snapshot.val();
-
-    // Check if this is for our well
-    if (key?.includes(wellNameClean) && data && data.wellName === wellName) {
-      onUpdate(data);
-    }
-  });
+  (async () => {
+    const companyId = await SecureStore.getItemAsync('companyId');
+    if (cancelled || !companyId) return;
+    const outgoingRef = query(ref(db, 'packets/outgoing'), orderByChild('companyId'), equalTo(companyId));
+    unsubscribe = onChildChanged(outgoingRef, (snapshot) => {
+      const key = snapshot.key;
+      const data = snapshot.val();
+      if (key?.includes(wellNameClean) && data && data.wellName === wellName) {
+        onUpdate(data);
+      }
+    });
+  })().catch((err) => console.error('[FirebaseListener] subscribeToWell failed', err));
 
   const listenerId = `well_${wellNameClean}`;
-  activeListeners.set(listenerId, unsubscribe);
+  activeListeners.set(listenerId, () => {
+    cancelled = true;
+    unsubscribe?.();
+  });
 
   return () => {
     const unsub = activeListeners.get(listenerId);

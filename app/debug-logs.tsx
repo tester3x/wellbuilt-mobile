@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
-import { getLogs, clearLogs, getLogsAsText, flushLogsToFirebase } from "../src/services/debugLog";
+import { getLogs, clearLogs, getLogsAsText, flushLogsToFirebase, DEBUG_LOG_REMOTE_AVAILABLE } from "../src/services/debugLog";
 
 export default function DebugLogsScreen() {
   const router = useRouter();
@@ -71,6 +71,10 @@ export default function DebugLogsScreen() {
   };
 
   const handleSendToFirebase = async () => {
+    if (!DEBUG_LOG_REMOTE_AVAILABLE) {
+      Alert.alert(t('debugLogs.updateRequired'), t('debugLogs.updateRequiredBody'));
+      return;
+    }
     setIsSending(true);
     try {
       const success = await flushLogsToFirebase();

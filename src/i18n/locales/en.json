@@ -9,7 +9,10 @@
     "cancel": "Cancel",
     "yes": "Yes",
     "error": "Error",
-    "success": "Success"
+    "success": "Success",
+    "updateRequired": "Update required",
+    "updateRequiredBody": "This feature is unavailable in this version. Please update the app.",
+    "unavailable": "Unavailable"
   },
   "welcome": {
     "tagline": "Mobile",
@@ -674,6 +677,8 @@
     "nothingTitle": "Nothing to Send",
     "nothingBody": "No warnings or errors to send.",
     "errorSend": "Failed to send logs.",
+    "updateRequired": "Update required",
+    "updateRequiredBody": "Remote logs are unavailable in this version.",
     "send": "Send",
     "sending": "Sending...",
     "clearConfirm": "Are you sure you want to clear all debug logs?"
@@ -723,6 +728,7 @@
     "timeout": "Connection timed out. Please try again.",
     "unknown": "Something went wrong. Please try again.",
     "firebaseRead": "Could not load data. Please try again.",
-    "firebaseWrite": "Could not save data. Please try again."
+    "firebaseWrite": "Could not save data. Please try again.",
+    "updateRequired": "This feature is unavailable. Please update the app."
   }
 }

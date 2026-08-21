@@ -6,9 +6,8 @@ import NetInfo from "@react-native-community/netinfo";
 import { debugLog } from "./debugLog";
 import { systemLog } from "./systemLog";
 
-// Firebase database URL for connectivity check
+// Firebase database URL for connectivity check (no API-key auth)
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
-const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
 
 // Status change listeners
 type StatusListener = (isOnline: boolean, reason?: string) => void;
@@ -67,11 +66,19 @@ export async function checkFirebaseConnectivity(): Promise<boolean> {
   }
 
   try {
-    // Use same URL format as main firebase.ts - check a lightweight path
-    // The /status path should be readable without special auth rules
-    const url = `${FIREBASE_DATABASE_URL}/status.json?auth=${FIREBASE_API_KEY}`;
+    // Real reachability ping — never throw-as-offline, never use the API key as RTDB auth.
+    // .info/connected answers without data-path rules. 401/403 still means the host is up.
+    let url = `${FIREBASE_DATABASE_URL}/.info/connected.json`;
+    try {
+      const { getValidIdToken } = await import("./firebaseAuthSession");
+      const token = await getValidIdToken();
+      url += `?auth=${encodeURIComponent(token)}`;
+    } catch {
+      // No session is not an outage — still ping unauthenticated.
+    }
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     const response = await fetch(url, {
       method: "GET",

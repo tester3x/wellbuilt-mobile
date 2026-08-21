@@ -21,6 +21,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uploadEditPacket } from './firebase';
+import { confirmNewSecureEdit } from './editMarkers';
 import {
   isOnline,
   mutateQueuedPullInPlace,
@@ -183,7 +184,17 @@ export async function submitPullEdit(
 
 async function readPath(path: string, fetchFn: typeof fetch): Promise<any | null> {
   try {
-    const res = await fetchFn(`${FIREBASE_DATABASE_URL}/${path}.json?auth=${FIREBASE_API_KEY}`, {
+    let token = 'missing';
+    try {
+      const { getValidIdToken } = await import('./firebaseAuthSession');
+      token = await getValidIdToken();
+    } catch {
+      /* injected fetchFn in unit tests */
+    }
+    if (token === 'missing' && fetchFn === fetch) {
+      throw new Error('id_token_required');
+    }
+    const res = await fetchFn(`${FIREBASE_DATABASE_URL}/${path}.json?auth=${encodeURIComponent(token)}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -259,12 +270,21 @@ async function processEditOperationsInner(
       }
       // Original is processed → release the dependent edit.
       try {
-        await uploadEditPacket(op.payload);
-        op.state = 'edit_submitted';
-        op.updatedAt = Date.now();
-        await upsertOp(op);
-        await setPullEditStatus(op.originalPacketId, 'edit_submitted');
-        submitted++;
+        const uploadResult = await uploadEditPacket(op.payload);
+        if (confirmNewSecureEdit(uploadResult)) {
+          op.state = 'edited';
+          op.updatedAt = Date.now();
+          await upsertOp(op);
+          await setPullEditStatus(op.originalPacketId, 'edited');
+          confirmed++;
+          await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
+        } else {
+          op.state = 'edit_submitted';
+          op.updatedAt = Date.now();
+          await upsertOp(op);
+          await setPullEditStatus(op.originalPacketId, 'edit_submitted');
+          submitted++;
+        }
       } catch (err: any) {
         op.attempts += 1;
         op.lastError = String(err?.message || err || 'unknown');
@@ -281,7 +301,9 @@ async function processEditOperationsInner(
     if (op.state === 'edit_submitted') {
       if (!online) { held++; continue; }
       const processedOrig = await readPath(`packets/processed/${op.originalPacketId}`, fetchFn);
-      if (processedOrig && (processedOrig.editedAt || processedOrig.wasEdited || processedOrig.editedByPacketId)) {
+      // New secure edits confirm ONLY via confirmNewSecureEdit proofs.
+      // Legacy editedAt / wasEdited / editedByPacketId / isEdit do not confirm.
+      if (confirmNewSecureEdit(processedOrig)) {
         op.state = 'edited';
         op.updatedAt = Date.now();
         await upsertOp(op);
@@ -293,6 +315,24 @@ async function processEditOperationsInner(
       }
       const wellClean = op.wellName.replace(/\s+/g, '');
       const editKey = `edit_${op.payload.originalPacketTimestamp}_${wellClean}`;
+      try {
+        const { getFieldCommandStatus } = await import('./secureOperationalApi');
+        const receipt = await getFieldCommandStatus({
+          packetId: op.originalPacketId,
+          idempotencyKey: editKey,
+        });
+        if (confirmNewSecureEdit(receipt)) {
+          op.state = 'edited';
+          op.updatedAt = Date.now();
+          await upsertOp(op);
+          await setPullEditStatus(op.originalPacketId, 'edited');
+          confirmed++;
+          await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
+          continue;
+        }
+      } catch {
+        /* receipt lookup is not confirmation */
+      }
       const rejectedEdit = await readPath(`packets/rejected/${editKey}`, fetchFn);
       if (rejectedEdit) {
         op.state = 'edit_rejected';

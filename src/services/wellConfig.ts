@@ -12,7 +12,6 @@ const REFRESH_INTERVAL_DAYS = 3;
 
 // Firebase config
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
-const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
 
 export interface WellConfig {
   allowedBottom: number;
@@ -89,30 +88,18 @@ function needsRefresh(lastFetchISO: string): boolean {
 
 async function fetchConfigFromFirebase(): Promise<WellConfigMap | null> {
   try {
-    // Fetch well_config from Firebase (VBA exports to /well_config)
-    const url = `${FIREBASE_DATABASE_URL}/well_config.json?auth=${FIREBASE_API_KEY}`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      console.error("[WellConfig] Firebase fetch failed:", response.status);
+    // Company/assignment scoped callable. Never GET /well_config.json.
+    const { authorizedCallable } = await import("./firebaseAuthSession");
+    const res = await authorizedCallable<{ ok: true; companyId: string; wells: WellConfigMap }>(
+      "getDriverWellConfig",
+      {},
+    );
+    if (!res?.wells) {
+      console.warn("[WellConfig] Callable returned no wells");
       return null;
     }
-
-    const config = await response.json();
-
-    if (!config) {
-      console.warn("[WellConfig] No well config found in Firebase");
-      return null;
-    }
-
-    console.log("[WellConfig] Fetched", Object.keys(config).length, "wells from Firebase");
-    return config;
+    console.log("[WellConfig] Fetched", Object.keys(res.wells).length, "assigned wells");
+    return res.wells;
   } catch (error) {
     console.error("[WellConfig] Fetch error:", error);
     return null;
@@ -185,13 +172,15 @@ let cachedAssignedWells: string[] | null = null;
  */
 export async function fetchDriverRouteAssignment(): Promise<{ routes: string[]; wells: string[] }> {
   try {
-    const passcodeHash = await SecureStore.getItemAsync("passcodeHash");
-    if (!passcodeHash) {
-      console.log("[WellConfig] No passcodeHash, skipping route assignment fetch");
+    const driverId = await SecureStore.getItemAsync("driverId");
+    if (!driverId) {
+      console.log("[WellConfig] No driverId, skipping route assignment fetch");
       return { routes: [], wells: [] };
     }
 
-    const url = `${FIREBASE_DATABASE_URL}/drivers/approved/${passcodeHash}.json?auth=${FIREBASE_API_KEY}`;
+    const { getValidIdToken } = await import("./firebaseAuthSession");
+    const token = await getValidIdToken();
+    const url = `${FIREBASE_DATABASE_URL}/drivers/profiles/${driverId}.json?auth=${encodeURIComponent(token)}`;
     const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
 
     if (!response.ok) {

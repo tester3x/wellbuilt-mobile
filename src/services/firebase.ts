@@ -3,8 +3,8 @@
 // Much simpler: no OAuth, no access tokens, just HTTP calls to Firebase
 
 import { getDriverId, getDriverName } from './driverAuth';
-import { loadWellConfig, WellConfigMap } from './wellConfig';
-import { packetShowsEditBadge } from './editMarkers';
+import { loadWellConfig, getWellConfig, WellConfigMap } from './wellConfig';
+import { packetShowsEditBadge, selectVisibleHistoryPackets } from './editMarkers';
 
 // *** FIREBASE PROJECT CONFIG ***
 // WellBuilt Sync - Firebase Realtime Database
@@ -99,18 +99,16 @@ export const mintPacketId = (wellName: string, at: Date = new Date()): string =>
   `${buildTimestamp(at)}_${wellName.replace(/\s+/g, '')}_${randomSuffix()}`;
 
 // Build Firebase REST URL
-const buildFirebaseUrl = (path: string, includeAuth = true) => {
-  let url = `${FIREBASE_DATABASE_URL}/${path}.json`;
-  if (includeAuth && FIREBASE_API_KEY) {
-    url += `?auth=${FIREBASE_API_KEY}`;
-  }
-  return url;
+const buildFirebaseUrl = async (path: string) => {
+  const { getValidIdToken } = await import('./firebaseAuthSession');
+  const token = await getValidIdToken();
+  return `${FIREBASE_DATABASE_URL}/${path}.json?auth=${encodeURIComponent(token)}`;
 };
 
 // --- Firebase HTTP helpers -------------------------------------------
 
 const firebaseGet = async (path: string): Promise<any> => {
-  const url = buildFirebaseUrl(path);
+  const url = await buildFirebaseUrl(path);
 
   const response = await fetch(url, {
     method: "GET",
@@ -138,8 +136,10 @@ const firebaseQuery = async (
   const orderByParam = encodeURIComponent(`"${orderByChild}"`);
   const equalToParam = encodeURIComponent(`"${equalTo}"`);
 
+  const { getValidIdToken } = await import('./firebaseAuthSession');
+  const token = await getValidIdToken();
   let url = `${FIREBASE_DATABASE_URL}/${path}.json`;
-  url += `?auth=${FIREBASE_API_KEY}`;
+  url += `?auth=${encodeURIComponent(token)}`;
   url += `&orderBy=${orderByParam}`;
   url += `&equalTo=${equalToParam}`;
 
@@ -167,13 +167,18 @@ const getCachedProcessedData = async (): Promise<any> => {
     return _processedCache.data;
   }
   console.log("[Firebase] Fetching fresh packets/processed data");
-  const data = await firebaseGet("packets/processed");
+  const { getDriverSession } = await import('./driverAuth');
+  const session = await getDriverSession();
+  if (!session?.companyId) {
+    throw new Error('companyId required to read packets/processed');
+  }
+  const data = await firebaseQuery('packets/processed', 'companyId', session.companyId);
   _processedCache = { data, timestamp: Date.now() };
   return data;
 };
 
 const firebasePut = async (path: string, data: any): Promise<void> => {
-  const url = buildFirebaseUrl(path);
+  const url = await buildFirebaseUrl(path);
 
   const response = await fetch(url, {
     method: "PUT",
@@ -188,7 +193,7 @@ const firebasePut = async (path: string, data: any): Promise<void> => {
 };
 
 const firebaseDelete = async (path: string): Promise<void> => {
-  const url = buildFirebaseUrl(path);
+  const url = await buildFirebaseUrl(path);
 
   const response = await fetch(url, {
     method: "DELETE",
@@ -283,28 +288,26 @@ export const uploadTankPacket = async (params: {
 
   const packet: TankPacket = {
     packetId,
-    requestType: 'pull',      // Required by Dashboard processIncomingPull
+    requestType: 'pull',
     wellName,
-    dateTimeUTC,              // ISO 8601 UTC - use for ALL calculations
-    dateTime,                 // Local display string - for legacy/display only
-    timezone,                 // Where the driver was when recording
+    dateTimeUTC,
+    dateTime,
+    timezone,
     tankLevelFeet,
     bblsTaken,
     wellDown: wellDown || false,
     wellDownIsAuthoritative: true,
-    driverId: driverId || undefined,
-    driverName: driverName || undefined,
-    predictedLevelInches: predictedLevelInches ?? undefined, // What was displayed on pull form card
+    predictedLevelInches: predictedLevelInches ?? undefined,
   };
+  void driverId;
+  void driverName;
 
   // Dual-run: secure callable first; legacy RTDB while rules remain open
   try {
     const { secureIngestPacket } = await import('./secureOperationalApi');
     await secureIngestPacket(
       { ...packet, idempotencyKey: packetId } as any,
-      driverId || undefined,
     );
-    await incrementIncomingVersion();
     console.log('[Packet] ✅ SECURE UPLOADED:', packetId);
     return {
       fileName: `pull_${timestamp}_${wellNameClean}.json`,
@@ -314,21 +317,15 @@ export const uploadTankPacket = async (params: {
       wellName: packet.wellName,
     };
   } catch (secureErr: any) {
-    console.warn('[Firebase] secure packet ingest miss, legacy path:', secureErr?.message);
+    console.warn('[Firebase] secure packet ingest failed; not writing public incoming:', secureErr?.message);
+    throw secureErr;
   }
 
-  // Write to Firebase incoming collection (legacy)
-  // Use packetId as the key (like a filename)
   const uploadStart = Date.now();
-  console.log(`[Packet] 🚀 UPLOADING at ${new Date().toLocaleTimeString()}:`, packetId);
-
-  await firebasePut(`${COLL_INCOMING}/${packetId}`, packet);
+  console.log(`[Packet] 🚀 UPLOADED via command at ${new Date().toLocaleTimeString()}:`, packetId);
 
   const uploadMs = Date.now() - uploadStart;
   console.log(`[Packet] ✅ UPLOADED in ${uploadMs}ms at ${new Date().toLocaleTimeString()}:`, packetId);
-
-  // Increment version so VBA knows there's a new packet to process
-  await incrementIncomingVersion();
 
   console.log("[Packet] Uploaded:", packetId, "by driver:", driverName || "unknown");
 
@@ -360,12 +357,21 @@ export const fetchTankResponse = async (
     const wellNameClean = wellName.replace(/\s+/g, "");
 
     // Both Excel and Cloud Function use same format: response_<timestamp>_<wellName>
+    const { getDriverSession } = await import('./driverAuth');
+    const session = await getDriverSession();
+    if (!session?.companyId) return null;
+    const data = await firebaseQuery(COLL_OUTGOING, 'companyId', session.companyId);
     const responseId = `response_${packetTimestamp}_${wellNameClean}`;
-    const data = await firebaseGet(`${COLL_OUTGOING}/${responseId}`);
-
-    if (data) {
+    if (data && data[responseId]) {
       console.log("[Packet] Response found:", responseId);
-      return data as TankResponse;
+      return data[responseId] as TankResponse;
+    }
+    if (data) {
+      const match = Object.values(data).find((row: any) =>
+        row && String(row.wellName || '').replace(/\s+/g, '') === wellNameClean
+          && String(row.lastPullPacketId || '').includes(packetTimestamp),
+      );
+      if (match) return match as TankResponse;
     }
 
     return null;
@@ -388,8 +394,13 @@ export const fetchAnyResponseForWell = async (
   wellName: string
 ): Promise<TankResponse | null> => {
   try {
-    // Get all outgoing responses
-    const data = await firebaseGet(COLL_OUTGOING);
+    const { getDriverSession } = await import('./driverAuth');
+    const session = await getDriverSession();
+    if (!session?.companyId) {
+      console.log("[Firebase] fetchAnyResponseForWell: missing companyId");
+      return null;
+    }
+    const data = await firebaseQuery(COLL_OUTGOING, 'companyId', session.companyId);
 
     if (!data) {
       console.log("[Firebase] fetchAnyResponseForWell: No data in outgoing");
@@ -527,7 +538,6 @@ export const uploadEditPacket = async (params: {
     tankLevelFeet,
     bblsTaken,
     wellDown,
-    wellDownIsAuthoritative: true,
     driverId: driverId || undefined,
     driverName: driverName || undefined,
   };
@@ -536,7 +546,20 @@ export const uploadEditPacket = async (params: {
   const wellNameClean = wellName.replace(/\s+/g, "");
   const editId = `edit_${originalPacketTimestamp}_${wellNameClean}`;
 
-  await firebasePut(`${COLL_INCOMING}/${editId}`, packet);
+  const { secureSubmitFieldCommand } = await import('./secureOperationalApi');
+  const commandResult = await secureSubmitFieldCommand({
+    requestType: 'edit',
+    packetId: originalPacketId,
+    originalPacketId,
+    wellName,
+    dateTimeUTC,
+    dateTime,
+    timezone,
+    tankLevelFeet,
+    bblsTaken,
+    wellDown: wellDown === true,
+    idempotencyKey: editId,
+  });
 
   // NOTE: Do NOT increment incoming_version here for edits.
   // The Cloud Function (processPacket) increments it AFTER writing the response.
@@ -549,6 +572,12 @@ export const uploadEditPacket = async (params: {
     packet,
     packetTimestamp: originalPacketTimestamp,
     wellName: packet.wellName,
+    committed: commandResult?.committed === true,
+    status: commandResult?.status,
+    editCommitted: commandResult?.committed === true ? true : undefined,
+    editCommittedReceiptKey: typeof commandResult?.receiptKey === 'string'
+      ? commandResult.receiptKey
+      : undefined,
   };
 };
 
@@ -567,8 +596,11 @@ export const subscribeToWellResponses = (
 ): (() => void) => {
   const wellNameClean = wellName.replace(/\s+/g, "");
 
-  // Firebase REST streaming URL
-  const url = `${FIREBASE_DATABASE_URL}/${COLL_OUTGOING}.json?orderBy="wellName"&equalTo="${wellName}"`;
+  // Company-scoped query only. Proposed RTDB rules deny unscoped wellName
+  // orderBy on packets/outgoing. The live listener is subscribeToWell.
+  void wellNameClean;
+  void onResponse;
+  const url = `${FIREBASE_DATABASE_URL}/${COLL_OUTGOING}.json?orderBy="companyId"`;
 
   // Note: React Native's fetch doesn't support SSE natively
   // You'd need to use a library like react-native-sse or
@@ -586,7 +618,10 @@ export const subscribeToWellResponses = (
  */
 export const fetchAllOutgoingResponses = async (): Promise<TankResponse[]> => {
   try {
-    const data = await firebaseGet(COLL_OUTGOING);
+    const { getDriverSession } = await import('./driverAuth');
+    const session = await getDriverSession();
+    if (!session?.companyId) return [];
+    const data = await firebaseQuery(COLL_OUTGOING, 'companyId', session.companyId);
     if (!data) return [];
 
     const responses: TankResponse[] = [];
@@ -663,8 +698,17 @@ export const requestWellHistory = async (
   try {
     // Server-side query: only fetch packets for THIS well (not all wells)
     const [processedData, wellConfig] = await Promise.all([
-      firebaseQuery("packets/processed", "wellName", wellName),
-      firebaseGet(`well_config/${wellName}`)
+      (async () => {
+        const { getDriverSession } = await import('./driverAuth');
+        const session = await getDriverSession();
+        if (!session?.companyId) return {};
+        const all = await firebaseQuery('packets/processed', 'companyId', session.companyId);
+        if (!all) return {};
+        return Object.fromEntries(
+          Object.entries(all).filter(([, p]) => (p as any)?.wellName === wellName),
+        );
+      })(),
+      getWellConfig(wellName),
     ]);
 
     if (!processedData || Object.keys(processedData).length === 0) {
@@ -718,7 +762,8 @@ export const requestWellHistory = async (
 
       // Skip non-pull packets (history requests, edits that were superseded, etc.)
       if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
-      if (p.wasEdited === true) continue; // Skip original packets that were edited
+      if (p.deleted === true) continue;
+      // Keep wasEdited originals — they are the visible edited load.
 
       // Badge: modern editedAt/editCount + legacy isEdit / requestType edit
       // (does not require packets/editHistory or undeployed CF fields beyond editedAt)
@@ -726,7 +771,11 @@ export const requestWellHistory = async (
         editCount: p.editCount,
         editedAt: p.editedAt,
         isEdit: p.isEdit,
+        wasEdited: p.wasEdited,
         requestType: p.requestType,
+        status: p.status,
+        editCommitted: p.editCommitted,
+        editCommittedReceiptKey: p.editCommittedReceiptKey,
       });
       let originalData: RawPullData["originalData"] = undefined;
       // Legacy dual-row: load original snapshot when present
@@ -983,8 +1032,11 @@ const waitForWellHistoryResponse = async (
 
   while (Date.now() - startTime < maxWaitMs) {
     try {
-      // Get all outgoing responses and look for history_* for this well
-      const data = await firebaseGet(COLL_OUTGOING);
+      // Company-scoped outgoing only — never the whole tree.
+      const { getDriverSession } = await import('./driverAuth');
+      const session = await getDriverSession();
+      if (!session?.companyId) return null;
+      const data = await firebaseQuery(COLL_OUTGOING, 'companyId', session.companyId);
 
       if (data) {
         for (const key of Object.keys(data)) {
@@ -1062,10 +1114,13 @@ export interface WellPerformance {
 export interface PerformanceResponse {
   wellCount: number;
   wells: WellPerformance[];
-  status: "success" | "error";
+  status: "success" | "error" | "unavailable";
   errorMessage?: string;
   lastUpdated?: string;
 }
+
+/** Proposed RTDB rules deny driver reads of performance/ and performance/{well}. */
+export const PERFORMANCE_READS_AVAILABLE = false;
 
 // --- Helper functions for accuracy calculation ---
 
@@ -1417,7 +1472,7 @@ const extractPullsByWell = (processedData: any): {
 
     // Skip non-pull packets
     if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
-    if (p.wasEdited === true) continue;
+    if (p.deleted === true) continue;
     if (!p.wellName || !p.tankLevelFeet) continue;
     // Skip legacy Excel import duplicates — they have near-identical timestamps
     // to real driver packets and poison the rolling growth rate calculation
@@ -1465,6 +1520,15 @@ export const getPerformanceData = async (
   fromDate?: Date,
   toDate?: Date
 ): Promise<PerformanceResponse> => {
+  if (!PERFORMANCE_READS_AVAILABLE) {
+    return {
+      wellCount: 0,
+      wells: [],
+      status: "unavailable",
+      errorMessage: "update_required",
+    };
+  }
+
   try {
     console.log("[Performance] Reading from performance/ folder...");
 
@@ -1573,6 +1637,10 @@ export const getWellNameList = async (): Promise<{ name: string; route?: string 
  *   - Firebase Cloud Function is the single source of truth for predictions
  */
 export const getRawWellData = async (wellName: string): Promise<RawWellData | null> => {
+  if (!PERFORMANCE_READS_AVAILABLE) {
+    return null;
+  }
+
   try {
     const wellKey = wellName.replace(/\s+/g, "_");
     console.log("[Performance] Reading performance/", wellKey);
@@ -1611,6 +1679,12 @@ export const getWellPerformance = async (
   fromDate?: Date,
   toDate?: Date
 ): Promise<WellPerformance | null> => {
+  if (!PERFORMANCE_READS_AVAILABLE) {
+    const err = new Error("update_required");
+    err.name = "FeatureUnavailableError";
+    throw err;
+  }
+
   try {
     const rawWell = await getRawWellData(wellName);
     if (!rawWell) {
@@ -1658,7 +1732,7 @@ export const getWellPerformance = async (
 
 export const testFirebaseConnection = async (): Promise<boolean> => {
   try {
-    const url = buildFirebaseUrl("");
+    const url = await buildFirebaseUrl(".info/connected");
     const response = await fetch(url);
     return response.ok;
   } catch (error) {

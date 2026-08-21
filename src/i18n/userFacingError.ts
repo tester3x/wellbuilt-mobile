@@ -9,6 +9,7 @@ export type UserFacingErrorKind =
   | 'timeout'
   | 'firebaseRead'
   | 'firebaseWrite'
+  | 'updateRequired'
   | 'unknown';
 
 export function classifyError(err: unknown): UserFacingErrorKind {
@@ -20,6 +21,12 @@ export function classifyError(err: unknown): UserFacingErrorKind {
         : '';
   if (err && typeof err === 'object' && (err as any).name === 'AbortError') return 'timeout';
   if (/timeout|timed out|aborted/i.test(msg)) return 'timeout';
+  if (
+    err && typeof err === 'object' && (err as any).name === 'FeatureUnavailableError'
+  ) {
+    return 'updateRequired';
+  }
+  if (/update_required|feature_unavailable|update required/i.test(msg)) return 'updateRequired';
   if (/network|offline|failed to fetch|unreachable|econnrefused|enetunreach/i.test(msg)) {
     return 'network';
   }

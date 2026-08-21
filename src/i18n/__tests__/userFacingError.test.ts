@@ -26,11 +26,18 @@ describe('userFacingError classification', () => {
   test('unknown fallback', () => {
     expect(classifyError(new Error('something weird'))).toBe('unknown');
   });
+
+  test('classifies gated update-required as not a system outage', () => {
+    const gated = new Error('update_required');
+    gated.name = 'FeatureUnavailableError';
+    expect(classifyError(gated)).toBe('updateRequired');
+    expect(classifyError(new Error('update required'))).toBe('updateRequired');
+  });
 });
 
 describe('user-facing error strings (locale tables)', () => {
   test('EN and ES define safe messages without raw HTTP codes', () => {
-    for (const key of ['network', 'server', 'timeout', 'unknown', 'firebaseRead', 'firebaseWrite']) {
+    for (const key of ['network', 'server', 'timeout', 'unknown', 'firebaseRead', 'firebaseWrite', 'updateRequired']) {
       const enMsg = (en as any).errors[key] as string;
       const esMsg = (es as any).errors[key] as string;
       expect(enMsg.length).toBeGreaterThan(5);

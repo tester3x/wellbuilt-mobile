@@ -9,7 +9,10 @@
     "cancel": "Cancelar",
     "yes": "Sí",
     "error": "Error",
-    "success": "Éxito"
+    "success": "Éxito",
+    "updateRequired": "Actualización requerida",
+    "updateRequiredBody": "Esta función no está disponible en esta versión. Actualice la aplicación.",
+    "unavailable": "No disponible"
   },
   "welcome": {
     "tagline": "Móvil",
@@ -674,6 +677,8 @@
     "nothingTitle": "Nada que Enviar",
     "nothingBody": "No hay advertencias ni errores para enviar.",
     "errorSend": "Error al enviar registros.",
+    "updateRequired": "Actualización requerida",
+    "updateRequiredBody": "Los registros remotos no están disponibles en esta versión.",
     "send": "Enviar",
     "sending": "Enviando...",
     "clearConfirm": "¿Seguro que desea borrar todos los registros de depuración?"
@@ -723,6 +728,7 @@
     "timeout": "Tiempo de conexión agotado. Inténtelo de nuevo.",
     "unknown": "Algo salió mal. Inténtelo de nuevo.",
     "firebaseRead": "No se pudieron cargar los datos. Inténtelo de nuevo.",
-    "firebaseWrite": "No se pudieron guardar los datos. Inténtelo de nuevo."
+    "firebaseWrite": "No se pudieron guardar los datos. Inténtelo de nuevo.",
+    "updateRequired": "Esta función no está disponible. Actualice la aplicación."
   }
 }

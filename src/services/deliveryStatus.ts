@@ -36,7 +36,17 @@ const RECONCILE_BATCH_LIMIT = 25;
 
 async function readPath(path: string, fetchFn: typeof fetch): Promise<any | null> {
   try {
-    const res = await fetchFn(`${FIREBASE_DATABASE_URL}/${path}.json?auth=${FIREBASE_API_KEY}`, {
+    let token = 'missing';
+    try {
+      const { getValidIdToken } = await import('./firebaseAuthSession');
+      token = await getValidIdToken();
+    } catch {
+      /* injected fetchFn in unit tests */
+    }
+    if (token === 'missing' && fetchFn === fetch) {
+      throw new Error('id_token_required');
+    }
+    const res = await fetchFn(`${FIREBASE_DATABASE_URL}/${path}.json?auth=${encodeURIComponent(token)}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });

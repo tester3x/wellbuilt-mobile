@@ -128,7 +128,11 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
     const entries: PullHistoryEntry[] = [];
 
     // Query packets/processed by driverId (server-side indexed)
-    const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}&orderBy="driverId"&equalTo="${driverId}"`;
+    const { getValidIdToken } = await import('./firebaseAuthSession');
+    const token = await getValidIdToken();
+    const session = await import('./driverAuth').then((m) => m.getDriverSession());
+    if (!session?.companyId) throw new Error('companyId required');
+    const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${encodeURIComponent(token)}&orderBy=${encodeURIComponent('"companyId"')}&equalTo=${encodeURIComponent(`"${session.companyId}"`)}`;
     const response = await fetch(url, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
@@ -139,8 +143,9 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
       if (data && typeof data === "object") {
         for (const [packetId, packet] of Object.entries(data)) {
           const p = packet as any;
+          if (p.driverId && p.driverId !== driverId) continue;
           if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
-          if (p.wasEdited === true) continue;
+          if (p.deleted === true) continue;
 
           let sentAt = 0;
           if (p.dateTimeUTC) {
@@ -186,7 +191,7 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
       const driverName = await getDriverName();
       if (driverName) {
         console.log("[PullHistory] No driverId matches, trying driverName fallback:", driverName);
-        const nameUrl = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${FIREBASE_API_KEY}&orderBy="driverName"&equalTo="${encodeURIComponent(driverName)}"`;
+        const nameUrl = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${encodeURIComponent(token)}&orderBy=${encodeURIComponent('"companyId"')}&equalTo=${encodeURIComponent(`"${session.companyId}"`)}`;
         const nameResponse = await fetch(nameUrl, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
@@ -198,7 +203,7 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
             for (const [packetId, packet] of Object.entries(nameData)) {
               const p = packet as any;
               if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
-              if (p.wasEdited === true) continue;
+              if (p.deleted === true) continue;
 
               let sentAt = 0;
               if (p.dateTimeUTC) {

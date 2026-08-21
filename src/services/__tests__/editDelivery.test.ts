@@ -40,6 +40,16 @@ jest.mock('../driverAuth', () => ({
   getDriverName: jest.fn(async () => null),
 }));
 
+const mockGetFieldCommandStatus = jest.fn(async (..._args: unknown[]): Promise<{
+  status?: string;
+  committed?: boolean;
+}> => {
+  throw new Error('no_receipt');
+});
+jest.mock('../secureOperationalApi', () => ({
+  getFieldCommandStatus: (query: unknown) => mockGetFieldCommandStatus(query),
+}));
+
 import { uploadEditPacket, uploadTankPacket } from '../firebase';
 import {
   EditPacketParams,
@@ -98,6 +108,8 @@ beforeEach(async () => {
   mockOnline.value = true;
   mockedUploadTank.mockReset();
   mockedUploadEdit.mockReset();
+  mockGetFieldCommandStatus.mockReset();
+  mockGetFieldCommandStatus.mockRejectedValue(new Error('no_receipt'));
   await clearPullHistory();
 });
 
@@ -201,9 +213,20 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
     let entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.status).not.toBe('edited');          // not yet confirmed
 
-    // Server applies the edit → editedAt appears → NOW it's '(edited)'.
+    // Legacy editedAt must NOT confirm a new secure edit.
     await processEditOperations(makeFetch({
-      [`packets/processed/${PID}`]: { packetId: PID, editedAt: '2026-07-22T20:00:00.000Z' },
+      [`packets/processed/${PID}`]: { packetId: PID, editedAt: '2026-07-22T20:00:00.000Z', wasEdited: true },
+    }));
+    entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.status).not.toBe('edited');
+
+    // Server commit marker is the only confirmation for a new secure edit.
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: {
+        packetId: PID,
+        editCommitted: true,
+        editCommittedReceiptKey: 'receiptkey16gxxxx',
+      },
     }));
     entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edited');
@@ -247,6 +270,64 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edit_rejected');
     expect(entry.status).not.toBe('edited');
+  });
+
+  test('uncommitted rows with editedAt/wasEdited/isEdit do NOT confirm', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: {
+        packetId: PID,
+        editedAt: '2026-07-22T20:00:00.000Z',
+        wasEdited: true,
+        editedByPacketId: 'edit_other',
+        isEdit: true,
+        requestType: 'edit',
+      },
+    }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+    const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.status).not.toBe('edited');
+    expect(entry.editStatus).toBe('edit_submitted');
+  });
+
+  test('editCommitted without a receipt key does NOT confirm', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: { packetId: PID, editCommitted: true },
+    }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+  });
+
+  test('getFieldCommandStatus receipt status committed confirms', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+    mockGetFieldCommandStatus.mockResolvedValueOnce({ status: 'committed' });
+    await processEditOperations(makeFetch({
+      [`packets/processed/${PID}`]: { packetId: PID, editedAt: '2026-07-22T20:00:00.000Z' },
+    }));
+    const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.editStatus).toBe('edited');
+    expect(entry.status).toBe('edited');
+    expect(rawOps()).toHaveLength(0);
+  });
+
+  test('callable committed:true confirms immediately', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    const outcome = await submitPullEdit(editParams(PID), makeFetch({
+      [`packets/processed/${PID}`]: { packetId: PID },
+    }));
+    expect(outcome).toEqual({ mode: 'uploading', submitted: false });
+    expect(rawOps()).toHaveLength(0);
+    const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.editStatus).toBe('edited');
+    expect(entry.status).toBe('edited');
   });
 });
 

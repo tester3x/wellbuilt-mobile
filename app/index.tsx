@@ -33,7 +33,7 @@ export default function Index() {
       }
 
       const session = await getDriverSession();
-      const route = await authorizeEstablishedSession({
+      const { route } = await authorizeEstablishedSession({
         eligibleDestination: '/welcome',
         revalidation,
       });

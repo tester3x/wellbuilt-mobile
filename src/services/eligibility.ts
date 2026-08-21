@@ -1,8 +1,11 @@
 /**
- * Three-state WB-M eligibility. Empty route arrays are NOT a denial and
- * are NOT "all company wells". Only an authoritative successful profile
- * that explicitly has assignedRoutes (including [] or Unrouted-only)
- * may produce ineligible.
+ * Three-state WB-M eligibility against the canonical profile:
+ *   drivers/profiles/{driverId}.assignedRoutes
+ *   drivers/profiles/{driverId}.assignedWells
+ *
+ * Real route or explicit assigned well → eligible.
+ * Explicit [] / Unrouted-only / no wells → ineligible.
+ * Missing fields → unknown. Missing must not grant all company wells.
  */
 
 export type EligibilityStatus = 'eligible' | 'ineligible' | 'unknown';
@@ -37,28 +40,52 @@ export function isRealRouteName(route: string): boolean {
 /**
  * Evaluate a SUCCESSFUL profile's assignedRoutes field.
  * Missing/malformed field → unknown. Never call this on a failed fetch.
+ * Prefer evaluateAuthoritativeAssignment when wells may also be present.
  */
 export function evaluateAuthoritativeAssignedRoutes(raw: unknown): EligibilityStatus {
-  const { present, routes } = normalizeRouteList(raw);
-  if (!present) return 'unknown';
-  if (routes.length === 0) return 'ineligible';
-  if (routes.some(isRealRouteName)) return 'eligible';
-  return 'ineligible';
+  return evaluateAuthoritativeAssignment(raw, undefined);
 }
 
-export function verdictFromAuthoritative(rawRoutes: unknown, rawWells: unknown = null): EligibilityVerdict {
+export function evaluateAuthoritativeAssignment(rawRoutes: unknown, rawWells: unknown): EligibilityStatus {
+  return verdictFromAuthoritative(rawRoutes, rawWells).status;
+}
+
+export function verdictFromAuthoritative(rawRoutes: unknown, rawWells: unknown = undefined): EligibilityVerdict {
   const routesNorm = normalizeRouteList(rawRoutes);
   const wellsNorm = normalizeRouteList(rawWells);
-  const status = evaluateAuthoritativeAssignedRoutes(rawRoutes);
+  if (!routesNorm.present && !wellsNorm.present) {
+    return {
+      status: 'unknown',
+      source: 'authoritative',
+      routes: null,
+      wells: null,
+      reason: 'assignment_unavailable',
+      retryable: true,
+    };
+  }
+  const hasRealRoute = routesNorm.present && routesNorm.routes.some(isRealRouteName);
+  const hasWell = wellsNorm.present && wellsNorm.routes.length > 0;
+  if (hasRealRoute || hasWell) {
+    return {
+      status: 'eligible',
+      source: 'authoritative',
+      routes: routesNorm.present ? routesNorm.routes : null,
+      wells: wellsNorm.present ? wellsNorm.routes : null,
+      reason: hasRealRoute ? 'real_route' : 'assigned_wells',
+      retryable: false,
+    };
+  }
+  const reason =
+    routesNorm.present && routesNorm.routes.length > 0 && !hasRealRoute && !hasWell
+      ? 'unrouted_only'
+      : 'explicit_empty';
   return {
-    status,
+    status: 'ineligible',
     source: 'authoritative',
     routes: routesNorm.present ? routesNorm.routes : null,
     wells: wellsNorm.present ? wellsNorm.routes : null,
-    reason: status === 'eligible' ? 'real_route'
-      : status === 'ineligible' ? (routesNorm.present && routesNorm.routes.length === 0 ? 'explicit_empty' : 'unrouted_only')
-        : 'assigned_routes_missing',
-    retryable: status === 'unknown',
+    reason,
+    retryable: false,
   };
 }
 
@@ -151,7 +178,11 @@ export function decideBootstrapRoute(opts: {
 }
 
 /** Same data → same verdict regardless of login method. */
-export function eligibilityFromSameProfile(rawAssignedRoutes: unknown, hasCompanyId: boolean): EligibilityVerdict {
+export function eligibilityFromSameProfile(
+  rawAssignedRoutes: unknown,
+  hasCompanyId: boolean,
+  rawAssignedWells: unknown = undefined,
+): EligibilityVerdict {
   if (!hasCompanyId) {
     return resolveEligibility({
       hasCompanyId: false,
@@ -160,5 +191,5 @@ export function eligibilityFromSameProfile(rawAssignedRoutes: unknown, hasCompan
       sessionRoutes: null,
     });
   }
-  return verdictFromAuthoritative(rawAssignedRoutes);
+  return verdictFromAuthoritative(rawAssignedRoutes, rawAssignedWells);
 }

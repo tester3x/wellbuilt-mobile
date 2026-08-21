@@ -101,10 +101,20 @@ async function fetchConfigFromFirebase(): Promise<WellConfigMap | null> {
   try {
     // Company/assignment scoped callable. Never GET /well_config.json.
     const { authorizedCallable } = await import("./firebaseAuthSession");
-    const res = await authorizedCallable<{ ok: true; companyId: string; wells: WellConfigMap }>(
+    const res = await authorizedCallable<{
+      ok: true;
+      companyId: string;
+      wells: WellConfigMap;
+      assignmentStatus?: string;
+      assignmentReason?: string;
+    }>(
       "getDriverWellConfig",
       {},
     );
+    if (res?.assignmentStatus === "assignment_unavailable") {
+      console.warn("[WellConfig] assignment_unavailable");
+      return null;
+    }
     if (!res?.wells) {
       console.warn("[WellConfig] Callable returned no wells");
       return null;

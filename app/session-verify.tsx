@@ -15,17 +15,23 @@ export default function SessionVerifyScreen() {
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState<string | null>(null);
 
+  const sanitizeReason = (reason: string | undefined | null): string => {
+    const raw = String(reason || '').trim();
+    if (/^[a-z0-9_.:-]+$/i.test(raw) && raw.length <= 80) return raw;
+    return 'assignment_unavailable';
+  };
+
   const retry = async () => {
     setBusy(true);
     try {
       const revalidation = await revalidateDriverSessionClassified();
-      const dest = await authorizeEstablishedSession({
+      const decision = await authorizeEstablishedSession({
         eligibleDestination: '/welcome',
         revalidation,
       });
-      setCode(dest);
-      if (dest !== '/session-verify') {
-        router.replace(dest);
+      setCode(sanitizeReason(decision.eligibility.reason));
+      if (decision.route !== '/session-verify') {
+        router.replace(decision.route);
         return;
       }
     } catch {
@@ -34,6 +40,12 @@ export default function SessionVerifyScreen() {
       setBusy(false);
     }
   };
+
+  React.useEffect(() => {
+    void retry();
+    // First paint must show the verdict reason, not the dest path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <View style={styles.container}>

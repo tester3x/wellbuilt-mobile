@@ -76,6 +76,7 @@ export async function bootstrapDriverSession() {
     roles: string[];
     tier: string | null;
     assignedRoutes: unknown;
+    assignedWells: unknown;
     assignedCustomers: unknown;
     dashboardUid: string | null;
     dashboardRole: string | null;

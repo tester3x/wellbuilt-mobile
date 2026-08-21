@@ -119,7 +119,7 @@ export default function DriverLoginScreen() {
             // Auto-complete registration and go to app
             const result = await completeRegistration();
             if (result.success) {
-              const dest = await authorizeEstablishedSession({
+              const { route: dest } = await authorizeEstablishedSession({
                 eligibleDestination: '/welcome',
                 revalidation: 'valid',
               });
@@ -159,7 +159,7 @@ export default function DriverLoginScreen() {
           setMode('login');
           return;
         }
-        const dest = await authorizeEstablishedSession({
+        const { route: dest } = await authorizeEstablishedSession({
           eligibleDestination: '/welcome',
           revalidation,
         });
@@ -221,7 +221,7 @@ export default function DriverLoginScreen() {
           assignedRoutes: result.assignedRoutes,
           authMethod: 'manual',
         });
-        const dest = await authorizeEstablishedSession({
+        const { route: dest } = await authorizeEstablishedSession({
           eligibleDestination: '/welcome',
           revalidation: 'valid',
         });
@@ -310,7 +310,7 @@ export default function DriverLoginScreen() {
       const result = await completeRegistration();
 
       if (result.success) {
-        const dest = await authorizeEstablishedSession({
+        const { route: dest } = await authorizeEstablishedSession({
           eligibleDestination: '/welcome',
           revalidation: 'valid',
         });

@@ -33,7 +33,7 @@ export default function WbmSsoCallback() {
         companyId: exchanged.companyId,
         authMethod: 'sso',
       });
-      const dest = await authorizeEstablishedSession({
+      const { route: dest } = await authorizeEstablishedSession({
         eligibleDestination: '/(tabs)',
         revalidation: 'valid',
       });

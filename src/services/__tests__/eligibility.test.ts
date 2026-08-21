@@ -44,6 +44,21 @@ describe('three-state eligibility', () => {
     expect(evaluateAuthoritativeAssignedRoutes(undefined)).toBe('unknown');
     expect(evaluateAuthoritativeAssignedRoutes(null)).toBe('unknown');
     expect(verdictFromAuthoritative(undefined).status).toBe('unknown');
+    expect(verdictFromAuthoritative(undefined).reason).toBe('assignment_unavailable');
+  });
+
+  test('assigned wells only is eligible', () => {
+    const v = verdictFromAuthoritative(undefined, ['Gab 1']);
+    expect(v.status).toBe('eligible');
+    expect(v.reason).toBe('assigned_wells');
+    expect(v.wells).toEqual(['Gab 1']);
+  });
+
+  test('Unrouted-only is ineligible unless assignedWells grant access', () => {
+    expect(verdictFromAuthoritative(['Unrouted']).status).toBe('ineligible');
+    const v = verdictFromAuthoritative(['Unrouted'], ['Gab 1']);
+    expect(v.status).toBe('eligible');
+    expect(v.reason).toBe('assigned_wells');
   });
 
   test('unknown fetch never routes to /no-access', () => {
@@ -134,6 +149,17 @@ describe('three-state eligibility', () => {
   test('normalizeRouteList rejects non-arrays', () => {
     expect(normalizeRouteList('North')).toEqual({ present: false, routes: [] });
     expect(normalizeRouteList(['  North Loop  ', 3, '']).routes).toEqual(['North Loop']);
+  });
+});
+
+describe('session-verify shows verdict reason', () => {
+  test('renders EligibilityVerdict.reason rather than the dest path as the code', () => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const src = fs.readFileSync(path.join(__dirname, '../../../app/session-verify.tsx'), 'utf8');
+    expect(src).toContain('decision.eligibility.reason');
+    expect(src).not.toMatch(/setCode\(dest\)/);
+    expect(src).not.toMatch(/setCode\(decision\.route\)/);
   });
 });
 

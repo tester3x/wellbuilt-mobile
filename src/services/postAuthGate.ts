@@ -1,21 +1,40 @@
 /**
  * Single post-auth authorization used by manual login, SSO, and cold start.
- * Callers must router.replace() ONLY the returned route — never welcome/tabs
+ * Callers must router.replace() ONLY decision.route — never welcome/tabs
  * before this verdict.
  */
-import { decidePostAuthRoute, type BootstrapRoute, type EligibleDestination } from './eligibility';
+import {
+  decidePostAuthRoute,
+  unknownVerdict,
+  type BootstrapRoute,
+  type EligibleDestination,
+  type EligibilityVerdict,
+} from './eligibility';
 import { resolveCurrentEligibility } from './wellConfig';
+
+export interface PostAuthDecision {
+  route: BootstrapRoute;
+  eligibility: EligibilityVerdict;
+}
 
 export async function authorizeEstablishedSession(opts: {
   eligibleDestination: EligibleDestination;
   revalidation: 'valid' | 'revoked' | 'unknown';
-}): Promise<BootstrapRoute> {
-  if (opts.revalidation === 'revoked') return '/driver-login';
+}): Promise<PostAuthDecision> {
+  if (opts.revalidation === 'revoked') {
+    return {
+      route: '/driver-login',
+      eligibility: unknownVerdict('session_revoked', false),
+    };
+  }
   const eligibility = await resolveCurrentEligibility();
-  return decidePostAuthRoute({
-    hasLocalSession: true,
-    revalidation: opts.revalidation,
-    eligibility: eligibility.status,
-    eligibleDestination: opts.eligibleDestination,
-  });
+  return {
+    route: decidePostAuthRoute({
+      hasLocalSession: true,
+      revalidation: opts.revalidation,
+      eligibility: eligibility.status,
+      eligibleDestination: opts.eligibleDestination,
+    }),
+    eligibility,
+  };
 }

@@ -54,6 +54,7 @@ export interface DriverSession {
   tier?: CompanyTier;
   roles?: string[];
   assignedRoutes?: string[];
+  assignedWells?: string[];
   assignedCustomers?: unknown;
   authMethod?: 'sso' | 'manual';
 }
@@ -434,6 +435,7 @@ export const saveDriverSession = async (
   extra?: {
     roles?: string[];
     assignedRoutes?: unknown;
+    assignedWells?: unknown;
     assignedCustomers?: unknown;
   },
 ): Promise<void> => {
@@ -453,6 +455,8 @@ export const saveDriverSession = async (
   else await SecureStore.deleteItemAsync("roles");
   if (extra?.assignedRoutes) await SecureStore.setItemAsync("assignedRoutes", JSON.stringify(extra.assignedRoutes));
   else await SecureStore.deleteItemAsync("assignedRoutes");
+  if (extra?.assignedWells) await SecureStore.setItemAsync("assignedWells", JSON.stringify(extra.assignedWells));
+  else await SecureStore.deleteItemAsync("assignedWells");
   if (extra?.assignedCustomers) await SecureStore.setItemAsync("assignedCustomers", JSON.stringify(extra.assignedCustomers));
   else await SecureStore.deleteItemAsync("assignedCustomers");
   // Track how driver logged in — SSO sessions are owned by WB S (cascade logout applies),
@@ -477,10 +481,12 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
 
   const rolesRaw = await SecureStore.getItemAsync("roles");
   const routesRaw = await SecureStore.getItemAsync("assignedRoutes");
+  const wellsRaw = await SecureStore.getItemAsync("assignedWells");
   const customersRaw = await SecureStore.getItemAsync("assignedCustomers");
   const authMethod = await SecureStore.getItemAsync("authMethod");
   let roles: string[] | undefined;
   let assignedRoutes: string[] | undefined;
+  let assignedWells: string[] | undefined;
   let assignedCustomers: unknown;
   try { roles = rolesRaw ? JSON.parse(rolesRaw) : undefined; } catch { roles = undefined; }
   try {
@@ -488,6 +494,11 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
     const n = normalizeRouteList(parsed);
     assignedRoutes = n.present ? n.routes : undefined;
   } catch { assignedRoutes = undefined; }
+  try {
+    const parsed = wellsRaw ? JSON.parse(wellsRaw) : undefined;
+    const n = normalizeRouteList(parsed);
+    assignedWells = n.present ? n.routes : undefined;
+  } catch { assignedWells = undefined; }
   try { assignedCustomers = customersRaw ? JSON.parse(customersRaw) : undefined; } catch { assignedCustomers = undefined; }
 
   if (driverId && displayName) {
@@ -501,6 +512,7 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
       tier: (tier as CompanyTier) || undefined,
       roles,
       assignedRoutes,
+      assignedWells,
       assignedCustomers,
       authMethod: authMethod === 'sso' || authMethod === 'manual' ? authMethod : undefined,
     };
@@ -572,6 +584,7 @@ export async function completeAuthenticatedSession(input: {
   tier?: string | null;
   roles?: unknown;
   assignedRoutes?: unknown;
+  assignedWells?: unknown;
   assignedCustomers?: unknown;
   authMethod: 'sso' | 'manual';
 }): Promise<DriverSession> {
@@ -590,6 +603,7 @@ export async function completeAuthenticatedSession(input: {
       tier: profile.tier ?? merged.tier,
       roles: profile.roles ?? merged.roles,
       assignedRoutes: profile.assignedRoutes !== undefined ? profile.assignedRoutes : merged.assignedRoutes,
+      assignedWells: profile.assignedWells !== undefined ? profile.assignedWells : merged.assignedWells,
       assignedCustomers: profile.assignedCustomers !== undefined ? profile.assignedCustomers : merged.assignedCustomers,
     };
   } catch (err) {
@@ -597,6 +611,7 @@ export async function completeAuthenticatedSession(input: {
   }
   const roles = Array.isArray(merged.roles) ? merged.roles.filter((r): r is string => typeof r === 'string') : ['driver'];
   const routesNorm = normalizeRouteList(merged.assignedRoutes);
+  const wellsNorm = normalizeRouteList(merged.assignedWells);
   try {
     await saveDriverSession(
       merged.driverId,
@@ -611,6 +626,7 @@ export async function completeAuthenticatedSession(input: {
       {
         roles,
         assignedRoutes: routesNorm.present ? routesNorm.routes : merged.assignedRoutes,
+        assignedWells: wellsNorm.present ? wellsNorm.routes : merged.assignedWells,
         assignedCustomers: merged.assignedCustomers,
       },
     );
@@ -637,6 +653,7 @@ export async function completeAuthenticatedSession(input: {
     const verdict = eligibilityFromSameProfile(
       routesNorm.present ? routesNorm.routes : merged.assignedRoutes,
       !!session.companyId,
+      wellsNorm.present ? wellsNorm.routes : merged.assignedWells,
     );
     if (verdict.status !== 'unknown') await persistDurableEligibility(verdict);
   } catch { /* eligibility persistence is not a login blocker */ }
@@ -661,6 +678,7 @@ export const clearDriverSession = async (): Promise<void> => {
   await SecureStore.deleteItemAsync("tier");
   await SecureStore.deleteItemAsync("roles");
   await SecureStore.deleteItemAsync("assignedRoutes");
+  await SecureStore.deleteItemAsync("assignedWells");
   await SecureStore.deleteItemAsync("assignedCustomers");
   // Legacy cleanup
   await SecureStore.deleteItemAsync("driverPin");

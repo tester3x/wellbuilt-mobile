@@ -85,6 +85,19 @@ describe('classified assignment fetch never becomes [] denial', () => {
     expect(v.routes).toEqual(['North Loop']);
   });
 
+  test('assigned wells only is eligible and scoped', async () => {
+    const v = await fetchAssignmentClassified(jest.fn(async () => jsonRes(200, { assignedWells: ['Gab 1'] })));
+    expect(v.status).toBe('eligible');
+    expect(v.reason).toBe('assigned_wells');
+    expect(v.wells).toEqual(['Gab 1']);
+  });
+
+  test('missing canonical assignment is assignment_unavailable, never eligible', async () => {
+    const v = await fetchAssignmentClassified(jest.fn(async () => jsonRes(200, { displayName: 'Mike', companyId: 'liquid-gold' })));
+    expect(v.status).toBe('unknown');
+    expect(v.reason).toBe('assignment_unavailable');
+  });
+
   test('durable last-known eligibility after fresh process', async () => {
     await persistDurableEligibility({
       status: 'eligible',
@@ -114,9 +127,9 @@ describe('classified assignment fetch never becomes [] denial', () => {
     const manual = await authorizeEstablishedSession({ eligibleDestination: '/welcome', revalidation: 'valid' });
     const sso = await authorizeEstablishedSession({ eligibleDestination: '/(tabs)', revalidation: 'valid' });
     const cold = await authorizeEstablishedSession({ eligibleDestination: '/welcome', revalidation: 'unknown' });
-    expect(manual).toBe('/welcome');
-    expect(sso).toBe('/(tabs)');
-    expect(cold).toBe('/welcome');
+    expect(manual.route).toBe('/welcome');
+    expect(sso.route).toBe('/(tabs)');
+    expect(cold.route).toBe('/welcome');
   });
 
   test('authorizeEstablishedSession: explicit empty routes → /no-access for manual and SSO', async () => {

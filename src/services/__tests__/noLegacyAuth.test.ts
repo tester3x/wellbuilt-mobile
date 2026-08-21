@@ -42,8 +42,9 @@ describe('WB-M no longer uses insecure legacy auth', () => {
   });
 
   it('secure login persists a custom-token Firebase session', () => {
-    expect(secure).toMatch(/persistCustomTokenSession/);
     expect(secure).toMatch(/authenticateDriver/);
+    expect(driverAuth).toMatch(/persistCustomTokenSession/);
+    expect(driverAuth).toMatch(/completeAuthenticatedSession/);
   });
 
   it('packet uploads do not fall back to public incoming', () => {

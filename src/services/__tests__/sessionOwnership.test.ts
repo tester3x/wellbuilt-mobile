@@ -20,29 +20,39 @@ jest.mock('expo-secure-store', () => ({
 jest.mock('expo-crypto', () => ({ digestStringAsync: jest.fn() }));
 jest.mock('expo-device', () => ({ modelName: 'test' }));
 
+let mockUser: { uid: string } | null = { uid: 'uid-a' };
+const mockCallable = jest.fn();
 const mocks = {
   clearAuthSession: jest.fn(async () => {
     mockUser = null;
     delete mockSecure.wb_auth_uid;
   }),
+  persistCustomTokenSession: jest.fn(async (token: string) => {
+    const uid = String(token).includes('b') ? 'uid-b' : 'uid-a';
+    mockUser = { uid };
+    mockSecure.wb_auth_uid = uid;
+    return { idToken: `id-${uid}`, refreshToken: 'rt' };
+  }),
 };
-let mockUser: { uid: string } | null = { uid: 'uid-a' };
-const mockCallable = jest.fn();
 jest.mock('../firebaseAuthSession', () => ({
   clearAuthSession: () => mocks.clearAuthSession(),
+  persistCustomTokenSession: (token: string) => mocks.persistCustomTokenSession(token),
   authorizedCallable: (...args: unknown[]) => mockCallable(...args),
   getFirebaseAuth: () => ({ currentUser: mockUser }),
 }));
 
+import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   captureCurrentSessionPermit,
   clearDriverSession,
+  completeAuthenticatedSession,
   performPermittedLogout,
+  setLogoutAfterRereadPauseForTests,
+  setSaveSessionWritePauseForTests,
 } from '../driverAuth';
 import { checkCanonicalSsoLogout } from '../ssoLogout';
 import {
-  beginLoginTransition,
   bumpSessionGeneration,
   getSessionGeneration,
   persistBootstrapEnvelopeForTests,
@@ -51,6 +61,7 @@ import {
   resetWellConfigCacheForTests,
   seedWellConfigCacheForTests,
   setEnvelopeRemovePauseForTests,
+  setHasAuthSessionForTests,
   WBM_ENVELOPE_KEY,
 } from '../wellConfig';
 import { snapshotToEnvelope, type WbmBootstrapSnapshot } from '../wbmBootstrapCache';
@@ -79,6 +90,26 @@ function snap(driverId: string): WbmBootstrapSnapshot {
   };
 }
 
+function profile(driverId: string) {
+  return {
+    driverId,
+    companyId: 'liquid-gold',
+    displayName: driverId,
+    legalName: driverId,
+    companyName: 'Liquid Gold',
+    isAdmin: false,
+    isViewer: false,
+    roles: ['driver'],
+    tier: 'field',
+    assignedRoutes: [`route-${driverId}`],
+    assignedCustomers: null,
+    dashboardUid: null,
+    dashboardRole: null,
+    defaultPackageId: null,
+    active: true as const,
+  };
+}
+
 function installA() {
   mockUser = { uid: 'uid-a' };
   mockSecure.driverId = 'driver-a';
@@ -86,9 +117,9 @@ function installA() {
   mockSecure.authMethod = 'sso';
   mockSecure.driverVerifiedAt = String(verified);
   mockSecure.wb_auth_uid = 'uid-a';
+  mockSecure.driverName = 'driver-a';
   mockSecure.assignedRoutes = JSON.stringify(['route-driver-a']);
-  const env = snapshotToEnvelope(snap('driver-a'));
-  seedWellConfigCacheForTests(env);
+  seedWellConfigCacheForTests(snapshotToEnvelope(snap('driver-a')));
 }
 
 async function durableDriverId(): Promise<string | undefined> {
@@ -97,9 +128,26 @@ async function durableDriverId(): Promise<string | undefined> {
   return (JSON.parse(raw) as { driverId?: string }).driverId;
 }
 
+function loginB() {
+  return completeAuthenticatedSession({
+    customToken: 'tok-b',
+    driverId: 'driver-b',
+    displayName: 'driver-b',
+    companyId: 'liquid-gold',
+    companyName: 'Liquid Gold',
+    authMethod: 'sso',
+    roles: ['driver'],
+    assignedRoutes: ['route-driver-b'],
+  });
+}
+
 describe('end-to-end session ownership', () => {
   beforeEach(async () => {
     resetWellConfigCacheForTests();
+    setHasAuthSessionForTests(() => !!mockUser);
+    setSaveSessionWritePauseForTests(null);
+    setLogoutAfterRereadPauseForTests(null);
+    setEnvelopeRemovePauseForTests(null);
     for (const k of Object.keys(asyncStore)) delete asyncStore[k];
     for (const k of Object.keys(mockSecure)) delete mockSecure[k];
     mocks.clearAuthSession.mockReset();
@@ -107,128 +155,157 @@ describe('end-to-end session ownership', () => {
       mockUser = null;
       delete mockSecure.wb_auth_uid;
     });
+    mocks.persistCustomTokenSession.mockReset();
+    mocks.persistCustomTokenSession.mockImplementation(async (token: string) => {
+      const uid = String(token).includes('b') ? 'uid-b' : 'uid-a';
+      mockUser = { uid };
+      mockSecure.wb_auth_uid = uid;
+      return { idToken: `id-${uid}`, refreshToken: 'rt' };
+    });
+    (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (k: string, v: string) => {
+      mockSecure[k] = v;
+    });
     mockCallable.mockReset();
+    mockCallable.mockImplementation(async (name: string) => {
+      if (name === 'bootstrapDriverSession') return profile('driver-b');
+      if (name === 'bootstrapWbmSession') {
+        const id = mockSecure.driverId || 'driver-b';
+        return snap(id);
+      }
+      throw new Error(`unexpected callable ${name}`);
+    });
     installA();
     await persistBootstrapEnvelopeForTests(snap('driver-a'));
   });
 
-  it('A permit is rejected after B authentication begins; B remains intact', async () => {
-    mockCallable.mockResolvedValue({
-      driverId: 'driver-a',
-      companyId: 'liquid-gold',
-      logoutAt: newer,
-    });
-    const permit = await checkCanonicalSsoLogout();
-    expect(permit?.driverId).toBe('driver-a');
-    expect(permit?.authUid).toBe('uid-a');
-
-    await beginLoginTransition(async () => {
-      mockUser = { uid: 'uid-b' };
-      mockSecure.driverId = 'driver-b';
-      mockSecure.companyId = 'liquid-gold';
-      mockSecure.authMethod = 'sso';
-      mockSecure.driverVerifiedAt = String(verified + 1);
-      mockSecure.wb_auth_uid = 'uid-b';
-      mockSecure.assignedRoutes = JSON.stringify(['route-driver-b']);
-      await persistBootstrapEnvelopeForTests(snap('driver-b'));
+  it('real B login pauses in bootstrapDriverSession; concurrent logout waits; final state is entirely B', async () => {
+    let releaseBootstrap: () => void = () => undefined;
+    mockCallable.mockImplementation(async (name: string) => {
+      if (name === 'bootstrapDriverSession') {
+        await new Promise<void>((resolve) => { releaseBootstrap = resolve; });
+        return profile('driver-b');
+      }
+      if (name === 'bootstrapWbmSession') return snap(mockSecure.driverId || 'driver-b');
+      throw new Error(`unexpected callable ${name}`);
     });
 
-    const loggedOut = await performPermittedLogout(permit!);
+    const permitA = await captureCurrentSessionPermit();
+    expect(permitA?.driverId).toBe('driver-a');
+
+    const pendingB = loginB();
+    for (let i = 0; i < 80 && mocks.persistCustomTokenSession.mock.calls.length === 0; i += 1) {
+      await Promise.resolve();
+    }
+    expect(mocks.persistCustomTokenSession).toHaveBeenCalled();
+    expect(mockUser?.uid).toBe('uid-b');
+
+    const pendingLogout = performPermittedLogout(permitA!);
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    expect(mocks.clearAuthSession).not.toHaveBeenCalled();
+
+    releaseBootstrap();
+    await pendingB;
+    const loggedOut = await pendingLogout;
+
     expect(loggedOut).toBe(false);
+    expect(mockUser?.uid).toBe('uid-b');
     expect(mockSecure.driverId).toBe('driver-b');
     expect(mockSecure.companyId).toBe('liquid-gold');
     expect(mockSecure.authMethod).toBe('sso');
-    expect(mockSecure.driverVerifiedAt).toBe(String(verified + 1));
     expect(mockSecure.wb_auth_uid).toBe('uid-b');
-    expect(mockUser?.uid).toBe('uid-b');
     expect(await durableDriverId()).toBe('driver-b');
     expect(peekWellConfigCacheForTests().envelope?.driverId).toBe('driver-b');
     expect(peekWellConfigCacheForTests().envelope?.eligibility.routes).toEqual(['route-driver-b']);
+  });
+
+  it('real B login pauses during each saveDriverSession write; queued logout cannot mix or delete B', async () => {
+    const waiters: Array<() => void> = [];
+    const keys: string[] = [];
+    setSaveSessionWritePauseForTests(async (key) => {
+      keys.push(key);
+      await new Promise<void>((resolve) => { waiters.push(resolve); });
+    });
+
+    const permitA = await captureCurrentSessionPermit();
+    const pendingB = loginB();
+    for (let i = 0; i < 80 && waiters.length === 0; i += 1) await Promise.resolve();
+    expect(keys[0]).toBe('driverId');
+
+    const pendingLogout = performPermittedLogout(permitA!);
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    expect(mocks.clearAuthSession).not.toHaveBeenCalled();
+
+    for (let n = 0; n < 40; n += 1) {
+      const before = waiters.length;
+      waiters.splice(0).forEach((r) => r());
+      for (let i = 0; i < 20; i += 1) await Promise.resolve();
+      expect(mocks.clearAuthSession).not.toHaveBeenCalled();
+      if (mockSecure.driverId === 'driver-b') {
+        expect(mockUser?.uid).toBe('uid-b');
+        expect(mockSecure.wb_auth_uid).toBe('uid-b');
+      }
+      if (before === waiters.length && waiters.length === 0) break;
+    }
+    await pendingB;
+    const loggedOut = await pendingLogout;
+    expect(loggedOut).toBe(false);
+    expect(mockSecure.driverId).toBe('driver-b');
+    expect(mockSecure.authMethod).toBe('sso');
+    expect(mockUser?.uid).toBe('uid-b');
+    expect(await durableDriverId()).toBe('driver-b');
     expect(mocks.clearAuthSession).not.toHaveBeenCalled();
   });
 
-  it('A logout with deferred signOut serializes behind B login; final state is completely B', async () => {
-    const permit = await captureCurrentSessionPermit();
-    expect(permit?.driverId).toBe('driver-a');
-    const genBefore = getSessionGeneration();
-
-    let releaseSignOut: () => void = () => undefined;
-    mocks.clearAuthSession.mockImplementationOnce(() => new Promise((resolve) => {
-      releaseSignOut = () => {
-        mockUser = null;
-        delete mockSecure.wb_auth_uid;
-        resolve(undefined);
-      };
-    }));
-
-    const pendingLogout = performPermittedLogout(permit!);
-    for (let i = 0; i < 40 && mocks.clearAuthSession.mock.calls.length === 0; i += 1) {
-      await Promise.resolve();
-    }
-    expect(mocks.clearAuthSession).toHaveBeenCalled();
-    expect(getSessionGeneration()).toBe(genBefore + 1);
-    expect(peekWellConfigCacheForTests().envelope).toBeNull();
-    expect(mockSecure.driverId).toBe('driver-a');
-
-    const pendingB = beginLoginTransition(async () => {
-      mockUser = { uid: 'uid-b' };
-      mockSecure.driverId = 'driver-b';
-      mockSecure.companyId = 'liquid-gold';
-      mockSecure.authMethod = 'sso';
-      mockSecure.driverVerifiedAt = String(verified + 5);
-      mockSecure.wb_auth_uid = 'uid-b';
-      mockSecure.assignedRoutes = JSON.stringify(['route-driver-b']);
-      await persistBootstrapEnvelopeForTests(snap('driver-b'));
+  it('saveDriverSession failure after Firebase sign-in rolls back Auth, SecureStore, memory, and envelope', async () => {
+    (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (k: string, v: string) => {
+      if (k === 'driverName') throw new Error('secure_store_write_failed');
+      mockSecure[k] = v;
     });
 
-    for (let i = 0; i < 20; i += 1) await Promise.resolve();
-    expect(mockSecure.driverId).toBe('driver-a');
-    expect(await durableDriverId()).toBe('driver-a');
-
-    releaseSignOut();
-    const loggedOut = await pendingLogout;
-    await pendingB;
-
-    expect(loggedOut).toBe(true);
-    expect(mockUser?.uid).toBe('uid-b');
-    expect(mockSecure.driverId).toBe('driver-b');
-    expect(mockSecure.companyId).toBe('liquid-gold');
-    expect(mockSecure.authMethod).toBe('sso');
-    expect(mockSecure.driverVerifiedAt).toBe(String(verified + 5));
-    expect(mockSecure.wb_auth_uid).toBe('uid-b');
-    expect(getSessionGeneration()).toBe(genBefore + 2);
-    expect(await durableDriverId()).toBe('driver-b');
-    expect(peekWellConfigCacheForTests().envelope?.driverId).toBe('driver-b');
-    expect(peekWellConfigCacheForTests().envelope?.eligibility.wells).toEqual(['driver-b-well']);
-    expect(peekWellConfigCacheForTests().envelope?.eligibility.routes).toEqual(['route-driver-b']);
+    await expect(loginB()).rejects.toThrow(/secure_store_write_failed/);
+    expect(mockUser).toBeNull();
+    expect(mockSecure.wb_auth_uid).toBeUndefined();
+    expect(mockSecure.driverId).toBeUndefined();
+    expect(mockSecure.driverName).toBeUndefined();
+    expect(mockSecure.authMethod).toBeUndefined();
+    expect(mockSecure.driverVerifiedAt).toBeUndefined();
+    expect(peekWellConfigCacheForTests()).toEqual({ config: null, envelope: null });
+    expect(await durableDriverId()).toBeUndefined();
   });
 
-  it('generation change after live reread and before destructive logout performs no logout', async () => {
-    mockCallable.mockResolvedValue({
-      driverId: 'driver-a',
-      companyId: 'liquid-gold',
-      logoutAt: newer,
-    });
-    const permit = await checkCanonicalSsoLogout();
-    expect(permit).toBeTruthy();
+  it('generation change while performPermittedLogout awaits live fields rejects with zero destruction', async () => {
+    const permit = await captureCurrentSessionPermit();
+    let releasePause: () => void = () => undefined;
+    setLogoutAfterRereadPauseForTests(() => new Promise((resolve) => {
+      releasePause = () => resolve();
+    }));
+
+    const pending = performPermittedLogout(permit!);
+    for (let i = 0; i < 80; i += 1) await Promise.resolve();
     bumpSessionGeneration();
-    const loggedOut = await performPermittedLogout(permit!);
-    expect(loggedOut).toBe(false);
+    releasePause();
+    await expect(pending).resolves.toBe(false);
+    expect(mocks.clearAuthSession).not.toHaveBeenCalled();
     expect(mockSecure.driverId).toBe('driver-a');
     expect(mockSecure.authMethod).toBe('sso');
     expect(mockUser?.uid).toBe('uid-a');
     expect(await durableDriverId()).toBe('driver-a');
     expect(peekWellConfigCacheForTests().envelope?.driverId).toBe('driver-a');
-    expect(mocks.clearAuthSession).not.toHaveBeenCalled();
   });
 
-  it('same-session A with matching logoutAt still logs out normally', async () => {
-    mockCallable.mockResolvedValue({
-      driverId: 'driver-a',
-      companyId: 'liquid-gold',
-      logoutAt: newer,
+  it('completed login followed by a valid same-session logout clears exactly that session', async () => {
+    await loginB();
+    expect(mockSecure.driverId).toBe('driver-b');
+    expect(mockUser?.uid).toBe('uid-b');
+    mockCallable.mockImplementation(async (name: string) => {
+      if (name === 'bootstrapWbmSession') {
+        return { ...snap('driver-b'), logoutAt: Date.now() + 60_000 };
+      }
+      return profile('driver-b');
     });
     const permit = await checkCanonicalSsoLogout();
+    expect(permit?.driverId).toBe('driver-b');
+    expect(permit?.authUid).toBe('uid-b');
     const loggedOut = await performPermittedLogout(permit!);
     expect(loggedOut).toBe(true);
     expect(mockSecure.driverId).toBeUndefined();
@@ -240,15 +317,26 @@ describe('end-to-end session ownership', () => {
   });
 
   it('manual logout still works and clears its own exact current session', async () => {
+    await loginB();
     await clearDriverSession();
     expect(mockSecure.driverId).toBeUndefined();
     expect(mockSecure.companyId).toBeUndefined();
     expect(mockSecure.authMethod).toBeUndefined();
-    expect(mockSecure.driverVerifiedAt).toBeUndefined();
     expect(mockSecure.wb_auth_uid).toBeUndefined();
     expect(mockUser).toBeNull();
     expect(await durableDriverId()).toBeUndefined();
     expect(peekWellConfigCacheForTests()).toEqual({ config: null, envelope: null });
+  });
+
+  it('A permit is rejected after B authentication begins; B remains intact', async () => {
+    const permitA = await captureCurrentSessionPermit();
+    await loginB();
+    const loggedOut = await performPermittedLogout(permitA!);
+    expect(loggedOut).toBe(false);
+    expect(mockSecure.driverId).toBe('driver-b');
+    expect(mockUser?.uid).toBe('uid-b');
+    expect(await durableDriverId()).toBe('driver-b');
+    expect(mocks.clearAuthSession).not.toHaveBeenCalled();
   });
 
   it('stale A cleanup pauses before removal; B writes; B envelope remains', async () => {

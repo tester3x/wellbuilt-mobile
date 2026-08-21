@@ -208,8 +208,9 @@ export default function DriverLoginScreen() {
     try {
       const result = await verifyLogin(displayName.trim(), passcode.trim());
 
-      if (result.valid && result.driverId && result.displayName) {
+      if (result.valid && result.driverId && result.displayName && result.customToken) {
         await completeAuthenticatedSession({
+          customToken: result.customToken,
           driverId: result.driverId,
           displayName: result.displayName,
           isAdmin: result.isAdmin,

@@ -52,6 +52,7 @@ describe('verifyLogin end-to-end classification', () => {
 
   test('success returns typed routes/roles', async () => {
     mockSecureLogin.mockResolvedValue({
+      customToken: 'tok',
       driverId: 'd1',
       displayName: 'Mike',
       isAdmin: false,

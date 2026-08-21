@@ -1,8 +1,8 @@
 /**
- * WB-M secure login. Always uses authenticateDriver + a real Firebase session.
- * Never falls back to drivers/approved/{hash}.
+ * WB-M secure login. Always uses authenticateDriver.
+ * Firebase custom-token sign-in happens inside completeAuthenticatedSession
+ * so the whole establishment is one owned session transition.
  */
-import { persistCustomTokenSession } from './firebaseAuthSession';
 
 const PROJECT_ID = 'wellbuilt-sync';
 const REGION = 'us-central1';
@@ -40,8 +40,7 @@ export async function secureLogin(displayName: string, passcode: string) {
   if (!data.customToken) {
     throw new Error('authenticateDriver did not return a Firebase custom token');
   }
-  const session = await persistCustomTokenSession(data.customToken);
-  return { ...data, idToken: session.idToken, refreshToken: session.refreshToken };
+  return data;
 }
 
 export async function secureRegister(params: {
@@ -99,6 +98,8 @@ export async function exchangeSsoCode(params: {
     code: params.code,
     codeVerifier: params.codeVerifier,
   });
-  const session = await persistCustomTokenSession(data.customToken);
-  return { ...data, idToken: session.idToken, refreshToken: session.refreshToken };
+  if (!data.customToken) {
+    throw new Error('ssoExchangeAuthorizationCode did not return a Firebase custom token');
+  }
+  return data;
 }

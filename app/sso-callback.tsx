@@ -28,6 +28,7 @@ export default function WbmSsoCallback() {
       const verifier = await takeWbmPkce(params.state);
       const exchanged = await exchangeSsoCode({ code: params.code, codeVerifier: verifier });
       await completeAuthenticatedSession({
+        customToken: exchanged.customToken,
         driverId: exchanged.driverId,
         displayName: exchanged.displayName || exchanged.driverId,
         companyId: exchanged.companyId,

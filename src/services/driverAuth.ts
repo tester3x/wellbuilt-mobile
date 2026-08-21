@@ -194,6 +194,7 @@ export type LoginErrorKind =
 export type VerifyLoginResult =
   | {
       valid: true;
+      customToken: string;
       driverId: string;
       displayName: string;
       isAdmin: boolean;
@@ -241,8 +242,12 @@ export const verifyLogin = async (
   try {
     const { secureLogin } = await import('./secureDriverAuth');
     const s = await secureLogin(displayName, passcode);
+    if (!s.customToken) {
+      throw new Error('authenticateDriver did not return a Firebase custom token');
+    }
     return {
       valid: true,
+      customToken: s.customToken,
       driverId: s.driverId,
       displayName: s.displayName,
       isAdmin: s.isAdmin === true,
@@ -429,6 +434,16 @@ export const removeCompanyDevice = async (deviceId: string): Promise<{ success: 
 /**
  * Save driver session after successful passcode verification
  */
+let saveSessionWritePause: ((key: string) => Promise<void>) | null = null;
+export function setSaveSessionWritePauseForTests(fn: ((key: string) => Promise<void>) | null): void {
+  saveSessionWritePause = fn;
+}
+
+async function writeSessionItem(key: string, value: string): Promise<void> {
+  if (saveSessionWritePause) await saveSessionWritePause(key);
+  await SecureStore.setItemAsync(key, value);
+}
+
 export const saveDriverSession = async (
   driverId: string,
   displayName: string,
@@ -445,27 +460,27 @@ export const saveDriverSession = async (
     assignedCustomers?: unknown;
   },
 ): Promise<void> => {
-  await SecureStore.setItemAsync("driverId", driverId);
-  await SecureStore.setItemAsync("driverName", displayName);
+  await writeSessionItem("driverId", driverId);
+  await writeSessionItem("driverName", displayName);
   await SecureStore.deleteItemAsync("passcodeHash");
-  await SecureStore.setItemAsync("isAdmin", isAdmin ? "true" : "false");
-  await SecureStore.setItemAsync("isViewer", isViewer ? "true" : "false");
-  await SecureStore.setItemAsync("driverVerifiedAt", Date.now().toString());
-  if (companyId) await SecureStore.setItemAsync("companyId", companyId);
+  await writeSessionItem("isAdmin", isAdmin ? "true" : "false");
+  await writeSessionItem("isViewer", isViewer ? "true" : "false");
+  await writeSessionItem("driverVerifiedAt", Date.now().toString());
+  if (companyId) await writeSessionItem("companyId", companyId);
   else await SecureStore.deleteItemAsync("companyId");
-  if (companyName) await SecureStore.setItemAsync("companyName", companyName);
+  if (companyName) await writeSessionItem("companyName", companyName);
   else await SecureStore.deleteItemAsync("companyName");
-  if (tier) await SecureStore.setItemAsync("tier", tier);
+  if (tier) await writeSessionItem("tier", tier);
   else await SecureStore.deleteItemAsync("tier");
-  if (extra?.roles) await SecureStore.setItemAsync("roles", JSON.stringify(extra.roles));
+  if (extra?.roles) await writeSessionItem("roles", JSON.stringify(extra.roles));
   else await SecureStore.deleteItemAsync("roles");
-  if (extra?.assignedRoutes) await SecureStore.setItemAsync("assignedRoutes", JSON.stringify(extra.assignedRoutes));
+  if (extra?.assignedRoutes) await writeSessionItem("assignedRoutes", JSON.stringify(extra.assignedRoutes));
   else await SecureStore.deleteItemAsync("assignedRoutes");
-  if (extra?.assignedCustomers) await SecureStore.setItemAsync("assignedCustomers", JSON.stringify(extra.assignedCustomers));
+  if (extra?.assignedCustomers) await writeSessionItem("assignedCustomers", JSON.stringify(extra.assignedCustomers));
   else await SecureStore.deleteItemAsync("assignedCustomers");
   // Track how driver logged in — SSO sessions are owned by WB S (cascade logout applies),
   // manual sessions are owned by the driver (WB S logout is ignored).
-  if (authMethod) await SecureStore.setItemAsync("authMethod", authMethod);
+  if (authMethod) await writeSessionItem("authMethod", authMethod);
 
   // Clear any pending registration data
   await clearPendingRegistration();
@@ -579,7 +594,40 @@ export function identityChanged(
   return false;
 }
 
+/**
+ * Rollback after Firebase sign-in without taking the session gate or
+ * requiring captureCurrentSessionPermit (wb_auth_uid may already be gone).
+ * Caller must already own the session-transition.
+ */
+async function rollbackOwnedLogin(): Promise<void> {
+  try {
+    const { clearAuthSession } = await import('./firebaseAuthSession');
+    await clearAuthSession();
+  } catch { /* ignore */ }
+  try {
+    await SecureStore.deleteItemAsync('wb_auth_uid');
+  } catch { /* ignore */ }
+  clearWbmMemoryCatalog();
+  try {
+    await wipeDurableWellConfigCache();
+  } catch { /* ignore */ }
+  for (const key of SESSION_SECURE_KEYS) {
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch { /* ignore */ }
+  }
+  try {
+    await clearPendingRegistration();
+  } catch { /* ignore */ }
+}
+
+/**
+ * One owned, serialized authenticated-session establishment.
+ * Manual and SSO both call this after they hold a custom token.
+ * Does not nest runSessionTransition: persistCustomTokenSession is ungated.
+ */
 export async function completeAuthenticatedSession(input: {
+  customToken: string;
   driverId: string;
   displayName: string;
   isAdmin?: boolean;
@@ -592,77 +640,102 @@ export async function completeAuthenticatedSession(input: {
   assignedCustomers?: unknown;
   authMethod: 'sso' | 'manual';
 }): Promise<DriverSession> {
-  let merged = { ...input };
-  try {
-    const { bootstrapDriverSession } = await import('./secureDriverAuth');
-    const profile = await bootstrapDriverSession();
-    merged = {
-      ...merged,
-      driverId: profile.driverId || merged.driverId,
-      displayName: profile.displayName || merged.displayName,
-      isAdmin: profile.isAdmin === true,
-      isViewer: profile.isViewer === true,
-      companyId: profile.companyId ?? merged.companyId,
-      companyName: profile.companyName ?? merged.companyName,
-      tier: profile.tier ?? merged.tier,
-      roles: profile.roles ?? merged.roles,
-      assignedRoutes: profile.assignedRoutes !== undefined ? profile.assignedRoutes : merged.assignedRoutes,
-      assignedCustomers: profile.assignedCustomers !== undefined ? profile.assignedCustomers : merged.assignedCustomers,
-    };
-  } catch (err) {
-    console.log('[DriverAuth] bootstrapDriverSession unavailable, using authenticate/SSO payload', err);
-  }
-  const roles = Array.isArray(merged.roles) ? merged.roles.filter((r): r is string => typeof r === 'string') : ['driver'];
-  const routesNorm = normalizeRouteList(merged.assignedRoutes);
-  const prevId = await SecureStore.getItemAsync('driverId');
-  const prevCo = await SecureStore.getItemAsync('companyId');
-  const nextId = merged.driverId;
-  const nextCo = merged.companyId || '';
-  if (identityChanged({ driverId: prevId, companyId: prevCo }, { driverId: nextId, companyId: nextCo })) {
+  if (!input.customToken) throw new Error('missing_custom_token');
+  return runSessionTransition(async () => {
+    const claimed = claimSessionGeneration();
     try {
-      clearWbmMemoryCatalog();
-      await wipeDurableWellConfigCache();
-    } catch { /* cache isolation must not block login */ }
-  }
-  try {
-    await saveDriverSession(
-      merged.driverId,
-      merged.displayName,
-      undefined,
-      merged.isAdmin === true,
-      merged.isViewer === true,
-      merged.companyId || undefined,
-      merged.companyName || undefined,
-      (merged.tier as CompanyTier | undefined) || undefined,
-      merged.authMethod,
-      {
-        roles,
-        assignedRoutes: routesNorm.present ? routesNorm.routes : merged.assignedRoutes,
-        assignedCustomers: merged.assignedCustomers,
-      },
-    );
-  } catch (err) {
-    try {
-      const { clearAuthSession } = await import('./firebaseAuthSession');
-      await clearAuthSession();
-    } catch { /* ignore */ }
-    await clearDriverSession();
-    throw err;
-  }
-  const session = await getDriverSession();
-  if (!session) {
-    await clearDriverSession();
-    throw new Error('session_persist_failed');
-  }
-  try {
-    const { notifyAuthenticated } = await import('./deliveryStatus');
-    notifyAuthenticated();
-  } catch { /* reconcile is not a login blocker */ }
-  try {
-    const { fetchAssignmentClassified } = await import('./wellConfig');
-    await fetchAssignmentClassified();
-  } catch { /* eligibility persistence is not a login blocker */ }
-  return session;
+      const { persistCustomTokenSession, getFirebaseAuth } = await import('./firebaseAuthSession');
+      const tokens = await persistCustomTokenSession(input.customToken);
+      let uid: string | null = null;
+      try {
+        uid = getFirebaseAuth().currentUser?.uid || null;
+      } catch {
+        uid = null;
+      }
+      if (!uid || !tokens.idToken) throw new Error('auth_uid_token_invalid');
+
+      let merged = { ...input };
+      try {
+        const { bootstrapDriverSession } = await import('./secureDriverAuth');
+        const profile = await bootstrapDriverSession();
+        merged = {
+          ...merged,
+          driverId: profile.driverId || merged.driverId,
+          displayName: profile.displayName || merged.displayName,
+          isAdmin: profile.isAdmin === true,
+          isViewer: profile.isViewer === true,
+          companyId: profile.companyId ?? merged.companyId,
+          companyName: profile.companyName ?? merged.companyName,
+          tier: profile.tier ?? merged.tier,
+          roles: profile.roles ?? merged.roles,
+          assignedRoutes: profile.assignedRoutes !== undefined ? profile.assignedRoutes : merged.assignedRoutes,
+          assignedCustomers: profile.assignedCustomers !== undefined ? profile.assignedCustomers : merged.assignedCustomers,
+        };
+      } catch (err) {
+        console.log('[DriverAuth] bootstrapDriverSession unavailable, using authenticate/SSO payload', err);
+      }
+
+      const roles = Array.isArray(merged.roles) ? merged.roles.filter((r): r is string => typeof r === 'string') : ['driver'];
+      const routesNorm = normalizeRouteList(merged.assignedRoutes);
+      const prevId = await SecureStore.getItemAsync('driverId');
+      const prevCo = await SecureStore.getItemAsync('companyId');
+      const nextId = merged.driverId;
+      const nextCo = merged.companyId || '';
+      if (identityChanged({ driverId: prevId, companyId: prevCo }, { driverId: nextId, companyId: nextCo })) {
+        clearWbmMemoryCatalog();
+        await wipeDurableWellConfigCache();
+      }
+
+      await saveDriverSession(
+        merged.driverId,
+        merged.displayName,
+        undefined,
+        merged.isAdmin === true,
+        merged.isViewer === true,
+        merged.companyId || undefined,
+        merged.companyName || undefined,
+        (merged.tier as CompanyTier | undefined) || undefined,
+        merged.authMethod,
+        {
+          roles,
+          assignedRoutes: routesNorm.present ? routesNorm.routes : merged.assignedRoutes,
+          assignedCustomers: merged.assignedCustomers,
+        },
+      );
+
+      const session = await getDriverSession();
+      if (!session) throw new Error('session_persist_failed');
+
+      try {
+        const { fetchAssignmentClassified } = await import('./wellConfig');
+        await fetchAssignmentClassified();
+      } catch { /* eligibility persistence is not a login blocker */ }
+
+      if (getSessionGeneration() !== claimed) throw new Error('session_generation_lost');
+      let liveUid: string | null = null;
+      try {
+        liveUid = getFirebaseAuth().currentUser?.uid || null;
+      } catch {
+        liveUid = null;
+      }
+      if (liveUid !== uid) throw new Error('auth_uid_lost');
+      const storedId = await SecureStore.getItemAsync('driverId');
+      const storedMethod = await SecureStore.getItemAsync('authMethod');
+      if (storedId !== session.driverId || storedMethod !== merged.authMethod) {
+        throw new Error('session_identity_lost');
+      }
+
+      try {
+        const { notifyAuthenticated } = await import('./deliveryStatus');
+        notifyAuthenticated();
+      } catch { /* reconcile is not a login blocker */ }
+
+      return session;
+    } catch (err) {
+      await rollbackOwnedLogin();
+      throw err;
+    }
+  });
 }
 
 const SESSION_SECURE_KEYS = [
@@ -756,6 +829,11 @@ async function deleteOwnedSecureStore(permit: SessionLogoutPermit): Promise<bool
   return true;
 }
 
+let logoutAfterRereadPause: (() => Promise<void>) | null = null;
+export function setLogoutAfterRereadPauseForTests(fn: (() => Promise<void>) | null): void {
+  logoutAfterRereadPause = fn;
+}
+
 /**
  * Destructive logout of exactly the session named by the permit.
  * Stale or mismatched permits perform no sign-out, SecureStore deletion,
@@ -765,7 +843,14 @@ export async function performPermittedLogout(permit: SessionLogoutPermit): Promi
   return runSessionTransition(async () => {
     if (!permitGenerationCurrent(permit)) return false;
     const liveBefore = await readLiveSessionFields();
+    if (!permitGenerationCurrent(permit)) return false;
     if (!identityMatchesPermit(permit, liveBefore)) return false;
+
+    if (logoutAfterRereadPause) await logoutAfterRereadPause();
+
+    if (!permitGenerationCurrent(permit)) return false;
+    const liveImmediate = await readLiveSessionFields();
+    if (!identityMatchesPermit(permit, liveImmediate)) return false;
 
     const claimed = claimSessionGeneration();
 

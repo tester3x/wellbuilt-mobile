@@ -23,10 +23,22 @@ describe('WB-M session, SSO, registration, listener', () => {
     expect(fn).toMatch(/sessionStolenByOther/);
     expect(driverAuth).toMatch(/captureCurrentSessionPermit/);
     expect(session).toMatch(/signOut\(getFirebaseAuth\(\)\)/);
-    expect(session).toMatch(/beginLoginTransition/);
     const persist = session.slice(session.indexOf('export async function persistCustomTokenSession'));
-    expect(persist.indexOf('beginLoginTransition')).toBeGreaterThan(-1);
-    expect(persist.indexOf('beginLoginTransition')).toBeLessThan(persist.indexOf('signInWithCustomToken'));
+    expect(persist).toMatch(/signInWithCustomToken/);
+    expect(persist).not.toMatch(/beginLoginTransition/);
+    expect(persist).not.toMatch(/runSessionTransition/);
+    const establishFn = driverAuth.slice(
+      driverAuth.indexOf('export async function completeAuthenticatedSession'),
+      driverAuth.indexOf('const SESSION_SECURE_KEYS'),
+    );
+    expect(establishFn).toMatch(/runSessionTransition/);
+    expect(establishFn.indexOf('claimSessionGeneration')).toBeGreaterThan(-1);
+    expect(establishFn.indexOf('claimSessionGeneration')).toBeLessThan(establishFn.indexOf('persistCustomTokenSession'));
+    expect(establishFn).toMatch(/bootstrapDriverSession/);
+    expect(establishFn).toMatch(/saveDriverSession/);
+    expect(establishFn).toMatch(/fetchAssignmentClassified/);
+    expect(establishFn).toMatch(/rollbackOwnedLogin/);
+    expect(establishFn).not.toMatch(/await clearDriverSession/);
   });
 
   it('SSO callback bootstraps authoritative profile and does not hardcode isAdmin false', () => {
@@ -68,7 +80,8 @@ describe('WB-M session, SSO, registration, listener', () => {
   });
 
   it('manual login still authenticates with a custom-token session', () => {
-    expect(secure).toMatch(/persistCustomTokenSession/);
     expect(secure).toMatch(/authenticateDriver/);
+    expect(secure).not.toMatch(/persistCustomTokenSession/);
+    expect(driverAuth).toMatch(/persistCustomTokenSession/);
   });
 });

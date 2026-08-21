@@ -15,7 +15,6 @@ import {
   User,
 } from 'firebase/auth';
 import { Database, getDatabase } from 'firebase/database';
-import { beginLoginTransition } from './wbmSessionFence';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI',
@@ -83,16 +82,19 @@ export function waitForAuthUser(): Promise<User | null> {
   return authReady;
 }
 
+/**
+ * Firebase custom-token sign-in only. Must run inside an owned
+ * session-transition (completeAuthenticatedSession). Does not take the gate.
+ */
 export async function persistCustomTokenSession(customToken: string): Promise<{
   idToken: string;
   refreshToken: string;
 }> {
-  return beginLoginTransition(async () => {
-    const cred = await signInWithCustomToken(getFirebaseAuth(), customToken);
-    const idToken = await cred.user.getIdToken();
-    await SecureStore.setItemAsync('wb_auth_uid', cred.user.uid);
-    return { idToken, refreshToken: cred.user.refreshToken || '' };
-  });
+  const cred = await signInWithCustomToken(getFirebaseAuth(), customToken);
+  const idToken = await cred.user.getIdToken();
+  if (!cred.user?.uid || !idToken) throw new Error('auth_uid_token_invalid');
+  await SecureStore.setItemAsync('wb_auth_uid', cred.user.uid);
+  return { idToken, refreshToken: cred.user.refreshToken || '' };
 }
 
 export async function clearAuthSession(): Promise<void> {

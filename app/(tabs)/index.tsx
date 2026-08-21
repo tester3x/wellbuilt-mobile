@@ -34,6 +34,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { TankFisherman } from '../../src/components/TankFisherman';
+import { TankFlipAquarium } from '../../src/components/TankFlipAquarium';
 import { TankPelican } from '../../src/components/TankPelican';
 import {
   DUCK_FONT_SIZE,
@@ -52,7 +53,6 @@ import {
   nextPelicanDelayMs,
   pelicanPerchX,
   poleTipSway,
-  rippleGeometry,
 } from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
 // Response processing handled entirely by backgroundSync
@@ -123,12 +123,6 @@ const INTERIOR_WIDTH = TANK_WIDTH - INTERIOR_LEFT - INTERIOR_RIGHT; // for alive
 // DEV ONLY — force a specific alive-tank egg for local Expo testing so rare
 // spawns don't require reopening wells dozens of times. MUST stay null in commits.
 const FORCE_EGG: 'fish' | 'fisherman' | 'duck' | null = null;
-// Stylized water-top ripple texture — number of wave-crest scallops to tile
-// across the interior (clipped to the water). Precomputed once.
-// Responsive shallow-ripple geometry — wide overlapped crests, hard
-// amplitude cap; see rippleGeometry() for the no-V-point rationale.
-const RIPPLE = rippleGeometry(INTERIOR_WIDTH);
-const RIPPLE_HUMPS = Array.from({ length: RIPPLE.humpCount }, (_, i) => i);
 const NUMBER_OFFSET = isTablet ? TANK_HEIGHT * 0.025 : SCREEN_HEIGHT * 0.015;
 
 // Responsive font sizing - tablets get scaled down to prevent oversized text
@@ -350,8 +344,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // per mount and kept stable for the session (no rerolling on refresh); each
   // fish also gets randomized depth / start / range / speed at the same time.
   const wavePhase = useSharedValue(0); // 0↔1 slow loop → bob/tug breathing
-  const swim = useSharedValue(0);      // 0→1 continuous loop → fish/duck sine drift
-  const drift = useSharedValue(0);     // 0→1 continuous loop → ripple lateral drift (one wavelength per loop)
+  const swim = useSharedValue(0);      // 0→1 continuous loop → duck sine drift (fish use 2D wander)
   const TWO_PI = Math.PI * 2;
   const aliveEggRef = useRef<{
     kind: 'none' | 'fish' | 'fisherman' | 'duck';
@@ -425,23 +418,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     return () => cancelAnimation(wavePhase);
   }, [sceneActive, reducedMotion, wavePhase]);
 
-  // Ripple lateral drift — slow sideways travel of the decorative crests
-  // (one wavelength per loop, so the periodic pattern wraps seamlessly).
-  // The nominal waterline NEVER moves; there is no vertical sloshing.
-  useEffect(() => {
-    if (!sceneActive || reducedMotion) { cancelAnimation(drift); return; }
-    drift.value = 0;
-    drift.value = withRepeat(withTiming(1, { duration: 11000, easing: Easing.linear }), -1, false);
-    return () => cancelAnimation(drift);
-  }, [sceneActive, reducedMotion, drift]);
-
-  // Swim sine loop — shared by fish AND the surface duck. Continuous
-  // phase, linear + non-reversing so sin() stays smooth across the wrap.
-  // ONE loop per screen: the effect cancels before every (re)start, so
-  // background/foreground and navigation can never stack duplicates.
+  // Swim sine loop — surface duck only. Fish wander in 2D inside
+  // TankFlipAquarium (FLIP water). Continuous phase, cancel-before-restart.
   useEffect(() => {
     const needsSwim =
-      sceneActive && !reducedMotion && (aliveEgg.kind === 'fish' || aliveEgg.kind === 'duck');
+      sceneActive && !reducedMotion && aliveEgg.kind === 'duck';
     if (!needsSwim) { cancelAnimation(swim); return; }
     swim.value = 0;
     swim.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
@@ -1019,38 +1000,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
   const nextPullReady = calculateNextPullReady();
 
-  // Animated water styles
-  const waterStyle = useAnimatedStyle(() => ({
-    height: `${waterFraction.value * 100}%`,
-  }));
-
   // Alive-tank cosmetic styles — read waterFraction for ALIGNMENT only; the
-  // blue fill height/math is the waterStyle above and is never modified here.
+  // FLIP water body owns the blue fill. Operational tank math is unchanged.
   const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
-  // Surface ripple — wide, SHALLOW, overlapped blue crests riding above
-  // the flat fill edge (same blue, so only the crest relief shows). The
-  // two unequal rows DRIFT laterally in opposite directions (no vertical
-  // sloshing — the nominal waterline is stationary). One wavelength per
-  // loop makes the periodic pattern wrap seamlessly.
-  const rippleRowAStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: reducedMotion ? 0 : drift.value * RIPPLE.wavelengthPx }],
-  }));
-  const rippleRowBStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: reducedMotion ? 0 : -drift.value * RIPPLE.wavelengthPx }],
-  }));
-  // (former floatBobStyle removed — the duck's bob now lives in
-  // duckMoveStyle and the fisherman scene has its own tug styles)
-  // Fish: movement (sine translateX) on the outer wrapper, facing (scaleX, from
-  // the sign of the velocity = cos of the same phase) on the inner glyph — so
-  // the flip can never affect position. 🐟 faces left, so flip to -1 (face right)
-  // while moving right. Per-fish freq/phase/range come from the stable ref.
-  const fa = aliveEgg.fish[0], fb = aliveEgg.fish[1], fc = aliveEgg.fish[2];
-  const fishMoveA = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fa.freq + fa.phase) * fa.rangePx }] }));
-  const fishMoveB = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fb.freq + fb.phase) * fb.rangePx }] }));
-  const fishMoveC = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fc.freq + fc.phase) * fc.rangePx }] }));
-  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fa.freq + fa.phase) >= 0 ? -1 : 1 }] }));
-  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fb.freq + fb.phase) >= 0 ? -1 : 1 }] }));
-  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fc.freq + fc.phase) >= 0 ? -1 : 1 }] }));
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
   const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
@@ -1224,50 +1176,20 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           </View>
           <View style={styles.tankInterior}>
             <View style={styles.waterWrapper}>
-              <Animated.View style={[styles.tankWater, waterStyle]} />
+              <TankFlipAquarium
+                width={INTERIOR_WIDTH}
+                height={INTERIOR_HEIGHT}
+                fill={clampFraction(displayFeet / FULL_TANK_FEET)}
+                active={sceneActive}
+                reducedMotion={!!reducedMotion}
+                showFish={showFish}
+                fishCount={aliveEgg.fishCount}
+              />
             </View>
 
-            {/* Submerged critters (fish) — clipped to the water region so they
-                stay inside the water. pointer-events off. Never affects tank math. */}
-            <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
-              {showFish && (
-                <>
-                  <Animated.View style={[styles.aliveFishWrap, { top: `${fa.topPct}%`, left: `${fa.leftPct}%` }, fishMoveA]}>
-                    <Animated.Text style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
-                  </Animated.View>
-                  {aliveEgg.fishCount > 1 && (
-                    <Animated.View style={[styles.aliveFishWrap, { top: `${fb.topPct}%`, left: `${fb.leftPct}%` }, fishMoveB]}>
-                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
-                    </Animated.View>
-                  )}
-                  {aliveEgg.fishCount > 2 && (
-                    <Animated.View style={[styles.aliveFishWrap, { top: `${fc.topPct}%`, left: `${fc.leftPct}%` }, fishMoveC]}>
-                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
-                    </Animated.View>
-                  )}
-                </>
-              )}
-            </Animated.View>
-
-            {/* Surface layer — NOT clipped (so the wave crests show ABOVE the flat
-                blue edge; an overflow-hidden layer was eating them). Holds the
-                ripple crests + any floating critter, placed OFF-CENTRE so it never
-                sits behind the level text. Clipped only by the tank interior. */}
+            {/* Surface layer — duck rides the NOMINAL waterline (operational
+                fill), not FLIP splash crests. Clipped only by the tank interior. */}
             <Animated.View pointerEvents="none" style={[styles.aliveSurfaceLayer, aliveLayerStyle]}>
-              <Animated.View
-                style={[styles.aliveWaveRow, { top: -RIPPLE.crestPx, left: -RIPPLE.crestWidthPx }, rippleRowAStyle]}
-              >
-                {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.waveHumpA} />)}
-              </Animated.View>
-              <Animated.View
-                style={[
-                  styles.aliveWaveRow,
-                  { top: -RIPPLE.crestBPx, left: -RIPPLE.crestWidthPx + RIPPLE.rowOffsetBPx },
-                  rippleRowBStyle,
-                ]}
-              >
-                {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.waveHumpB} />)}
-              </Animated.View>
               {showFloat && aliveEgg.kind === 'duck' && (
                 // Rendered AFTER the water fill (later sibling ⇒ above the
                 // blue layer). Belly just in the waterline, most of the
@@ -2812,45 +2734,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563EB',
     width: '100%',
   },
-  // Alive-tank layers — both overlay the water (bottom-anchored, water height).
-  // aliveLayer CLIPS (submerged fish stay in the water); aliveSurfaceLayer does
-  // NOT clip, so wave crests / floats can sit at and above the surface line.
-  aliveLayer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    overflow: 'hidden',
-  },
+  // Alive-tank surface layer — duck/floats ride the NOMINAL waterline.
   aliveSurfaceLayer: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  // Ripple rows: top/left are set inline from the responsive RIPPLE
-  // geometry. Crests are WIDE and heavily OVERLAPPED (negative stride
-  // margin) so neighboring shoulders hide behind each other — the visible
-  // profile is a continuous shallow undulation with no V-shaped cusps.
-  aliveWaveRow: {
-    position: 'absolute',
-    flexDirection: 'row',
-  },
-  waveHumpA: {
-    width: RIPPLE.crestWidthPx,
-    height: RIPPLE.crestPx + 3, // +3 tucks the base into the fill — no seams
-    borderTopLeftRadius: RIPPLE.crestWidthPx / 2,
-    borderTopRightRadius: RIPPLE.crestWidthPx / 2,
-    marginRight: -(RIPPLE.crestWidthPx - RIPPLE.wavelengthPx), // overlap to stride λ
-    backgroundColor: '#2563EB', // SAME blue as the fill — only the crest above the flat edge shows
-  },
-  waveHumpB: {
-    width: RIPPLE.crestWidthPx,
-    height: RIPPLE.crestBPx + 3, // gentler second row — two unequal crests
-    borderTopLeftRadius: RIPPLE.crestWidthPx / 2,
-    borderTopRightRadius: RIPPLE.crestWidthPx / 2,
-    marginRight: -(RIPPLE.crestWidthPx - RIPPLE.wavelengthPx),
-    backgroundColor: '#2563EB',
   },
   aliveFishWrap: {
     position: 'absolute',

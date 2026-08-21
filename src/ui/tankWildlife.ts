@@ -66,10 +66,10 @@ export function rippleGeometry(interiorWidth: number): RippleGeometry {
 // ── Duck (surface lane) ──────────────────────────────────────────────────
 export const DUCK_FONT_SIZE = 18;
 export const DUCK_GLYPH_WIDTH = Math.round(DUCK_FONT_SIZE * 1.15);
-/** How much of the duck rides ABOVE the waterline: the glyph box bottom
- *  sits liftPx above the surface minus a small belly dip — visually most
- *  of the body above water, belly just in it. */
-export const DUCK_LIFT_PX = 14;
+/** How much of the duck rides ABOVE the waterline: lift the 18px glyph
+ *  so the body sits on the surface (not just the head). Belly still kisses
+ *  the water. */
+export const DUCK_LIFT_PX = 24;
 
 export interface DuckSpawn {
   basePx: number;   // left of the glyph box at sine center

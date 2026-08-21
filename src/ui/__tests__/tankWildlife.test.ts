@@ -166,7 +166,7 @@ describe('wiring — index.tsx integration facts', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../../app/(tabs)/index.tsx'), 'utf8');
 
   test('duck renders ABOVE the water fill (later sibling than the blue layer) inside the surface layer', () => {
-    const waterIdx = src.indexOf('styles.tankWater');
+    const waterIdx = src.indexOf('TankFlipAquarium');
     const duckIdx = src.indexOf("showFloat && aliveEgg.kind === 'duck'"); // the RENDER site, not the swim effect
     const numberIdx = src.indexOf('styles.numberContainer');
     expect(waterIdx).toBeGreaterThan(-1);
@@ -203,7 +203,7 @@ describe('wiring — index.tsx integration facts', () => {
 
   test('reduced motion: swim loop gated; duck/fisherman/pelican fall back to stationary-but-correct', () => {
     expect(src).toContain('useReducedMotion');
-    expect(src).toMatch(/!reducedMotion && \(aliveEgg\.kind === 'fish' \|\| aliveEgg\.kind === 'duck'\)/);
+    expect(src).toMatch(/!reducedMotion && aliveEgg\.kind === 'duck'/);
     expect(src).toMatch(/reducedMotion \? 0 :/); // motionless transforms
     expect(src).toMatch(/reducedMotion\) \{ pelicanIn\.value = 1/); // stationary perch, no flight
   });
@@ -344,28 +344,24 @@ describe('pole-line attachment (follow-up fix)', () => {
 describe('follow-up wiring: waterline stability, lifecycle, reduced motion', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../../app/(tabs)/index.tsx'), 'utf8');
 
-  test('ripple drifts LATERALLY only - the nominal waterline never moves', () => {
-    const rowA = src.slice(src.indexOf('rippleRowAStyle'), src.indexOf('rippleRowAStyle') + 400);
-    expect(rowA).toContain('translateX');
-    expect(rowA).not.toContain('translateY'); // no vertical sloshing
-    // Wildlife anchors to the NOMINAL line (waterFraction math), never the crests.
+  test('FLIP water owns the fill; wildlife anchors to the nominal waterline', () => {
+    expect(src).toContain('TankFlipAquarium');
+    expect(src).not.toContain('rippleRowAStyle');
     expect(src).toContain('duckTopOffset(waterTop)');
     expect(src.split('INTERIOR_HEIGHT * (1 - waterFraction.value)').length - 1).toBeGreaterThanOrEqual(4);
-    expect(src).not.toMatch(/duck[\s\S]{0,120}RIPPLE\.crest/); // duck ignores decorative relief
   });
 
   test('all loops and the pelican schedule are gated on sceneActive (isActive AND app foreground)', () => {
     expect(src).toContain("AppState.addEventListener('change', (s) => setAppForeground(s === 'active'))");
     expect(src).toContain('const sceneActive = isActive && appForeground;');
     expect(src).toMatch(/!sceneActive \|\| reducedMotion\) \{ cancelAnimation\(wavePhase\)/);
-    expect(src).toMatch(/!sceneActive \|\| reducedMotion\) \{ cancelAnimation\(drift\)/);
-    expect(src).toMatch(/sceneActive && !reducedMotion && \(aliveEgg\.kind === 'fish'/);
+    expect(src).toMatch(/sceneActive && !reducedMotion && aliveEgg\.kind === 'duck'/);
     expect(src).toMatch(/if \(!sceneActive\) \{ setPelicanVisit\(null\); return; \}/);
+    expect(src).toContain('active={sceneActive}');
   });
 
-  test('reduced motion: ripple drift is zeroed and its loop never starts', () => {
-    expect(src).toMatch(/translateX: reducedMotion \? 0 : drift\.value/);
-    expect(src).toMatch(/translateX: reducedMotion \? 0 : -drift\.value/);
+  test('reduced motion is passed into the FLIP aquarium so sensors/sim pause', () => {
+    expect(src).toContain('reducedMotion={!!reducedMotion}');
   });
 
   test('line and hooked fish ride the swayed pole tip', () => {

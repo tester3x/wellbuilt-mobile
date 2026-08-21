@@ -21,6 +21,7 @@ export type WbmBootstrapSnapshot = {
   eligibilityReason: string;
   wells: WellConfigMap;
   wellCount: number;
+  logoutAt?: number | null;
 };
 
 export type WbmBootstrapEnvelope = {

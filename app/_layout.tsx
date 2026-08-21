@@ -30,20 +30,21 @@ const FIREBASE_DB = 'https://wellbuilt-sync-default-rtdb.firebaseio.com';
  * Returns true if the driver should be auto-logged out.
  * Only applies to SSO sessions — manual logins are owned by the driver, not WB S.
  */
-async function checkRtdbLogoutSignal(): Promise<boolean> {
+async function checkCanonicalSsoLogout(): Promise<boolean> {
   try {
+    const { evaluateSsoLogout, normalizeLogoutAt } = await import('../src/services/ssoLogout');
     const authMethod = await SecureStore.getItemAsync('authMethod');
-    if (authMethod !== 'sso') return false;
-
     const driverId = await SecureStore.getItemAsync('driverId');
     const verifiedAt = await SecureStore.getItemAsync('driverVerifiedAt');
-    if (!driverId || !verifiedAt) return false;
+    if (authMethod !== 'sso' || !driverId || !verifiedAt) return false;
 
-    void driverId;
-    void verifiedAt;
-    // Remote SSO logout is decided by verifyDriverSession / bootstrapWbmSession.
-    // Do not GET drivers/profiles/{id} (parent-deny + not canonical bootstrap).
-    return false;
+    const { authorizedCallable } = await import('../src/services/firebaseAuthSession');
+    const snap = await authorizedCallable<{ logoutAt?: number | null }>('bootstrapWbmSession', {});
+    return evaluateSsoLogout({
+      authMethod,
+      verifiedAtMs: Number(verifiedAt),
+      liveLogoutAtMs: normalizeLogoutAt(snap?.logoutAt),
+    }) === 'logout';
   } catch {
     return false;
   }
@@ -84,9 +85,9 @@ export default function RootLayout() {
     const appStateSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         hideNavBar();
-        checkRtdbLogoutSignal().then((shouldLogout) => {
+        checkCanonicalSsoLogout().then((shouldLogout) => {
           if (shouldLogout) {
-            console.log('[WBM] RTDB logoutAt signal detected — auto-logging out');
+            console.log('[WBM] Canonical Suite logoutAt newer than this SSO session');
             clearDriverSession().then(() => {
               router.replace('/driver-login');
             });

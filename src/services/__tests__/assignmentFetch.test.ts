@@ -21,7 +21,7 @@ jest.mock('../firebaseAuthSession', () => ({
   authorizedCallable: jest.fn(async () => { throw new Error('no_live'); }),
 }));
 
-import { fetchAssignmentClassified, persistBootstrapEnvelope, resolveCurrentEligibility, seedWellConfigCacheForTests } from '../wellConfig';
+import { fetchAssignmentClassified, persistBootstrapEnvelope, resetWellConfigCacheForTests, resolveCurrentEligibility, seedWellConfigCacheForTests } from '../wellConfig';
 import { decideBootstrapRoute, decidePostAuthRoute } from '../eligibility';
 import { authorizeEstablishedSession } from '../postAuthGate';
 import { snapshotToEnvelope, type WbmBootstrapSnapshot } from '../wbmBootstrapCache';
@@ -50,6 +50,7 @@ describe('classified assignment fetch never becomes [] denial', () => {
     for (const k of Object.keys(mockSecure)) delete mockSecure[k];
     mockSecure.driverId = 'drv_1';
     mockSecure.companyId = 'co_1';
+    resetWellConfigCacheForTests();
   });
 
   const failCases: Array<[string, () => Promise<unknown>]> = [

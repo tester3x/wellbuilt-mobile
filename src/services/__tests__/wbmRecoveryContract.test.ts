@@ -6,10 +6,11 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
     removeItem: jest.fn(async () => undefined),
   },
 }));
+const mockSecure: Record<string, string> = {};
 jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
-  deleteItemAsync: jest.fn(async () => undefined),
+  getItemAsync: jest.fn(async (k: string) => (k in mockSecure ? mockSecure[k] : null)),
+  setItemAsync: jest.fn(async (k: string, v: string) => { mockSecure[k] = v; }),
+  deleteItemAsync: jest.fn(async (k: string) => { delete mockSecure[k]; }),
 }));
 
 const mockCallable = jest.fn();
@@ -95,6 +96,9 @@ describe('fresh install does not depend on cached well_config', () => {
   beforeEach(() => {
     resetWellConfigCacheForTests();
     mockCallable.mockReset();
+    for (const k of Object.keys(mockSecure)) delete mockSecure[k];
+    mockSecure.driverId = 'drv';
+    mockSecure.companyId = 'liquid-gold';
   });
 
   it('source pins authenticated well catalog', () => {

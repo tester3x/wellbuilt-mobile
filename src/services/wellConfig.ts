@@ -23,6 +23,13 @@ import {
   type WbmBootstrapEnvelope,
   type WbmBootstrapSnapshot,
 } from './wbmBootstrapCache';
+import {
+  bootstrapResponseAdmissible,
+  bumpSessionGeneration,
+  captureBootstrapTicket,
+  resetSessionGenerationForTests,
+  type BootstrapTicket,
+} from './wbmSessionFence';
 
 export {
   envelopeMatchesRevision,
@@ -31,6 +38,7 @@ export {
   WBM_BOOTSTRAP_SCHEMA,
   WBM_ENVELOPE_KEY,
 };
+export { bumpSessionGeneration, getSessionGeneration, resetSessionGenerationForTests } from './wbmSessionFence';
 
 const STORAGE_KEY = "@wellbuilt_well_config";
 const LAST_FETCH_KEY = "@wellbuilt_config_last_fetch";
@@ -93,9 +101,36 @@ export function wellConfigFailureReason(error: unknown): string {
   return known.find((c) => msg.includes(c)) || 'fetch_failed';
 }
 
+let authSessionProbe: (() => boolean) | null = null;
+
+export function setHasAuthSessionForTests(fn: (() => boolean) | null): void {
+  authSessionProbe = fn;
+}
+
+async function hasAuthSession(): Promise<boolean> {
+  if (authSessionProbe) return authSessionProbe();
+  try {
+    const { getFirebaseAuth } = await import('./firebaseAuthSession');
+    return !!getFirebaseAuth().currentUser;
+  } catch {
+    return false;
+  }
+}
+
 export function resetWellConfigCacheForTests(): void {
   cachedConfig = null;
   cachedEnvelope = null;
+  lastWellConfigError = null;
+  resetSessionGenerationForTests();
+  authSessionProbe = () => true;
+}
+
+export function invalidateWbmMemoryCache(): void {
+  bumpSessionGeneration();
+  cachedConfig = null;
+  cachedEnvelope = null;
+  cachedAssignedRoutes = null;
+  cachedAssignedWells = null;
   lastWellConfigError = null;
 }
 
@@ -123,11 +158,15 @@ export async function loadWellConfig(
   forceRefresh: boolean = false
 ): Promise<WellConfigMap | null> {
   const ident = await sessionIdentity();
+  const ticket = captureBootstrapTicket(ident);
   try {
     const live = await fetchBootstrapFromServer();
-    await persistBootstrapEnvelope(live);
+    const installed = await installBootstrapSnapshot(live, ticket);
+    if (!installed) {
+      throw new WellConfigUnavailableError('stale_bootstrap');
+    }
     lastWellConfigError = null;
-    return live.wells as unknown as WellConfigMap;
+    return installed.wells as unknown as WellConfigMap;
   } catch (error) {
     const reason = wellConfigFailureReason(error);
     lastWellConfigError = reason;
@@ -166,6 +205,21 @@ export async function persistBootstrapEnvelope(snap: WbmBootstrapSnapshot): Prom
   cachedAssignedWells = env.eligibility.wells;
   await AsyncStorage.setItem(WBM_ENVELOPE_KEY, JSON.stringify(env));
   return env;
+}
+
+export async function installBootstrapSnapshot(
+  snap: WbmBootstrapSnapshot,
+  ticket: BootstrapTicket,
+): Promise<WbmBootstrapEnvelope | null> {
+  const ident = await sessionIdentity();
+  const admitted = bootstrapResponseAdmissible({
+    ticket,
+    snapshot: { driverId: snap.driverId, companyId: snap.companyId },
+    current: ident,
+    hasAuthSession: await hasAuthSession(),
+  });
+  if (!admitted) return null;
+  return persistBootstrapEnvelope(snap);
 }
 
 export async function readMatchingEnvelope(
@@ -224,11 +278,7 @@ export async function forceRefreshWellConfig(): Promise<boolean> {
 }
 
 export async function clearWellConfigCache(): Promise<void> {
-  cachedConfig = null;
-  cachedEnvelope = null;
-  cachedAssignedRoutes = null;
-  cachedAssignedWells = null;
-  lastWellConfigError = null;
+  invalidateWbmMemoryCache();
   await AsyncStorage.removeItem(STORAGE_KEY);
   await AsyncStorage.removeItem(LAST_FETCH_KEY);
   await AsyncStorage.removeItem(CACHE_BINDER_KEY);
@@ -274,10 +324,13 @@ export async function fetchAssignmentClassified(
     if (!driverId) {
       return unknownVerdict('missing_driver_id', true);
     }
+    const ident = await sessionIdentity();
+    const ticket = captureBootstrapTicket(ident);
     const snap = bootstrapFn
       ? await bootstrapFn()
       : await fetchBootstrapFromServer();
-    const env = await persistBootstrapEnvelope(snap);
+    const env = await installBootstrapSnapshot(snap, ticket);
+    if (!env) return unknownVerdict('stale_bootstrap', true);
     return env.eligibility;
   } catch (error) {
     const d = diagnoseThrown(error);

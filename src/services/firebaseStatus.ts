@@ -3,6 +3,14 @@
 // Provides global offline state for branded "System Offline" banner
 
 import NetInfo from "@react-native-community/netinfo";
+import {
+  ConnectionDiagnosis,
+  ConnectionKind,
+  diagnoseHttpStatus,
+  diagnoseNetInfo,
+  diagnoseThrown,
+  formatDiagnosis,
+} from "./connectionDiagnosis";
 import { debugLog } from "./debugLog";
 import { systemLog } from "./systemLog";
 
@@ -10,7 +18,7 @@ import { systemLog } from "./systemLog";
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
 
 // Status change listeners
-type StatusListener = (isOnline: boolean, reason?: string) => void;
+type StatusListener = (isOnline: boolean, reason?: string, kind?: ConnectionKind) => void;
 const statusListeners = new Set<StatusListener>();
 
 // Current status state
@@ -19,12 +27,15 @@ let currentStatus: {
   networkOnline: boolean;
   lastCheck: number;
   reason?: string;
+  kind: ConnectionKind;
+  code?: string;
   offlineSince: number | null; // When we first detected offline (for grace period)
   bannerShown: boolean; // Whether banner has been shown to user
 } = {
   firebaseOnline: true, // Assume online until proven otherwise
   networkOnline: true,
   lastCheck: 0,
+  kind: 'ok',
   offlineSince: null,
   bannerShown: false,
 };
@@ -46,16 +57,25 @@ const OFFLINE_GRACE_PERIOD_MS = 5 * 1000;
  * Check Firebase connectivity by pinging the database
  * Returns true if Firebase is reachable, false otherwise
  */
+function applyDiagnosis(online: boolean, d: ConnectionDiagnosis, userReason?: string): void {
+  currentStatus.kind = d.kind;
+  currentStatus.code = d.code;
+  currentStatus.reason = userReason ?? (online ? undefined : formatDiagnosis(d));
+  currentStatus.lastCheck = Date.now();
+}
+
 export async function checkFirebaseConnectivity(): Promise<boolean> {
   // Check network first
   const netState = await NetInfo.fetch();
-  currentStatus.networkOnline = netState.isConnected === true && netState.isInternetReachable !== false;
+  const netDiag = diagnoseNetInfo(netState);
+  currentStatus.networkOnline = netDiag == null;
 
-  if (!currentStatus.networkOnline) {
+  if (netDiag) {
     currentStatus.firebaseOnline = false;
-    currentStatus.reason = "No network connection";
-    currentStatus.lastCheck = Date.now();
-    notifyListeners(false, currentStatus.reason);
+    applyDiagnosis(false, netDiag, netDiag.code === 'netinfo_disconnected'
+      ? 'No network connection'
+      : 'Internet not reachable');
+    notifyListeners(false, currentStatus.reason, netDiag.kind);
     return false;
   }
 
@@ -65,6 +85,7 @@ export async function checkFirebaseConnectivity(): Promise<boolean> {
     return currentStatus.firebaseOnline;
   }
 
+  let sessionDiagnosis: ConnectionDiagnosis | null = null;
   try {
     // Real reachability ping — never throw-as-offline, never use the API key as RTDB auth.
     // .info/connected answers without data-path rules. 401/403 still means the host is up.
@@ -73,8 +94,9 @@ export async function checkFirebaseConnectivity(): Promise<boolean> {
       const { getValidIdToken } = await import("./firebaseAuthSession");
       const token = await getValidIdToken();
       url += `?auth=${encodeURIComponent(token)}`;
-    } catch {
-      // No session is not an outage — still ping unauthenticated.
+    } catch (err) {
+      sessionDiagnosis = diagnoseThrown(err);
+      // No session is not a host outage — still ping unauthenticated.
     }
 
     const controller = new AbortController();
@@ -88,28 +110,41 @@ export async function checkFirebaseConnectivity(): Promise<boolean> {
 
     clearTimeout(timeoutId);
 
-    // 200 = success, 401/403 = auth issue but Firebase IS reachable
-    // Only consider actual network failures as "offline"
-    const isReachable = response.status !== 0 && response.status < 500;
-
-    currentStatus.firebaseOnline = isReachable;
-    currentStatus.reason = isReachable ? undefined : `Firebase error: ${response.status}`;
-    currentStatus.lastCheck = Date.now();
-
-    // Log auth errors for debugging but don't show to user as "offline"
     if (response.status === 401 || response.status === 403) {
-      debugLog(`[FirebaseStatus] Auth warning (${response.status}) but Firebase is reachable`, 'warn');
+      const httpDiag = diagnoseHttpStatus(response.status);
+      // Host is reachable. Surface auth/permission — do NOT label as offline.
+      currentStatus.firebaseOnline = true;
+      currentStatus.networkOnline = true;
+      applyDiagnosis(true, sessionDiagnosis ?? httpDiag);
+      debugLog(`[FirebaseStatus] ${formatDiagnosis(sessionDiagnosis ?? httpDiag)} (host reachable)`, 'warn');
+      notifyListeners(true, currentStatus.reason, (sessionDiagnosis ?? httpDiag).kind);
+      return true;
     }
 
-    notifyListeners(currentStatus.firebaseOnline, currentStatus.reason);
-    return currentStatus.firebaseOnline;
+    const isReachable = response.status !== 0 && response.status < 500;
+    currentStatus.firebaseOnline = isReachable;
+    if (isReachable) {
+      // Session missing/expired with a live host: report auth, stay "online"
+      // for transport but expose the kind so login/sync UI can distinguish.
+      if (sessionDiagnosis && sessionDiagnosis.kind === 'auth_session') {
+        applyDiagnosis(true, sessionDiagnosis);
+        notifyListeners(true, currentStatus.reason, sessionDiagnosis.kind);
+        return true;
+      }
+      applyDiagnosis(true, { kind: 'ok', code: 'ok', retryable: false });
+      notifyListeners(true, undefined, 'ok');
+      return true;
+    }
+    const httpDiag = diagnoseHttpStatus(response.status);
+    applyDiagnosis(false, httpDiag, `Firebase error: ${response.status}`);
+    notifyListeners(false, currentStatus.reason, httpDiag.kind);
+    return false;
   } catch (error: any) {
-    debugLog(`[FirebaseStatus] Connectivity check failed: ${error.message}`, 'warn');
+    const d = diagnoseThrown(error);
+    debugLog(`[FirebaseStatus] Connectivity check failed: ${formatDiagnosis(d)}`, 'warn');
     currentStatus.firebaseOnline = false;
-    currentStatus.reason = error.name === "AbortError" ? "Connection timed out" : "Cannot reach WellBuilt server";
-    currentStatus.lastCheck = Date.now();
-
-    notifyListeners(false, currentStatus.reason);
+    applyDiagnosis(false, d, d.kind === 'timeout' ? 'Connection timed out' : 'Cannot reach WellBuilt server');
+    notifyListeners(false, currentStatus.reason, d.kind);
     return false;
   }
 }
@@ -122,12 +157,17 @@ export function getFirebaseStatus(): {
   isOnline: boolean;
   reason?: string;
   isStale: boolean;
+  kind: ConnectionKind;
+  code?: string;
 } {
   const isStale = Date.now() - currentStatus.lastCheck > STATUS_STALE_MS;
+  const transportOnline = currentStatus.firebaseOnline && currentStatus.networkOnline;
   return {
-    isOnline: currentStatus.firebaseOnline && currentStatus.networkOnline,
+    isOnline: transportOnline,
     reason: currentStatus.reason,
     isStale,
+    kind: currentStatus.kind,
+    code: currentStatus.code,
   };
 }
 
@@ -138,7 +178,11 @@ export function getFirebaseStatus(): {
 export function onFirebaseStatusChange(listener: StatusListener): () => void {
   statusListeners.add(listener);
   // Immediately notify of current status
-  listener(currentStatus.firebaseOnline && currentStatus.networkOnline, currentStatus.reason);
+  listener(
+    currentStatus.firebaseOnline && currentStatus.networkOnline,
+    currentStatus.reason,
+    currentStatus.kind,
+  );
   return () => statusListeners.delete(listener);
 }
 
@@ -146,7 +190,7 @@ export function onFirebaseStatusChange(listener: StatusListener): () => void {
  * Notify all listeners of status change
  * Uses grace period - only notifies offline after OFFLINE_GRACE_PERIOD_MS
  */
-function notifyListeners(isOnline: boolean, reason?: string): void {
+function notifyListeners(isOnline: boolean, reason?: string, kind: ConnectionKind = currentStatus.kind): void {
   if (isOnline) {
     // Coming back online - notify immediately
     if (graceTimerId) {
@@ -167,7 +211,12 @@ function notifyListeners(isOnline: boolean, reason?: string): void {
 
     currentStatus.offlineSince = null;
     currentStatus.bannerShown = false;
-    statusListeners.forEach(listener => listener(true, undefined));
+    const keepKind = kind === 'auth_session' || kind === 'permission';
+    if (!keepKind) {
+      currentStatus.kind = 'ok';
+      currentStatus.code = 'ok';
+    }
+    statusListeners.forEach(listener => listener(true, keepKind ? reason : undefined, keepKind ? kind : 'ok'));
   } else {
     // Going offline - start grace period
     if (!currentStatus.offlineSince) {
@@ -188,7 +237,7 @@ function notifyListeners(isOnline: boolean, reason?: string): void {
           // Log to Firebase for admin visibility
           systemLog('System offline', 'warn', reason || 'Unknown reason');
 
-          statusListeners.forEach(listener => listener(false, reason));
+          statusListeners.forEach(listener => listener(false, reason, kind));
         }
       }, OFFLINE_GRACE_PERIOD_MS);
     }
@@ -223,8 +272,8 @@ export function startFirebaseStatusMonitor(): void {
       // Network lost
       debugLog("[FirebaseStatus] Network lost", 'warn');
       currentStatus.firebaseOnline = false;
-      currentStatus.reason = "No network connection";
-      notifyListeners(false, currentStatus.reason);
+      applyDiagnosis(false, { kind: 'no_network', code: 'netinfo_disconnected', retryable: true }, 'No network connection');
+      notifyListeners(false, currentStatus.reason, 'no_network');
     }
   });
 }

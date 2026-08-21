@@ -207,7 +207,9 @@ export const verifyLogin = async (
     }
   } catch (error) {
     console.error("[DriverAuth] Error verifying login:", error);
-    return { valid: false, error: "Connection error" };
+    const { diagnoseThrown, formatDiagnosis } = await import('./connectionDiagnosis');
+    const d = diagnoseThrown(error);
+    return { valid: false, error: formatDiagnosis(d) };
   }
 };
 
@@ -657,8 +659,9 @@ export const checkWellBuiltAccess = async (): Promise<{
     const { getValidIdToken } = await import('./firebaseAuthSession');
     await getValidIdToken();
     return { hasAccess: true };
-  } catch {
-    return { hasAccess: false, error: "Could not connect to server" };
+  } catch (error) {
+    const { diagnoseThrown, formatDiagnosis } = await import('./connectionDiagnosis');
+    return { hasAccess: false, error: formatDiagnosis(diagnoseThrown(error)) };
   }
 };
 

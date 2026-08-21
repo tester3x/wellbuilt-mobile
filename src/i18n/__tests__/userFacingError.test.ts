@@ -20,7 +20,8 @@ describe('userFacingError classification', () => {
 
   test('classifies firebase GET/PUT status failures', () => {
     expect(classifyError(new Error('Firebase GET failed (500)'))).toBe('firebaseRead');
-    expect(classifyError(new Error('Firebase PUT failed (403)'))).toBe('firebaseWrite');
+    expect(classifyError(new Error('Firebase PUT failed (500)'))).toBe('firebaseWrite');
+    expect(classifyError(new Error('Firebase PUT failed (403)'))).toBe('permission');
   });
 
   test('unknown fallback', () => {
@@ -37,7 +38,7 @@ describe('userFacingError classification', () => {
 
 describe('user-facing error strings (locale tables)', () => {
   test('EN and ES define safe messages without raw HTTP codes', () => {
-    for (const key of ['network', 'server', 'timeout', 'unknown', 'firebaseRead', 'firebaseWrite', 'updateRequired']) {
+    for (const key of ['network', 'server', 'timeout', 'unknown', 'firebaseRead', 'firebaseWrite', 'updateRequired', 'authSession', 'permission', 'malformed']) {
       const enMsg = (en as any).errors[key] as string;
       const esMsg = (es as any).errors[key] as string;
       expect(enMsg.length).toBeGreaterThan(5);

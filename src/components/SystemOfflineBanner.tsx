@@ -14,11 +14,15 @@ interface Props {
 }
 
 export function SystemOfflineBanner({ onRetry }: Props) {
-  const { isOnline, reason, checkNow } = useFirebaseStatus();
+  const { isOnline, reason, kind, code, checkNow } = useFirebaseStatus();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
 
-  if (isOnline) {
+  const showAuth = kind === 'auth_session' || kind === 'permission';
+  if (isOnline && !showAuth) {
+    return null;
+  }
+  if (!isOnline && kind === 'ok') {
     return null;
   }
 
@@ -36,12 +40,23 @@ export function SystemOfflineBanner({ onRetry }: Props) {
           <Text style={styles.icon}>⚠</Text>
         </View>
         <View style={styles.textContainer}>
-          <Text style={styles.title}>{t('offlineBanner.title')}</Text>
+          <Text style={styles.title}>
+            {kind === 'auth_session' ? t('offlineBanner.authTitle')
+              : kind === 'permission' ? t('offlineBanner.permissionTitle')
+                : kind === 'timeout' ? t('offlineBanner.timeoutTitle')
+                  : kind === 'no_network' ? t('offlineBanner.networkTitle')
+                    : t('offlineBanner.title')}
+          </Text>
           <Text style={styles.message}>
-            {reason || t('offlineBanner.cannotConnect')}
+            {kind === 'auth_session' ? t('offlineBanner.authMessage')
+              : kind === 'permission' ? t('offlineBanner.permissionMessage')
+                : kind === 'timeout' ? t('offlineBanner.timeoutMessage')
+                  : kind === 'no_network' ? t('offlineBanner.networkMessage')
+                    : (reason || t('offlineBanner.cannotConnect'))}
           </Text>
           <Text style={styles.subMessage}>
-            {t('offlineBanner.queuedHint')}
+            {showAuth ? t('offlineBanner.authHint') : t('offlineBanner.queuedHint')}
+            {code ? `  ·  ${code}` : ''}
           </Text>
         </View>
         <TouchableOpacity style={styles.dismissButton} onPress={handleRetry} activeOpacity={0.7}>

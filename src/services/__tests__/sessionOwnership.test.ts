@@ -48,7 +48,9 @@ import {
   clearDriverSession,
   completeAuthenticatedSession,
   performPermittedLogout,
+  setAfterSignInPauseForTests,
   setLogoutAfterRereadPauseForTests,
+  setLogoutDuringNthLiveReadPauseForTests,
   setSaveSessionWritePauseForTests,
 } from '../driverAuth';
 import { checkCanonicalSsoLogout } from '../ssoLogout';
@@ -147,6 +149,8 @@ describe('end-to-end session ownership', () => {
     setHasAuthSessionForTests(() => !!mockUser);
     setSaveSessionWritePauseForTests(null);
     setLogoutAfterRereadPauseForTests(null);
+    setLogoutDuringNthLiveReadPauseForTests(0, null);
+    setAfterSignInPauseForTests(null);
     setEnvelopeRemovePauseForTests(null);
     for (const k of Object.keys(asyncStore)) delete asyncStore[k];
     for (const k of Object.keys(mockSecure)) delete mockSecure[k];
@@ -167,7 +171,6 @@ describe('end-to-end session ownership', () => {
     });
     mockCallable.mockReset();
     mockCallable.mockImplementation(async (name: string) => {
-      if (name === 'bootstrapDriverSession') return profile('driver-b');
       if (name === 'bootstrapWbmSession') {
         const id = mockSecure.driverId || 'driver-b';
         return snap(id);
@@ -178,16 +181,11 @@ describe('end-to-end session ownership', () => {
     await persistBootstrapEnvelopeForTests(snap('driver-a'));
   });
 
-  it('real B login pauses in bootstrapDriverSession; concurrent logout waits; final state is entirely B', async () => {
-    let releaseBootstrap: () => void = () => undefined;
-    mockCallable.mockImplementation(async (name: string) => {
-      if (name === 'bootstrapDriverSession') {
-        await new Promise<void>((resolve) => { releaseBootstrap = resolve; });
-        return profile('driver-b');
-      }
-      if (name === 'bootstrapWbmSession') return snap(mockSecure.driverId || 'driver-b');
-      throw new Error(`unexpected callable ${name}`);
-    });
+  it('real B login pauses after Firebase sign-in; concurrent logout waits; final state is entirely B', async () => {
+    let releaseAfterSignIn: () => void = () => undefined;
+    setAfterSignInPauseForTests(() => new Promise((resolve) => {
+      releaseAfterSignIn = () => resolve();
+    }));
 
     const permitA = await captureCurrentSessionPermit();
     expect(permitA?.driverId).toBe('driver-a');
@@ -203,7 +201,7 @@ describe('end-to-end session ownership', () => {
     for (let i = 0; i < 20; i += 1) await Promise.resolve();
     expect(mocks.clearAuthSession).not.toHaveBeenCalled();
 
-    releaseBootstrap();
+    releaseAfterSignIn();
     await pendingB;
     const loggedOut = await pendingLogout;
 
@@ -291,6 +289,37 @@ describe('end-to-end session ownership', () => {
     expect(mockUser?.uid).toBe('uid-a');
     expect(await durableDriverId()).toBe('driver-a');
     expect(peekWellConfigCacheForTests().envelope?.driverId).toBe('driver-a');
+  });
+
+  it('generation change during the final live-session reread rejects logout with zero destruction', async () => {
+    const permit = await captureCurrentSessionPermit();
+    const genBefore = getSessionGeneration();
+    const memoryBefore = peekWellConfigCacheForTests();
+    let paused = false;
+    let releasePause: () => void = () => undefined;
+    setLogoutDuringNthLiveReadPauseForTests(2, () => new Promise((resolve) => {
+      paused = true;
+      releasePause = () => resolve();
+    }));
+
+    const pending = performPermittedLogout(permit!);
+    for (let i = 0; i < 80 && !paused; i += 1) await Promise.resolve();
+    expect(paused).toBe(true);
+    bumpSessionGeneration();
+    expect(mockSecure.driverId).toBe('driver-a');
+    expect(mockSecure.authMethod).toBe('sso');
+    releasePause();
+    await expect(pending).resolves.toBe(false);
+    expect(mocks.clearAuthSession).not.toHaveBeenCalled();
+    expect(mockUser?.uid).toBe('uid-a');
+    expect(mockSecure.driverId).toBe('driver-a');
+    expect(mockSecure.companyId).toBe('liquid-gold');
+    expect(mockSecure.authMethod).toBe('sso');
+    expect(mockSecure.driverVerifiedAt).toBe(String(verified));
+    expect(mockSecure.wb_auth_uid).toBe('uid-a');
+    expect(getSessionGeneration()).toBe(genBefore + 1);
+    expect(peekWellConfigCacheForTests()).toEqual(memoryBefore);
+    expect(await durableDriverId()).toBe('driver-a');
   });
 
   it('completed login followed by a valid same-session logout clears exactly that session', async () => {

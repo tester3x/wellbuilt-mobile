@@ -34,11 +34,22 @@ describe('WB-M session, SSO, registration, listener', () => {
     expect(establishFn).toMatch(/runSessionTransition/);
     expect(establishFn.indexOf('claimSessionGeneration')).toBeGreaterThan(-1);
     expect(establishFn.indexOf('claimSessionGeneration')).toBeLessThan(establishFn.indexOf('persistCustomTokenSession'));
-    expect(establishFn).toMatch(/bootstrapDriverSession/);
+    expect(establishFn).not.toMatch(/bootstrapDriverSession/);
     expect(establishFn).toMatch(/saveDriverSession/);
     expect(establishFn).toMatch(/fetchAssignmentClassified/);
     expect(establishFn).toMatch(/rollbackOwnedLogin/);
     expect(establishFn).not.toMatch(/await clearDriverSession/);
+    const logoutFn = driverAuth.slice(
+      driverAuth.indexOf('export async function performPermittedLogout'),
+      driverAuth.indexOf('export const clearDriverSession'),
+    );
+    const claimAtLogout = logoutFn.indexOf('claimSessionGeneration');
+    const beforeClaim = logoutFn.slice(0, claimAtLogout);
+    const finalReadAt = beforeClaim.lastIndexOf('await readLiveSessionFields()');
+    const lastGenCheck = beforeClaim.lastIndexOf('permitGenerationCurrent(permit)');
+    expect(finalReadAt).toBeGreaterThan(-1);
+    expect(lastGenCheck).toBeGreaterThan(finalReadAt);
+    expect(lastGenCheck).toBeLessThan(claimAtLogout);
   });
 
   it('SSO callback bootstraps authoritative profile and does not hardcode isAdmin false', () => {
@@ -46,8 +57,16 @@ describe('WB-M session, SSO, registration, listener', () => {
     expect(callback).toMatch("authMethod: 'sso'");
     expect(callback).toMatch(/used\.current/);
     expect(callback).not.toMatch(/false,\s*\n\s*false,/);
-    expect(driverAuth).toMatch(/bootstrapDriverSession/);
-    expect(driverAuth).toMatch(/profile\.isAdmin === true/);
+    expect(driverAuth).not.toMatch(/bootstrapDriverSession/);
+    expect(driverAuth).toMatch(/merged\.isAdmin === true/);
+  });
+
+  it('production WB-M does not call an unidentified bootstrap endpoint', () => {
+    expect(driverAuth).not.toMatch(/bootstrapDriverSession/);
+    expect(secure).not.toMatch(/bootstrapDriverSession/);
+    expect(wellConfig).toMatch(/bootstrapWbmSession/);
+    expect(wellConfig).not.toMatch(/['"]bootstrapDriverSession['"]/);
+    expect(driverAuth).toMatch(/fetchAssignmentClassified/);
   });
 
   it('PKCE compares state before deleting the verifier and prevents overlapping attempts', () => {

@@ -17,7 +17,6 @@ jest.mock('expo-device', () => ({ modelName: 'test' }));
 const mockSecureLogin = jest.fn();
 jest.mock('../secureDriverAuth', () => ({
   secureLogin: (...args: unknown[]) => mockSecureLogin(...args),
-  bootstrapDriverSession: jest.fn(),
 }));
 
 import { classifyLoginFailure, verifyLogin } from '../driverAuth';

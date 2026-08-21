@@ -62,27 +62,6 @@ export async function checkDriverRegistrationStatus(pendingId: string) {
   );
 }
 
-export async function bootstrapDriverSession() {
-  const { authorizedCallable } = await import('./firebaseAuthSession');
-  return authorizedCallable<{
-    driverId: string;
-    companyId: string;
-    displayName: string | null;
-    legalName: string | null;
-    companyName: string | null;
-    isAdmin: boolean;
-    isViewer: boolean;
-    roles: string[];
-    tier: string | null;
-    assignedRoutes: unknown;
-    assignedCustomers: unknown;
-    dashboardUid: string | null;
-    dashboardRole: string | null;
-    defaultPackageId: string | null;
-    active: true;
-  }>('bootstrapDriverSession', {});
-}
-
 export async function exchangeSsoCode(params: {
   code: string;
   codeVerifier: string;

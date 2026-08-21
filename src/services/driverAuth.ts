@@ -653,27 +653,12 @@ export async function completeAuthenticatedSession(input: {
         uid = null;
       }
       if (!uid || !tokens.idToken) throw new Error('auth_uid_token_invalid');
+      if (afterSignInPause) await afterSignInPause();
 
-      let merged = { ...input };
-      try {
-        const { bootstrapDriverSession } = await import('./secureDriverAuth');
-        const profile = await bootstrapDriverSession();
-        merged = {
-          ...merged,
-          driverId: profile.driverId || merged.driverId,
-          displayName: profile.displayName || merged.displayName,
-          isAdmin: profile.isAdmin === true,
-          isViewer: profile.isViewer === true,
-          companyId: profile.companyId ?? merged.companyId,
-          companyName: profile.companyName ?? merged.companyName,
-          tier: profile.tier ?? merged.tier,
-          roles: profile.roles ?? merged.roles,
-          assignedRoutes: profile.assignedRoutes !== undefined ? profile.assignedRoutes : merged.assignedRoutes,
-          assignedCustomers: profile.assignedCustomers !== undefined ? profile.assignedCustomers : merged.assignedCustomers,
-        };
-      } catch (err) {
-        console.log('[DriverAuth] bootstrapDriverSession unavailable, using authenticate/SSO payload', err);
-      }
+      // Identity comes from authenticateDriver / SSO exchange. Canonical
+      // assignedRoutes, assignedWells, eligibility, and wells come from
+      // bootstrapWbmSession via fetchAssignmentClassified below.
+      const merged = { ...input };
 
       const roles = Array.isArray(merged.roles) ? merged.roles.filter((r): r is string => typeof r === 'string') : ['driver'];
       const routesNorm = normalizeRouteList(merged.assignedRoutes);
@@ -769,6 +754,17 @@ async function readLiveAuthUid(): Promise<string | null> {
   }
 }
 
+let liveReadCount = 0;
+let logoutDuringNthLiveRead: { n: number; pause: () => Promise<void> } | null = null;
+
+export function setLogoutDuringNthLiveReadPauseForTests(
+  n: number,
+  fn: (() => Promise<void>) | null,
+): void {
+  liveReadCount = 0;
+  logoutDuringNthLiveRead = fn ? { n, pause: fn } : null;
+}
+
 async function readLiveSessionFields(): Promise<{
   driverId: string | null;
   companyId: string | null;
@@ -776,6 +772,10 @@ async function readLiveSessionFields(): Promise<{
   driverVerifiedAt: string | null;
   authUid: string | null;
 }> {
+  liveReadCount += 1;
+  if (logoutDuringNthLiveRead && liveReadCount === logoutDuringNthLiveRead.n) {
+    await logoutDuringNthLiveRead.pause();
+  }
   return {
     driverId: await SecureStore.getItemAsync('driverId'),
     companyId: await SecureStore.getItemAsync('companyId'),
@@ -834,6 +834,11 @@ export function setLogoutAfterRereadPauseForTests(fn: (() => Promise<void>) | nu
   logoutAfterRereadPause = fn;
 }
 
+let afterSignInPause: (() => Promise<void>) | null = null;
+export function setAfterSignInPauseForTests(fn: (() => Promise<void>) | null): void {
+  afterSignInPause = fn;
+}
+
 /**
  * Destructive logout of exactly the session named by the permit.
  * Stale or mismatched permits perform no sign-out, SecureStore deletion,
@@ -841,6 +846,7 @@ export function setLogoutAfterRereadPauseForTests(fn: (() => Promise<void>) | nu
  */
 export async function performPermittedLogout(permit: SessionLogoutPermit): Promise<boolean> {
   return runSessionTransition(async () => {
+    liveReadCount = 0;
     if (!permitGenerationCurrent(permit)) return false;
     const liveBefore = await readLiveSessionFields();
     if (!permitGenerationCurrent(permit)) return false;
@@ -851,6 +857,7 @@ export async function performPermittedLogout(permit: SessionLogoutPermit): Promi
     if (!permitGenerationCurrent(permit)) return false;
     const liveImmediate = await readLiveSessionFields();
     if (!identityMatchesPermit(permit, liveImmediate)) return false;
+    if (!permitGenerationCurrent(permit)) return false;
 
     const claimed = claimSessionGeneration();
 

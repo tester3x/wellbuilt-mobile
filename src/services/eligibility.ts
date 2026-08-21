@@ -21,13 +21,13 @@ export interface EligibilityVerdict {
   retryable: boolean;
 }
 
-export function normalizeRouteList(raw: unknown): { present: boolean; routes: string[] } {
-  if (raw === undefined || raw === null) return { present: false, routes: [] };
-  if (!Array.isArray(raw)) return { present: false, routes: [] };
+export function normalizeRouteList(raw: unknown): { present: boolean; malformed: boolean; routes: string[] } {
+  if (raw === undefined || raw === null) return { present: false, malformed: false, routes: [] };
+  if (!Array.isArray(raw)) return { present: true, malformed: true, routes: [] };
   const routes = raw
     .filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
     .map((r) => r.trim());
-  return { present: true, routes };
+  return { present: true, malformed: false, routes };
 }
 
 export function isRealRouteName(route: string): boolean {
@@ -39,7 +39,8 @@ export function isRealRouteName(route: string): boolean {
  * Missing/malformed field → unknown. Never call this on a failed fetch.
  */
 export function evaluateAuthoritativeAssignedRoutes(raw: unknown): EligibilityStatus {
-  const { present, routes } = normalizeRouteList(raw);
+  const { present, malformed, routes } = normalizeRouteList(raw);
+  if (malformed) return 'unknown';
   if (!present) return 'unknown';
   if (routes.length === 0) return 'ineligible';
   if (routes.some(isRealRouteName)) return 'eligible';
@@ -49,16 +50,55 @@ export function evaluateAuthoritativeAssignedRoutes(raw: unknown): EligibilitySt
 export function verdictFromAuthoritative(rawRoutes: unknown, rawWells: unknown = null): EligibilityVerdict {
   const routesNorm = normalizeRouteList(rawRoutes);
   const wellsNorm = normalizeRouteList(rawWells);
-  const status = evaluateAuthoritativeAssignedRoutes(rawRoutes);
+  if (routesNorm.malformed || wellsNorm.malformed) {
+    return {
+      status: 'unknown',
+      source: 'authoritative',
+      routes: null,
+      wells: null,
+      reason: 'scope_malformed',
+      retryable: true,
+    };
+  }
+  if (!routesNorm.present && !wellsNorm.present) {
+    return {
+      status: 'unknown',
+      source: 'authoritative',
+      routes: null,
+      wells: null,
+      reason: 'assigned_routes_missing',
+      retryable: true,
+    };
+  }
+  const routeList = routesNorm.present ? routesNorm.routes : [];
+  const wellList = wellsNorm.present ? wellsNorm.routes : [];
+  if (routeList.length === 0 && wellList.length === 0) {
+    return {
+      status: 'ineligible',
+      source: 'authoritative',
+      routes: [],
+      wells: [],
+      reason: 'explicit_empty',
+      retryable: false,
+    };
+  }
+  if (!routeList.some(isRealRouteName) && wellList.length === 0) {
+    return {
+      status: 'ineligible',
+      source: 'authoritative',
+      routes: routeList,
+      wells: wellList,
+      reason: 'unrouted_only',
+      retryable: false,
+    };
+  }
   return {
-    status,
+    status: 'eligible',
     source: 'authoritative',
-    routes: routesNorm.present ? routesNorm.routes : null,
-    wells: wellsNorm.present ? wellsNorm.routes : null,
-    reason: status === 'eligible' ? 'real_route'
-      : status === 'ineligible' ? (routesNorm.present && routesNorm.routes.length === 0 ? 'explicit_empty' : 'unrouted_only')
-        : 'assigned_routes_missing',
-    retryable: status === 'unknown',
+    routes: routeList,
+    wells: wellList,
+    reason: routeList.some(isRealRouteName) ? 'real_route' : 'assigned_wells',
+    retryable: false,
   };
 }
 

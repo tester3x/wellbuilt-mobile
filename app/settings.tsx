@@ -21,7 +21,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
 import { useAppAlert } from "../components/AppAlert";
-import { loadWellConfig, WellConfigMap, fetchDriverRouteAssignment, filterWellConfigByAssignment } from "../src/services/wellConfig";
+import { loadWellConfig, WellConfigMap, fetchDriverRouteAssignment, scopedWellsForDisplay } from "../src/services/wellConfig";
 import { getLevelSnapshot, loadLevelSnapshots } from "../src/services/wellHistory";
 import {
   DispatchRecipient,
@@ -471,10 +471,7 @@ export default function SettingsScreen() {
 
     if (config) {
       const assignment = await fetchDriverRouteAssignment();
-      const session = await getDriverSession();
-      config = filterWellConfigByAssignment(config, assignment.routes, assignment.wells, {
-        unrestricted: !session?.companyId,
-      });
+      config = scopedWellsForDisplay(config, assignment);
 
       // Group wells by route and track colors from config
       const routeMap: { [route: string]: { wells: string[], color: string } } = {};

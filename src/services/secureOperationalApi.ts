@@ -1,36 +1,46 @@
 /** Authenticated operational callables. No legacy hash. No public RTDB fallback. */
 import { authorizedCallable } from './firebaseAuthSession';
 
+function unsupportedFieldCommand(name: string): never {
+  const err = new Error(`unsupported_field_command:${name}`);
+  (err as { code?: string }).code = 'unsupported_field_command';
+  throw err;
+}
+
+/**
+ * Pull packets only. Envelope matches deployed ingestDriverPacket:
+ * `{ packet, driverHash? }`. Driver identity is stamped server-side.
+ */
 export async function secureIngestPacket(packet: Record<string, unknown>) {
-  return authorizedCallable<{ ok: boolean; packetId: string; duplicate?: boolean }>(
-    'submitFieldCommand',
-    { ...packet, requestType: packet.requestType || 'pull' },
+  const requestType = typeof packet.requestType === 'string' && packet.requestType
+    ? packet.requestType
+    : 'pull';
+  if (requestType !== 'pull') {
+    unsupportedFieldCommand(requestType);
+  }
+  return authorizedCallable<{ ok: boolean; key?: string; packetId?: string; duplicate?: boolean }>(
+    'ingestDriverPacket',
+    { packet },
   );
 }
 
+/**
+ * Only actual pull packets may be redirected to ingestDriverPacket.
+ * Edit/history/control commands stay explicitly unavailable.
+ */
 export async function secureSubmitFieldCommand(packet: Record<string, unknown>) {
-  return authorizedCallable<{
-    ok: boolean;
-    packetId: string;
-    duplicate?: boolean;
-    committed?: boolean;
-    receiptKey?: string;
-    status?: string;
-  }>(
-    'submitFieldCommand',
-    packet,
-  );
+  const requestType = typeof packet.requestType === 'string' ? packet.requestType : '';
+  if (requestType === 'pull') {
+    return secureIngestPacket(packet);
+  }
+  unsupportedFieldCommand(requestType || 'unknown');
 }
 
-/** Receipt lookup for a previously submitted field command. */
-export async function getFieldCommandStatus(query: {
+/** Receipt lookup is not a deployed production callable. */
+export async function getFieldCommandStatus(_query: {
   packetId?: string;
   idempotencyKey?: string;
   receiptKey?: string;
-}) {
-  return authorizedCallable<{
-    status?: string;
-    committed?: boolean;
-    receiptKey?: string;
-  }>('getFieldCommandStatus', query);
+}): Promise<never> {
+  unsupportedFieldCommand('getFieldCommandStatus');
 }

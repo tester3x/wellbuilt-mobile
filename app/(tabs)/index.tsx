@@ -57,7 +57,7 @@ import {
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
-import { getWellConfig, WellConfig, loadWellConfig, fetchDriverRouteAssignment, filterWellConfigByAssignment, getBblPerFootSync } from '../../src/services/wellConfig';
+import { getWellConfig, WellConfig, loadWellConfig, fetchDriverRouteAssignment, scopedWellsForDisplay, lastWellConfigError, getBblPerFootSync } from '../../src/services/wellConfig';
 import {
   getLevelSnapshot,
   getPendingPull,
@@ -1711,9 +1711,7 @@ export default function MainScreen() {
       if (config) {
         // Fetch driver's route/well assignments so fresh install only shows assigned wells
         const assignment = await fetchDriverRouteAssignment();
-        const filteredConfig = filterWellConfigByAssignment(config, assignment.routes, assignment.wells, {
-          unrestricted: assignment.status === 'eligible' && assignment.routes.length === 0,
-        });
+        const filteredConfig = scopedWellsForDisplay(config, assignment);
         const wellNames = Object.keys(filteredConfig);
         console.log('[Main] Saving default well selections:', wellNames.length, 'wells (from', Object.keys(config).length, 'total, assigned routes:', assignment.routes.length, ')');
         await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(wellNames));
@@ -1891,9 +1889,7 @@ export default function MainScreen() {
             if (allWellNames.length > 0) {
               // Reset selected wells filtered by assignment (not all wells)
               const assignment = await fetchDriverRouteAssignment();
-              const filteredConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells, {
-                unrestricted: assignment.status === 'eligible' && assignment.routes.length === 0,
-              });
+              const filteredConfig = scopedWellsForDisplay(config!, assignment);
               const assignedWellNames = Object.keys(filteredConfig);
               console.log('[Main] Recovery: selecting', assignedWellNames.length, 'assigned wells (from', allWellNames.length, 'total)');
               await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
@@ -1902,9 +1898,7 @@ export default function MainScreen() {
 
           // Filter wells by driver's route assignment FIRST, then by user selections
           const assignment = await fetchDriverRouteAssignment();
-          const assignedConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells, {
-            unrestricted: assignment.status === 'eligible' && assignment.routes.length === 0,
-          });
+          const assignedConfig = scopedWellsForDisplay(config!, assignment);
           let assignedWellNames = Object.keys(assignedConfig);
           console.log('[Main] Route assignment filter:', assignedWellNames.length, 'of', allWellNames.length, 'wells', assignment.status);
 
@@ -2385,7 +2379,9 @@ export default function MainScreen() {
           <Text style={styles.emptyStateIcon}>⚠️</Text>
           <Text style={styles.emptyStateTitle}>{t('homeExtra.noWellsLoaded')}</Text>
           <Text style={styles.emptyStateMessage}>
-            {t('homeExtra.noWellsMessage')}
+            {lastWellConfigError
+              ? `well_config_unavailable:${lastWellConfigError}`
+              : t('homeExtra.noWellsMessage')}
           </Text>
           <TouchableOpacity
             style={styles.emptyStateButton}

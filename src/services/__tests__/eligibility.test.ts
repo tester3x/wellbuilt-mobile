@@ -131,9 +131,23 @@ describe('three-state eligibility', () => {
     expect(eligibilityFromSameProfile(undefined, false).reason).toBe('no_company_admin');
   });
 
-  test('normalizeRouteList rejects non-arrays', () => {
-    expect(normalizeRouteList('North')).toEqual({ present: false, routes: [] });
+  test('normalizeRouteList rejects non-arrays as malformed, not missing', () => {
+    expect(normalizeRouteList('North')).toEqual({ present: true, malformed: true, routes: [] });
     expect(normalizeRouteList(['  North Loop  ', 3, '']).routes).toEqual(['North Loop']);
+  });
+
+  test('malformed scope is unknown, distinct from explicit empty', () => {
+    const v = verdictFromAuthoritative({ not: 'array' });
+    expect(v.status).toBe('unknown');
+    expect(v.reason).toBe('scope_malformed');
+    expect(verdictFromAuthoritative([]).reason).toBe('explicit_empty');
+  });
+
+  test('assignedWells alone is eligible (historical direct-permit semantics)', () => {
+    const v = verdictFromAuthoritative(['Unrouted'], ['Gabriel 1']);
+    expect(v.status).toBe('eligible');
+    expect(v.reason).toBe('assigned_wells');
+    expect(v.wells).toEqual(['Gabriel 1']);
   });
 });
 

@@ -46,11 +46,43 @@ const DEFAULT_CONFIG: WellConfig = {
 
 let cachedConfig: WellConfigMap | null = null;
 
+export class WellConfigUnavailableError extends Error {
+  reason: string;
+  constructor(reason: string) {
+    super(`well_config_unavailable:${reason}`);
+    this.name = 'WellConfigUnavailableError';
+    this.reason = reason;
+  }
+}
+
+export let lastWellConfigError: string | null = null;
+
+export function wellConfigFailureReason(error: unknown): string {
+  if (error instanceof WellConfigUnavailableError) return error.reason;
+  const msg = error instanceof Error ? error.message : String(error || '');
+  const known = [
+    'scope_missing',
+    'scope_malformed',
+    'scope_empty',
+    'scope_unrouted_only',
+    'driver_inactive',
+    'company_required',
+    'profile_missing',
+  ];
+  return known.find((c) => msg.includes(c)) || 'fetch_failed';
+}
+
+export function resetWellConfigCacheForTests(): void {
+  cachedConfig = null;
+  lastWellConfigError = null;
+}
+
 export async function loadWellConfig(
   forceRefresh: boolean = false
 ): Promise<WellConfigMap | null> {
   try {
     if (!forceRefresh && cachedConfig) {
+      lastWellConfigError = null;
       return cachedConfig;
     }
 
@@ -62,30 +94,28 @@ export async function loadWellConfig(
 
       if (lastFetch && !needsRefresh(lastFetch)) {
         console.log("[WellConfig] Using cached config");
+        lastWellConfigError = null;
         return cachedConfig;
       }
     }
 
     console.log("[WellConfig] Fetching fresh config from Firebase...");
     const freshConfig = await fetchConfigFromFirebase();
-
-    if (freshConfig) {
-      cachedConfig = freshConfig;
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(freshConfig));
-      await AsyncStorage.setItem(LAST_FETCH_KEY, new Date().toISOString());
-      console.log("[WellConfig] Config updated and cached");
-      return freshConfig;
-    }
-
-    if (cachedConfig) {
-      console.log("[WellConfig] Fetch failed, using stale cache");
+    cachedConfig = freshConfig;
+    lastWellConfigError = null;
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(freshConfig));
+    await AsyncStorage.setItem(LAST_FETCH_KEY, new Date().toISOString());
+    console.log("[WellConfig] Config updated and cached");
+    return freshConfig;
+  } catch (error) {
+    const reason = wellConfigFailureReason(error);
+    lastWellConfigError = reason;
+    console.error("[WellConfig] Error loading config:", error);
+    if (cachedConfig && !forceRefresh) {
+      console.log("[WellConfig] Fetch failed, using stale in-memory cache");
       return cachedConfig;
     }
-
-    return null;
-  } catch (error) {
-    console.error("[WellConfig] Error loading config:", error);
-    return cachedConfig;
+    throw new WellConfigUnavailableError(reason);
   }
 }
 
@@ -97,24 +127,18 @@ function needsRefresh(lastFetchISO: string): boolean {
   return daysSince >= REFRESH_INTERVAL_DAYS;
 }
 
-async function fetchConfigFromFirebase(): Promise<WellConfigMap | null> {
-  try {
-    // Company/assignment scoped callable. Never GET /well_config.json.
-    const { authorizedCallable } = await import("./firebaseAuthSession");
-    const res = await authorizedCallable<{ ok: true; companyId: string; wells: WellConfigMap }>(
-      "getDriverWellConfig",
-      {},
-    );
-    if (!res?.wells) {
-      console.warn("[WellConfig] Callable returned no wells");
-      return null;
-    }
-    console.log("[WellConfig] Fetched", Object.keys(res.wells).length, "assigned wells");
-    return res.wells;
-  } catch (error) {
-    console.error("[WellConfig] Fetch error:", error);
-    return null;
+async function fetchConfigFromFirebase(): Promise<WellConfigMap> {
+  // Company/assignment scoped callable. Never GET /well_config.json.
+  const { authorizedCallable } = await import("./firebaseAuthSession");
+  const res = await authorizedCallable<{ ok: true; companyId: string; wells: WellConfigMap; reason?: string }>(
+    "getDriverWellConfig",
+    {},
+  );
+  if (!res || res.ok !== true || !res.wells || typeof res.wells !== 'object' || Array.isArray(res.wells)) {
+    throw new WellConfigUnavailableError('malformed_response');
   }
+  console.log("[WellConfig] Fetched", Object.keys(res.wells).length, "assigned wells");
+  return res.wells;
 }
 
 export async function getWellConfig(wellName: string): Promise<WellConfig> {
@@ -164,12 +188,10 @@ export async function getAllWellNames(): Promise<string[]> {
   if (!cachedConfig) {
     await loadWellConfig();
   }
-
-  if (cachedConfig) {
-    return Object.keys(cachedConfig).sort();
+  if (!cachedConfig) {
+    throw new WellConfigUnavailableError(lastWellConfigError || 'well_config_unavailable');
   }
-
-  return [];
+  return Object.keys(cachedConfig).sort();
 }
 
 // ── Driver Route Assignment ──
@@ -274,6 +296,7 @@ export async function fetchDriverRouteAssignment(): Promise<{
   routes: string[];
   wells: string[];
   status: EligibilityStatus;
+  reason: string;
   authoritative: boolean;
 }> {
   const verdict = await resolveCurrentEligibility();
@@ -281,6 +304,7 @@ export async function fetchDriverRouteAssignment(): Promise<{
     routes: verdict.routes || [],
     wells: verdict.wells || [],
     status: verdict.status,
+    reason: verdict.reason,
     authoritative: verdict.source === 'authoritative',
   };
 }
@@ -309,6 +333,20 @@ export async function getDriverRouteAssignment(): Promise<{ routes: string[]; we
  * Empty arrays are NOT "see everything" — that was the [] contradiction.
  * Pass unrestricted:true only for no-company admin sessions.
  */
+export function scopedWellsForDisplay(
+  config: WellConfigMap,
+  assignment: {
+    routes: string[];
+    wells: string[];
+    status: EligibilityStatus;
+    reason?: string;
+  },
+): WellConfigMap {
+  if (assignment.reason === 'no_company_admin') return config;
+  if (assignment.status !== 'eligible') return {};
+  return filterWellConfigByAssignment(config, assignment.routes, assignment.wells);
+}
+
 export function filterWellConfigByAssignment(
   config: WellConfigMap,
   assignedRoutes: string[],

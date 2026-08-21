@@ -155,3 +155,10 @@ export function subscribeAuthRevocation(onRevoked: () => void): () => void {
     if (!user) onRevoked();
   });
 }
+
+/** Fires when a Firebase user is present (login, SSO, cold restore). */
+export function subscribeAuthReady(onReady: () => void): () => void {
+  return onAuthStateChanged(getFirebaseAuth(), (user) => {
+    if (user) onReady();
+  });
+}

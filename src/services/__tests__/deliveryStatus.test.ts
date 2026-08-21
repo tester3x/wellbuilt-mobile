@@ -48,6 +48,8 @@ import {
   computeDeliveryCounts,
   getDeliveryItems,
   reconcileSubmittedPulls,
+  recoverStuckSubmission,
+  notifyAuthenticated,
 } from '../deliveryStatus';
 import { SYNC_FAILED_THRESHOLD, flushQueue, retryPacketNow, smartUploadTankPacket } from '../packetQueue';
 import { addPullToHistory, clearPullHistory, getPullHistory } from '../pullHistory';
@@ -234,5 +236,55 @@ describe('persistence across restart', () => {
     const entry = loaded.find((e: any) => e.packetId === PID)!;
     expect(entry.syncStatus).toBe('rejected');
     expect(entry.rejectionReason).toContain('STALE_PULL_TIME');
+  });
+});
+
+describe('classified recoverStuckSubmission never resubmits on ambiguous reads', () => {
+  const statusFetch = (status: number) =>
+    jest.fn(async () => ({ ok: false, status, json: async () => null })) as unknown as typeof fetch;
+  const throwFetch = (err: Error) =>
+    jest.fn(async () => { throw err; }) as unknown as typeof fetch;
+
+  test('HTTP 401 never resubmits', async () => {
+    await addPullToHistory('Gunslinger 3', '7/21/2026 12:06 PM', 11.58, 170, false, PID.slice(0, 15), PID, 'submitted');
+    expect(await recoverStuckSubmission(PID, statusFetch(401))).toBe('read_blocked');
+    expect(rawQueue()).toHaveLength(0);
+  });
+  test('HTTP 403 never resubmits', async () => {
+    await addPullToHistory('Gunslinger 3', '7/21/2026 12:06 PM', 11.58, 170, false, PID.slice(0, 15), PID, 'submitted');
+    expect(await recoverStuckSubmission(PID, statusFetch(403))).toBe('read_blocked');
+    expect(rawQueue()).toHaveLength(0);
+  });
+  test('timeout never resubmits', async () => {
+    await addPullToHistory('Gunslinger 3', '7/21/2026 12:06 PM', 11.58, 170, false, PID.slice(0, 15), PID, 'submitted');
+    const e = new Error('aborted');
+    (e as any).name = 'AbortError';
+    expect(await recoverStuckSubmission(PID, throwFetch(e))).toBe('read_blocked');
+    expect(rawQueue()).toHaveLength(0);
+  });
+  test('network failure never resubmits', async () => {
+    await addPullToHistory('Gunslinger 3', '7/21/2026 12:06 PM', 11.58, 170, false, PID.slice(0, 15), PID, 'submitted');
+    expect(await recoverStuckSubmission(PID, throwFetch(new Error('Network request failed')))).toBe('read_blocked');
+    expect(rawQueue()).toHaveLength(0);
+  });
+  test('explicit not-found across all three paths may same-ID recover', async () => {
+    mockOnline.value = true;
+    mockedUploadTank.mockResolvedValueOnce({ packetId: PID, packetTimestamp: PID.slice(0, 15), wellName: 'Gunslinger 3' });
+    const { smartUploadTankPacket } = require('../packetQueue') as typeof import('../packetQueue');
+    await smartUploadTankPacket({
+      packetId: PID,
+      wellName: 'Gunslinger 3',
+      dateTime: '7/21/2026 12:06 PM',
+      dateTimeUTC: '2026-07-21T17:06:00.000Z',
+      tankLevelFeet: 11.58,
+      bblsTaken: 170,
+      wellDown: false,
+    });
+    await addPullToHistory('Gunslinger 3', '7/21/2026 12:06 PM', 11.58, 170, false, PID.slice(0, 15), PID, 'submitted');
+    mockedUploadTank.mockResolvedValueOnce({ packetId: PID });
+    expect(await recoverStuckSubmission(PID, makeFetch({}))).toBe('resubmitted');
+  });
+  test('notifyAuthenticated is exported for login/SSO/cold-start triggers', () => {
+    expect(typeof notifyAuthenticated).toBe('function');
   });
 });

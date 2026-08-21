@@ -9,6 +9,7 @@ import {
 } from '../src/services/driverAuth';
 import { resolveCurrentEligibility } from '../src/services/wellConfig';
 import { decideBootstrapRoute, type BootstrapRoute } from '../src/services/eligibility';
+import { notifyAuthenticated } from '../src/services/deliveryStatus';
 
 export default function Index() {
   const [checking, setChecking] = useState(true);
@@ -38,6 +39,9 @@ export default function Index() {
         revalidation,
         eligibility: eligibility.status,
       });
+      if (route === '/welcome' || route === '/session-verify') {
+        notifyAuthenticated();
+      }
       void session;
       setDest(route);
       setChecking(false);

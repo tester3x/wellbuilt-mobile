@@ -628,6 +628,10 @@ export async function completeAuthenticatedSession(input: {
     throw new Error('session_persist_failed');
   }
   try {
+    const { notifyAuthenticated } = await import('./deliveryStatus');
+    notifyAuthenticated();
+  } catch { /* reconcile is not a login blocker */ }
+  try {
     const { persistDurableEligibility } = await import('./wellConfig');
     const { eligibilityFromSameProfile } = await import('./eligibility');
     const verdict = eligibilityFromSameProfile(

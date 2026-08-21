@@ -99,7 +99,7 @@ describe('fresh install does not depend on cached well_config', () => {
 
   it('source pins authenticated well catalog', () => {
     const wellConfig = src('wellConfig.ts');
-    expect(wellConfig).toMatch(/getDriverWellConfig/);
+    expect(wellConfig).toMatch(/bootstrapWbmSession/);
     expect(wellConfig).toMatch(/WellConfigUnavailableError/);
     expect(wellConfig).not.toMatch(/well_config\.json\?auth=/);
     expect(wellConfig).not.toMatch(/drivers\/approved/);
@@ -114,11 +114,20 @@ describe('fresh install does not depend on cached well_config', () => {
   it('successful catalog is used as returned, not as all-company fallback', async () => {
     mockCallable.mockResolvedValue({
       ok: true,
+      driverId: 'drv',
       companyId: 'liquid-gold',
+      active: true,
+      assignedRoutes: ['Gabriels'],
+      assignedWells: [],
+      assignmentRevision: 1,
+      assignmentDigest: 'dig',
+      eligibilityStatus: 'eligible',
+      eligibilityReason: 'scope_ok',
       wells: { 'Gabriel 1': { route: 'Gabriels', allowedBottom: 3, numTanks: 1, loadLine: 1.33 } },
+      wellCount: 1,
     });
     const wells = await loadWellConfig(true);
-    expect(mockCallable).toHaveBeenCalledWith('getDriverWellConfig', {});
+    expect(mockCallable).toHaveBeenCalledWith('bootstrapWbmSession', {});
     expect(Object.keys(wells || {})).toEqual(['Gabriel 1']);
   });
 });

@@ -16,7 +16,21 @@ import {
   unknownVerdict,
   verdictFromAuthoritative,
 } from '../eligibility';
+import { identityChanged } from '../driverAuth';
 import { classifyLoginFailure } from '../driverAuth';
+
+describe('identity switch without logout', () => {
+  test('Driver A → Driver B clears caches even if logout was skipped', () => {
+    expect(identityChanged(
+      { driverId: 'A', companyId: 'lg' },
+      { driverId: 'B', companyId: 'lg' },
+    )).toBe(true);
+    expect(identityChanged(
+      { driverId: 'A', companyId: 'lg' },
+      { driverId: 'A', companyId: 'lg' },
+    )).toBe(false);
+  });
+});
 
 describe('three-state eligibility', () => {
   test('real assigned route is eligible', () => {

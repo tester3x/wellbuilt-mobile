@@ -3,7 +3,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
-import { diagnoseHttpStatus, diagnoseThrown } from "./connectionDiagnosis";
+import { diagnoseThrown } from "./connectionDiagnosis";
 import {
   EligibilityStatus,
   EligibilityVerdict,
@@ -13,6 +13,24 @@ import {
   unknownVerdict,
   verdictFromAuthoritative,
 } from "./eligibility";
+import {
+  envelopeMatchesRevision,
+  envelopeMatchesSession,
+  parseBootstrapEnvelope,
+  snapshotToEnvelope,
+  WBM_BOOTSTRAP_SCHEMA,
+  WBM_ENVELOPE_KEY,
+  type WbmBootstrapEnvelope,
+  type WbmBootstrapSnapshot,
+} from './wbmBootstrapCache';
+
+export {
+  envelopeMatchesRevision,
+  envelopeMatchesSession,
+  parseBootstrapEnvelope,
+  WBM_BOOTSTRAP_SCHEMA,
+  WBM_ENVELOPE_KEY,
+};
 
 const STORAGE_KEY = "@wellbuilt_well_config";
 const LAST_FETCH_KEY = "@wellbuilt_config_last_fetch";
@@ -20,45 +38,6 @@ const ASSIGNED_ROUTES_KEY = "@wellbuilt_assigned_routes";
 const ASSIGNED_WELLS_KEY = "@wellbuilt_assigned_wells";
 const ELIGIBILITY_STATUS_KEY = "@wellbuilt_eligibility_status";
 const CACHE_BINDER_KEY = "@wellbuilt_well_config_binder";
-const REFRESH_INTERVAL_DAYS = 3;
-
-export type WbmCacheBinder = {
-  driverId: string;
-  companyId: string;
-  digest: string;
-};
-
-export function scopeDigest(routes: unknown, wells: unknown): string {
-  return JSON.stringify({ r: routes ?? null, w: wells ?? null });
-}
-
-export function cacheMatchesSession(
-  binder: WbmCacheBinder | null,
-  session: WbmCacheBinder | null,
-): boolean {
-  if (!binder || !session) return false;
-  if (!binder.driverId || !session.driverId) return false;
-  return binder.driverId === session.driverId
-    && binder.companyId === session.companyId
-    && binder.digest === session.digest;
-}
-
-async function currentSessionBinder(): Promise<WbmCacheBinder | null> {
-  const driverId = (await SecureStore.getItemAsync("driverId")) || "";
-  const companyId = (await SecureStore.getItemAsync("companyId")) || "";
-  if (!driverId) return null;
-  let routes: unknown = null;
-  let wells: unknown = null;
-  try {
-    const raw = await AsyncStorage.getItem(ELIGIBILITY_STATUS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as EligibilityVerdict;
-      routes = parsed.routes;
-      wells = parsed.wells;
-    }
-  } catch { /* binder uses empty digest */ }
-  return { driverId, companyId, digest: scopeDigest(routes, wells) };
-}
 
 // Firebase config
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
@@ -84,7 +63,9 @@ const DEFAULT_CONFIG: WellConfig = {
 };
 
 let cachedConfig: WellConfigMap | null = null;
-let cachedBinder: WbmCacheBinder | null = null;
+let cachedEnvelope: WbmBootstrapEnvelope | null = null;
+let cachedAssignedRoutes: string[] | null = null;
+let cachedAssignedWells: string[] | null = null;
 
 export class WellConfigUnavailableError extends Error {
   reason: string;
@@ -114,97 +95,95 @@ export function wellConfigFailureReason(error: unknown): string {
 
 export function resetWellConfigCacheForTests(): void {
   cachedConfig = null;
-  cachedBinder = null;
+  cachedEnvelope = null;
   lastWellConfigError = null;
 }
 
-/** Test helper — install a bound in-memory catalog as Driver A would. */
-export function seedWellConfigCacheForTests(config: WellConfigMap, binder: WbmCacheBinder): void {
-  cachedConfig = config;
-  cachedBinder = binder;
+export function seedWellConfigCacheForTests(env: WbmBootstrapEnvelope): void {
+  cachedEnvelope = env;
+  cachedConfig = env.wells as unknown as WellConfigMap;
   lastWellConfigError = null;
 }
 
-export function peekWellConfigCacheForTests(): { config: WellConfigMap | null; binder: WbmCacheBinder | null } {
-  return { config: cachedConfig, binder: cachedBinder };
+export function peekWellConfigCacheForTests(): {
+  config: WellConfigMap | null;
+  envelope: WbmBootstrapEnvelope | null;
+} {
+  return { config: cachedConfig, envelope: cachedEnvelope };
+}
+
+async function sessionIdentity(): Promise<{ driverId: string | null; companyId: string | null }> {
+  return {
+    driverId: await SecureStore.getItemAsync("driverId"),
+    companyId: await SecureStore.getItemAsync("companyId"),
+  };
 }
 
 export async function loadWellConfig(
   forceRefresh: boolean = false
 ): Promise<WellConfigMap | null> {
+  const ident = await sessionIdentity();
   try {
-    const session = await currentSessionBinder();
-    if (!forceRefresh && cachedConfig && cacheMatchesSession(cachedBinder, session)) {
-      lastWellConfigError = null;
-      return cachedConfig;
-    }
-    if (cachedConfig && !cacheMatchesSession(cachedBinder, session)) {
-      cachedConfig = null;
-      cachedBinder = null;
-    }
-
-    const stored = await AsyncStorage.getItem(STORAGE_KEY);
-    const storedBinderRaw = await AsyncStorage.getItem(CACHE_BINDER_KEY);
-    const lastFetch = await AsyncStorage.getItem(LAST_FETCH_KEY);
-    let storedBinder: WbmCacheBinder | null = null;
-    try { storedBinder = storedBinderRaw ? JSON.parse(storedBinderRaw) as WbmCacheBinder : null; } catch { storedBinder = null; }
-
-    if (stored && !forceRefresh && cacheMatchesSession(storedBinder, session)) {
-      cachedConfig = JSON.parse(stored);
-      cachedBinder = storedBinder;
-
-      if (lastFetch && !needsRefresh(lastFetch)) {
-        console.log("[WellConfig] Using cached config");
-        lastWellConfigError = null;
-        return cachedConfig;
-      }
-    }
-
-    console.log("[WellConfig] Fetching fresh config from Firebase...");
-    const freshConfig = await fetchConfigFromFirebase();
-    cachedConfig = freshConfig;
-    cachedBinder = session;
+    const live = await fetchBootstrapFromServer();
+    await persistBootstrapEnvelope(live);
     lastWellConfigError = null;
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(freshConfig));
-    await AsyncStorage.setItem(LAST_FETCH_KEY, new Date().toISOString());
-    if (session) await AsyncStorage.setItem(CACHE_BINDER_KEY, JSON.stringify(session));
-    console.log("[WellConfig] Config updated and cached");
-    return freshConfig;
+    return live.wells as unknown as WellConfigMap;
   } catch (error) {
     const reason = wellConfigFailureReason(error);
     lastWellConfigError = reason;
     console.error("[WellConfig] Error loading config:", error);
-    const session = await currentSessionBinder();
-    if (cachedConfig && !forceRefresh && cacheMatchesSession(cachedBinder, session)) {
-      console.log("[WellConfig] Fetch failed, using stale in-memory cache for this driver");
-      return cachedConfig;
+    if (!forceRefresh) {
+      const fallback = await readMatchingEnvelope(ident.driverId, ident.companyId);
+      if (fallback && fallback.eligibility.status !== 'unknown') {
+        cachedEnvelope = fallback;
+        cachedConfig = fallback.wells as unknown as WellConfigMap;
+        return cachedConfig;
+      }
     }
     cachedConfig = null;
-    cachedBinder = null;
+    cachedEnvelope = null;
     throw new WellConfigUnavailableError(reason);
   }
 }
 
-function needsRefresh(lastFetchISO: string): boolean {
-  const lastFetch = new Date(lastFetchISO);
-  const now = new Date();
-  const daysSince =
-    (now.getTime() - lastFetch.getTime()) / (1000 * 60 * 60 * 24);
-  return daysSince >= REFRESH_INTERVAL_DAYS;
-}
-
-async function fetchConfigFromFirebase(): Promise<WellConfigMap> {
-  // Company/assignment scoped callable. Never GET /well_config.json.
+async function fetchBootstrapFromServer(): Promise<WbmBootstrapSnapshot> {
   const { authorizedCallable } = await import("./firebaseAuthSession");
-  const res = await authorizedCallable<{ ok: true; companyId: string; wells: WellConfigMap; reason?: string }>(
-    "getDriverWellConfig",
-    {},
-  );
-  if (!res || res.ok !== true || !res.wells || typeof res.wells !== 'object' || Array.isArray(res.wells)) {
+  const res = await authorizedCallable<WbmBootstrapSnapshot>("bootstrapWbmSession", {});
+  if (!res || res.ok !== true || typeof res.driverId !== 'string' || typeof res.assignmentDigest !== 'string') {
     throw new WellConfigUnavailableError('malformed_response');
   }
-  console.log("[WellConfig] Fetched", Object.keys(res.wells).length, "assigned wells");
-  return res.wells;
+  if (!res.wells || typeof res.wells !== 'object' || Array.isArray(res.wells)) {
+    throw new WellConfigUnavailableError('malformed_response');
+  }
+  return res;
+}
+
+export async function persistBootstrapEnvelope(snap: WbmBootstrapSnapshot): Promise<WbmBootstrapEnvelope> {
+  const env = snapshotToEnvelope(snap);
+  cachedEnvelope = env;
+  cachedConfig = env.wells as unknown as WellConfigMap;
+  cachedAssignedRoutes = env.eligibility.routes;
+  cachedAssignedWells = env.eligibility.wells;
+  await AsyncStorage.setItem(WBM_ENVELOPE_KEY, JSON.stringify(env));
+  return env;
+}
+
+export async function readMatchingEnvelope(
+  driverId: string | null,
+  companyId: string | null,
+): Promise<WbmBootstrapEnvelope | null> {
+  if (cachedEnvelope && envelopeMatchesSession(cachedEnvelope, driverId, companyId)) {
+    return cachedEnvelope;
+  }
+  try {
+    const raw = await AsyncStorage.getItem(WBM_ENVELOPE_KEY);
+    const env = parseBootstrapEnvelope(raw ? JSON.parse(raw) : null);
+    if (envelopeMatchesSession(env, driverId, companyId)) {
+      cachedEnvelope = env;
+      return env;
+    }
+  } catch { /* unversioned or malformed */ }
+  return null;
 }
 
 export async function getWellConfig(wellName: string): Promise<WellConfig> {
@@ -246,7 +225,7 @@ export async function forceRefreshWellConfig(): Promise<boolean> {
 
 export async function clearWellConfigCache(): Promise<void> {
   cachedConfig = null;
-  cachedBinder = null;
+  cachedEnvelope = null;
   cachedAssignedRoutes = null;
   cachedAssignedWells = null;
   lastWellConfigError = null;
@@ -256,6 +235,7 @@ export async function clearWellConfigCache(): Promise<void> {
   await AsyncStorage.removeItem(ASSIGNED_ROUTES_KEY);
   await AsyncStorage.removeItem(ASSIGNED_WELLS_KEY);
   await AsyncStorage.removeItem(ELIGIBILITY_STATUS_KEY);
+  await AsyncStorage.removeItem(WBM_ENVELOPE_KEY);
 }
 
 export async function getAllWellNames(): Promise<string[]> {
@@ -270,75 +250,38 @@ export async function getAllWellNames(): Promise<string[]> {
 
 // ── Driver Route Assignment ──
 
-let cachedAssignedRoutes: string[] | null = null;
-let cachedAssignedWells: string[] | null = null;
-
 export async function readDurableEligibility(): Promise<EligibilityVerdict | null> {
-  try {
-    const raw = await AsyncStorage.getItem(ELIGIBILITY_STATUS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as EligibilityVerdict;
-    if (parsed?.status !== 'eligible' && parsed?.status !== 'ineligible' && parsed?.status !== 'unknown') {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
+  const ident = await sessionIdentity();
+  const env = await readMatchingEnvelope(ident.driverId, ident.companyId);
+  if (!env) return null;
+  return env.eligibility;
 }
 
 export async function persistDurableEligibility(v: EligibilityVerdict): Promise<void> {
-  if (v.status === 'unknown') return; // never persist unknown as last-known denial/grant
-  await AsyncStorage.setItem(ELIGIBILITY_STATUS_KEY, JSON.stringify(v));
-  if (v.routes) {
-    cachedAssignedRoutes = v.routes;
-    await AsyncStorage.setItem(ASSIGNED_ROUTES_KEY, JSON.stringify(v.routes));
-  }
-  if (v.wells) {
-    cachedAssignedWells = v.wells;
-    await AsyncStorage.setItem(ASSIGNED_WELLS_KEY, JSON.stringify(v.wells));
-  }
+  // Bare verdict persistence is no longer authoritative. Live bootstrap envelope
+  // is the only durable grant. Keep this as a no-op writer for old call sites
+  // that only have a verdict — they must not create an unbound cache.
+  if (v.status === 'unknown') return;
+  cachedAssignedRoutes = v.routes;
+  cachedAssignedWells = v.wells;
 }
 
 export async function fetchAssignmentClassified(
-  fetchFn: typeof fetch = fetch,
+  bootstrapFn?: () => Promise<WbmBootstrapSnapshot>,
 ): Promise<EligibilityVerdict> {
   try {
     const driverId = await SecureStore.getItemAsync("driverId");
     if (!driverId) {
       return unknownVerdict('missing_driver_id', true);
     }
-    let token = 'missing';
-    try {
-      const { getValidIdToken } = await import("./firebaseAuthSession");
-      token = await getValidIdToken();
-    } catch (err) {
-      const d = diagnoseThrown(err);
-      return unknownVerdict(d.code || 'missing_token', d.retryable);
-    }
-    if (token === 'missing') {
-      return unknownVerdict('missing_token', true);
-    }
-    const url = `${FIREBASE_DATABASE_URL}/drivers/profiles/${driverId}.json?auth=${encodeURIComponent(token)}`;
-    const response = await fetchFn(url, { method: "GET", headers: { "Content-Type": "application/json" } });
-    if (!response.ok) {
-      const d = diagnoseHttpStatus(response.status);
-      return unknownVerdict(d.code, d.retryable);
-    }
-    const data = await response.json();
-    if (data == null) {
-      return unknownVerdict('null_profile', true);
-    }
-    const verdict = verdictFromAuthoritative(data.assignedRoutes, data.assignedWells);
-    if (verdict.status !== 'unknown') {
-      cachedAssignedRoutes = verdict.routes;
-      cachedAssignedWells = verdict.wells;
-      await persistDurableEligibility(verdict);
-    }
-    return verdict;
+    const snap = bootstrapFn
+      ? await bootstrapFn()
+      : await fetchBootstrapFromServer();
+    const env = await persistBootstrapEnvelope(snap);
+    return env.eligibility;
   } catch (error) {
     const d = diagnoseThrown(error);
-    return unknownVerdict(d.code, d.retryable);
+    return unknownVerdict(d.code || wellConfigFailureReason(error), d.retryable);
   }
 }
 

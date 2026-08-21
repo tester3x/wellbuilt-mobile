@@ -39,23 +39,11 @@ async function checkRtdbLogoutSignal(): Promise<boolean> {
     const verifiedAt = await SecureStore.getItemAsync('driverVerifiedAt');
     if (!driverId || !verifiedAt) return false;
 
-    const { getValidIdToken } = await import('../src/services/firebaseAuthSession');
-    const token = await getValidIdToken();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-    const resp = await fetch(
-      `${FIREBASE_DB}/drivers/profiles/${driverId}/logoutAt.json?auth=${encodeURIComponent(token)}`,
-      { signal: controller.signal },
-    );
-    clearTimeout(timer);
-    if (!resp.ok) return false;
-
-    const logoutAt = await resp.json();
-    if (!logoutAt) return false;
-
-    const logoutTime = new Date(logoutAt).getTime();
-    const sessionTime = parseInt(verifiedAt, 10);
-    return logoutTime > sessionTime;
+    void driverId;
+    void verifiedAt;
+    // Remote SSO logout is decided by verifyDriverSession / bootstrapWbmSession.
+    // Do not GET drivers/profiles/{id} (parent-deny + not canonical bootstrap).
+    return false;
   } catch {
     return false;
   }

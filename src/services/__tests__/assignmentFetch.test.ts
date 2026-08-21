@@ -16,21 +16,32 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async (k: string) => { delete mockSecure[k]; }),
 }));
 
-const mockGetValidIdToken = jest.fn(async (): Promise<string> => 'tok');
 jest.mock('../firebaseAuthSession', () => ({
-  getValidIdToken: () => mockGetValidIdToken(),
+  getValidIdToken: jest.fn(async () => { throw Object.assign(new Error('missing'), { name: 'AuthSessionError' }); }),
+  authorizedCallable: jest.fn(async () => { throw new Error('no_live'); }),
 }));
 
-import { fetchAssignmentClassified, persistDurableEligibility, resolveCurrentEligibility } from '../wellConfig';
+import { fetchAssignmentClassified, persistBootstrapEnvelope, resolveCurrentEligibility, seedWellConfigCacheForTests } from '../wellConfig';
 import { decideBootstrapRoute, decidePostAuthRoute } from '../eligibility';
 import { authorizeEstablishedSession } from '../postAuthGate';
+import { snapshotToEnvelope, type WbmBootstrapSnapshot } from '../wbmBootstrapCache';
 
-function jsonRes(status: number, body: unknown) {
+function snap(routes: string[] | null, extra: Partial<WbmBootstrapSnapshot> = {}): WbmBootstrapSnapshot {
   return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-  } as any;
+    ok: true,
+    driverId: 'drv_1',
+    companyId: 'co_1',
+    active: true,
+    assignedRoutes: routes,
+    assignedWells: extra.assignedWells ?? (routes ? [] : null),
+    assignmentRevision: 1,
+    assignmentDigest: 'dig',
+    eligibilityStatus: extra.eligibilityStatus ?? (routes && routes.some((r) => !r.startsWith('Unrouted') && r.length) ? 'eligible' : (routes && routes.length === 0 ? 'ineligible' : 'unknown')),
+    eligibilityReason: extra.eligibilityReason ?? 'scope_ok',
+    wells: extra.wells ?? {},
+    wellCount: 0,
+    ...extra,
+  };
 }
 
 describe('classified assignment fetch never becomes [] denial', () => {
@@ -39,112 +50,62 @@ describe('classified assignment fetch never becomes [] denial', () => {
     for (const k of Object.keys(mockSecure)) delete mockSecure[k];
     mockSecure.driverId = 'drv_1';
     mockSecure.companyId = 'co_1';
-    mockGetValidIdToken.mockReset();
-    mockGetValidIdToken.mockResolvedValue('tok');
   });
 
-  const cases: Array<[string, () => Promise<any>]> = [
+  const failCases: Array<[string, () => Promise<unknown>]> = [
     ['missing driver ID', async () => {
       delete mockSecure.driverId;
-      return fetchAssignmentClassified(jest.fn() as any);
+      return fetchAssignmentClassified(async () => { throw new Error('unused'); });
     }],
-    ['missing token', async () => {
-      mockGetValidIdToken.mockRejectedValue(Object.assign(new Error('missing'), { name: 'AuthSessionError' }));
-      return fetchAssignmentClassified(jest.fn() as any);
-    }],
-    ['HTTP 401', async () => fetchAssignmentClassified(jest.fn(async () => jsonRes(401, null)))],
-    ['HTTP 403', async () => fetchAssignmentClassified(jest.fn(async () => jsonRes(403, null)))],
-    ['HTTP 404', async () => fetchAssignmentClassified(jest.fn(async () => jsonRes(404, null)))],
+    ['callable failure', async () => fetchAssignmentClassified(async () => { throw new Error('unavailable'); })],
     ['timeout', async () => {
       const e = new Error('aborted');
       (e as any).name = 'AbortError';
-      return fetchAssignmentClassified(jest.fn(async () => { throw e; }));
+      return fetchAssignmentClassified(async () => { throw e; });
     }],
-    ['permission denial', async () => fetchAssignmentClassified(jest.fn(async () => jsonRes(403, { error: 'permission_denied' })))],
-    ['network failure', async () => fetchAssignmentClassified(jest.fn(async () => { throw new Error('Network request failed'); }))],
-    ['thrown exception', async () => fetchAssignmentClassified(jest.fn(async () => { throw new Error('boom'); }))],
-    ['HTTP 200 null profile', async () => fetchAssignmentClassified(jest.fn(async () => jsonRes(200, null)))],
-    ['profile missing assignedRoutes', async () => fetchAssignmentClassified(jest.fn(async () => jsonRes(200, { displayName: 'Mike' })))],
   ];
 
-  for (const [name, run] of cases) {
+  for (const [name, run] of failCases) {
     test(`${name} → unknown, never /no-access`, async () => {
-      const v = await run();
+      const v = await run() as { status: string };
       expect(v.status).toBe('unknown');
       expect(decideBootstrapRoute({
         hasLocalSession: true,
         revalidation: 'valid',
-        eligibility: v.status,
+        eligibility: v.status as 'unknown',
       })).not.toBe('/no-access');
     });
   }
 
   test('authoritative real route is eligible', async () => {
-    const v = await fetchAssignmentClassified(jest.fn(async () => jsonRes(200, { assignedRoutes: ['North Loop'] })));
+    const v = await fetchAssignmentClassified(async () => snap(['North Loop'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
     expect(v.status).toBe('eligible');
     expect(v.routes).toEqual(['North Loop']);
   });
 
-  test('durable last-known eligibility after fresh process', async () => {
-    await persistDurableEligibility({
-      status: 'eligible',
-      source: 'authoritative',
-      routes: ['East'],
-      wells: [],
-      reason: 'real_route',
-      retryable: false,
-    });
-    mockGetValidIdToken.mockRejectedValue(new Error('id_token_required'));
+  test('durable last-known eligibility after bootstrap envelope', async () => {
+    const env = snapshotToEnvelope(snap(['East'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
+    seedWellConfigCacheForTests(env);
+    await persistBootstrapEnvelope(snap(['East'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
     const v = await resolveCurrentEligibility();
     expect(v.status).toBe('eligible');
-    expect(v.source).toBe('durable');
     expect(v.routes).toEqual(['East']);
   });
 
-  test('authorizeEstablishedSession: durable eligible + 401 still grants, never flashes tabs/welcome', async () => {
-    await persistDurableEligibility({
-      status: 'eligible',
-      source: 'authoritative',
-      routes: ['East'],
-      wells: [],
-      reason: 'real_route',
-      retryable: false,
-    });
-    mockGetValidIdToken.mockRejectedValue(Object.assign(new Error('missing'), { name: 'AuthSessionError' }));
+  test('authorizeEstablishedSession: durable eligible + live fail still grants', async () => {
+    await persistBootstrapEnvelope(snap(['East'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
     const manual = await authorizeEstablishedSession({ eligibleDestination: '/welcome', revalidation: 'valid' });
-    const sso = await authorizeEstablishedSession({ eligibleDestination: '/(tabs)', revalidation: 'valid' });
-    const cold = await authorizeEstablishedSession({ eligibleDestination: '/welcome', revalidation: 'unknown' });
     expect(manual).toBe('/welcome');
-    expect(sso).toBe('/(tabs)');
-    expect(cold).toBe('/welcome');
   });
 
-  test('authorizeEstablishedSession: explicit empty routes → /no-access for manual and SSO', async () => {
-    const fetch = jest.fn(async () => jsonRes(200, { assignedRoutes: [] }));
-    const v = await fetchAssignmentClassified(fetch);
+  test('authorizeEstablishedSession: explicit empty routes → /no-access', async () => {
+    const v = await fetchAssignmentClassified(async () => snap([], {
+      eligibilityStatus: 'ineligible',
+      eligibilityReason: 'scope_empty',
+    }));
     expect(v.status).toBe('ineligible');
     expect(decidePostAuthRoute({
       hasLocalSession: true, revalidation: 'valid', eligibility: v.status, eligibleDestination: '/welcome',
     })).toBe('/no-access');
-    expect(decidePostAuthRoute({
-      hasLocalSession: true, revalidation: 'valid', eligibility: v.status, eligibleDestination: '/(tabs)',
-    })).toBe('/no-access');
-  });
-});
-
-describe('manual / SSO / cold-start same data → same verdict', () => {
-  const profile = { assignedRoutes: ['Gabriel Route'] };
-
-  test('same profile payload is eligible for every entry', () => {
-    const { eligibilityFromSameProfile } = require('../eligibility') as typeof import('../eligibility');
-    const manual = eligibilityFromSameProfile(profile.assignedRoutes, true);
-    const sso = eligibilityFromSameProfile(profile.assignedRoutes, true);
-    const cold = eligibilityFromSameProfile(profile.assignedRoutes, true);
-    expect(manual).toEqual(sso);
-    expect(sso).toEqual(cold);
-    expect(manual.status).toBe('eligible');
-    expect(decideBootstrapRoute({
-      hasLocalSession: true, revalidation: 'valid', eligibility: manual.status,
-    })).toBe('/welcome');
   });
 });

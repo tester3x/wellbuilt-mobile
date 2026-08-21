@@ -7,6 +7,12 @@ const firebase = readFileSync(join(__dirname, '..', 'firebase.ts'), 'utf8');
 const secure = readFileSync(join(__dirname, '..', 'secureDriverAuth.ts'), 'utf8');
 
 describe('WB-M no longer uses insecure legacy auth', () => {
+  it('well catalog does not GET drivers/profiles', () => {
+    const wellConfig = readFileSync(join(__dirname, '..', 'wellConfig.ts'), 'utf8');
+    expect(wellConfig).not.toMatch(/drivers\/profiles\/\$\{/);
+    expect(wellConfig).toMatch(/bootstrapWbmSession/);
+  });
+
   it('verifyLogin does not GET drivers/approved', () => {
     const start = driverAuth.indexOf('export const verifyLogin');
     const end = driverAuth.indexOf('export const verifyPasscode');

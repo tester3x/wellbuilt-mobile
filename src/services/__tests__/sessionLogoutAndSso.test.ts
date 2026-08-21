@@ -48,9 +48,9 @@ describe('WB-M session, SSO, registration, listener', () => {
   });
 
   it('well config and listener use the ID token / company query', () => {
-    expect(wellConfig).toMatch(/getValidIdToken/);
+    expect(wellConfig).toMatch(/authorizedCallable/);
     expect(wellConfig).not.toMatch(/\?auth=\$\{FIREBASE_API_KEY\}/);
-    expect(wellConfig).toMatch(/getDriverWellConfig/);
+    expect(wellConfig).toMatch(/bootstrapWbmSession/);
     expect(wellConfig).not.toMatch(/well_config\.json\?auth=/);
     expect(listener).toMatch(/orderByChild\('companyId'\)/);
     expect(listener).toMatch(/equalTo\(companyId\)/);

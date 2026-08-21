@@ -562,6 +562,15 @@ export async function revalidateDriverSessionClassified(): Promise<Revalidation>
  * both land here so cold start reads the same contract.
  * If local save fails after Firebase sign-in, the auth session is cleared.
  */
+export function identityChanged(
+  prev: { driverId: string | null; companyId: string | null },
+  next: { driverId: string; companyId: string },
+): boolean {
+  if (prev.driverId && prev.driverId !== next.driverId) return true;
+  if (prev.driverId && (prev.companyId || '') !== (next.companyId || '')) return true;
+  return false;
+}
+
 export async function completeAuthenticatedSession(input: {
   driverId: string;
   displayName: string;
@@ -597,6 +606,16 @@ export async function completeAuthenticatedSession(input: {
   }
   const roles = Array.isArray(merged.roles) ? merged.roles.filter((r): r is string => typeof r === 'string') : ['driver'];
   const routesNorm = normalizeRouteList(merged.assignedRoutes);
+  const prevId = await SecureStore.getItemAsync('driverId');
+  const prevCo = await SecureStore.getItemAsync('companyId');
+  const nextId = merged.driverId;
+  const nextCo = merged.companyId || '';
+  if (identityChanged({ driverId: prevId, companyId: prevCo }, { driverId: nextId, companyId: nextCo })) {
+    try {
+      const { clearWellConfigCache } = await import('./wellConfig');
+      await clearWellConfigCache();
+    } catch { /* cache isolation must not block login */ }
+  }
   try {
     await saveDriverSession(
       merged.driverId,
@@ -632,13 +651,8 @@ export async function completeAuthenticatedSession(input: {
     notifyAuthenticated();
   } catch { /* reconcile is not a login blocker */ }
   try {
-    const { persistDurableEligibility } = await import('./wellConfig');
-    const { eligibilityFromSameProfile } = await import('./eligibility');
-    const verdict = eligibilityFromSameProfile(
-      routesNorm.present ? routesNorm.routes : merged.assignedRoutes,
-      !!session.companyId,
-    );
-    if (verdict.status !== 'unknown') await persistDurableEligibility(verdict);
+    const { fetchAssignmentClassified } = await import('./wellConfig');
+    await fetchAssignmentClassified();
   } catch { /* eligibility persistence is not a login blocker */ }
   return session;
 }

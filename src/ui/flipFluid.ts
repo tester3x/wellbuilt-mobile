@@ -66,7 +66,7 @@ export function createFlipWorld(
 ): FlipWorld {
   const w = Math.max(8, finite(width, 100));
   const h = Math.max(8, finite(height, 160));
-  const fill = clamp(finite(restFill, 0.5), 0.04, 1);
+  const fill = clamp(finite(restFill, 0.5), 0, 1);
   const n = Math.max(16, Math.floor(particleCount));
   const cells = gx * gy;
   const world: FlipWorld = {
@@ -93,6 +93,15 @@ export function createFlipWorld(
 
 function seedParticles(world: FlipWorld): void {
   const fillH = world.restFill * world.height;
+  if (world.restFill <= 0 || fillH <= 0) {
+    for (let i = 0; i < world.n; i++) {
+      world.xs[i] = ((i + 0.5) / world.n) * world.width;
+      world.ys[i] = 0;
+      world.vxs[i] = 0;
+      world.vys[i] = 0;
+    }
+    return;
+  }
   const cols = Math.max(4, Math.round(Math.sqrt(world.n * world.width / Math.max(fillH, 1))));
   const rows = Math.max(2, Math.ceil(world.n / cols));
   let i = 0;
@@ -111,7 +120,7 @@ function seedParticles(world: FlipWorld): void {
 
 /** Change rest fill (tank level). Reseed if the fraction jumped hard. */
 export function setRestFill(world: FlipWorld, restFill: number): void {
-  const next = clamp(finite(restFill, world.restFill), 0.04, 1);
+  const next = clamp(finite(restFill, world.restFill), 0, 1);
   const jumped = Math.abs(next - world.restFill) > 0.12;
   world.restFill = next;
   if (jumped) seedParticles(world);
@@ -258,6 +267,14 @@ function collide(world: FlipWorld): void {
 }
 
 function restoreMean(world: FlipWorld, dt: number): void {
+  if (world.restFill <= 0) {
+    for (let p = 0; p < world.n; p++) {
+      world.ys[p] = 0;
+      world.vys[p] = 0;
+      world.vxs[p] *= 0.4;
+    }
+    return;
+  }
   let sum = 0;
   for (let p = 0; p < world.n; p++) sum += world.ys[p];
   const mean = sum / world.n;
@@ -291,6 +308,10 @@ export function stepFlip(
     seedParticles(world);
     return;
   }
+  if (world.restFill <= 0) {
+    seedParticles(world);
+    return;
+  }
   const g = clampGravity(gravity);
   const accel = 980; // px/s^2 scale at tank-down = 1
   // y = 0 is the tank floor. Caller gy = +1 means "down", so pull toward y = 0.
@@ -310,29 +331,82 @@ export function stepFlip(
   collide(world);
 }
 
-/** Per-column free-surface height from the bottom, length FLIP_COLS. */
+/** Per-column free-surface height from the bottom, length FLIP_COLS.
+ *  The displayed mean is restored to the operational rest height so local
+ *  slosh does not falsify volume. Exact zero stays empty. */
 export function surfaceHeights(world: FlipWorld, cols = FLIP_COLS): number[] {
-  const out = new Array(cols).fill(0);
-  const counts = new Array(cols).fill(0);
   const rest = world.restFill * world.height;
+  const out = new Array(cols).fill(0);
+  if (world.restFill <= 0 || rest <= 0) return out;
+  const counts = new Array(cols).fill(0);
   for (let p = 0; p < world.n; p++) {
     const c = clamp(Math.floor((world.xs[p] / world.width) * cols), 0, cols - 1);
     if (world.ys[p] > out[c]) out[c] = world.ys[p];
     counts[c]++;
   }
   for (let c = 0; c < cols; c++) {
-    if (counts[c] === 0) out[c] = rest;
-    // Local splash, but keep the average near rest.
-    out[c] = clamp(out[c], rest * 0.35, Math.min(world.height, rest * 1.35));
+    if (counts[c] === 0) {
+      const l = out[c === 0 ? c : c - 1];
+      const r = out[c === cols - 1 ? c : c + 1];
+      out[c] = (l + r + rest) / 3;
+    }
   }
-  // Smooth once so columns don't spike.
   const sm = out.slice();
   for (let c = 0; c < cols; c++) {
     const l = out[c === 0 ? c : c - 1];
     const r = out[c === cols - 1 ? c : c + 1];
     sm[c] = out[c] * 0.5 + l * 0.25 + r * 0.25;
   }
+  let avg = 0;
+  for (let c = 0; c < cols; c++) avg += sm[c];
+  avg /= cols;
+  const shift = rest - avg;
+  for (let c = 0; c < cols; c++) {
+    sm[c] = clamp(sm[c] + shift, 0, world.height);
+  }
   return sm;
+}
+
+export function meanSurfaceHeight(heights: number[]): number {
+  if (!heights.length) return 0;
+  let s = 0;
+  for (const h of heights) s += h;
+  return s / heights.length;
+}
+
+/** Local free-surface height (from the floor) at a pixel x. */
+export function sampleSurfaceAtX(heights: number[], x: number, width: number): number {
+  if (!heights.length) return 0;
+  const cols = heights.length;
+  const fx = clamp((x / Math.max(1, width)) * cols - 0.5, 0, cols - 1);
+  const i = Math.floor(fx);
+  const t = fx - i;
+  const a = heights[i];
+  const b = heights[Math.min(cols - 1, i + 1)];
+  return a + (b - a) * t;
+}
+
+/** Grid velocity at a pixel, tank-down coordinates. */
+export function sampleVelocity(world: FlipWorld, x: number, y: number): { vx: number; vy: number } {
+  const dx = world.width / world.gx;
+  const dy = world.height / world.gy;
+  const fx = clamp(x / dx, 0, world.gx - 1.001);
+  const fy = clamp(y / dy, 0, world.gy - 1.001);
+  const i = Math.floor(fx);
+  const j = Math.floor(fy);
+  const tx = fx - i;
+  const ty = fy - j;
+  const cell = (ii: number, jj: number) => {
+    const k = ii + jj * world.gx;
+    return { vx: world.gvx[k] || 0, vy: world.gvy[k] || 0 };
+  };
+  const a = cell(i, j);
+  const b = cell(Math.min(world.gx - 1, i + 1), j);
+  const c = cell(i, Math.min(world.gy - 1, j + 1));
+  const d = cell(Math.min(world.gx - 1, i + 1), Math.min(world.gy - 1, j + 1));
+  const vx = a.vx * (1 - tx) * (1 - ty) + b.vx * tx * (1 - ty) + c.vx * (1 - tx) * ty + d.vx * tx * ty;
+  const vy = a.vy * (1 - tx) * (1 - ty) + b.vy * tx * (1 - ty) + c.vy * (1 - tx) * ty + d.vy * tx * ty;
+  return { vx, vy };
 }
 
 export function meanParticleHeight(world: FlipWorld): number {

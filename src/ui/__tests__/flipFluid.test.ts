@@ -4,6 +4,9 @@ import {
   kineticEnergy,
   MAX_GRAVITY,
   meanParticleHeight,
+  meanSurfaceHeight,
+  sampleSurfaceAtX,
+  sampleVelocity,
   setRestFill,
   stepFlip,
   surfaceHeights,
@@ -87,9 +90,74 @@ describe('FLIP/PIC tank fluid', () => {
     const s = surfaceHeights(w, 16);
     expect(s).toHaveLength(16);
     const rest = 0.5 * 160;
-    const avg = s.reduce((a, b) => a + b, 0) / s.length;
-    expect(avg).toBeGreaterThan(rest * 0.2);
-    expect(avg).toBeLessThan(rest * 1.5);
+    const avg = meanSurfaceHeight(s);
+    expect(avg).toBeGreaterThan(rest * 0.92);
+    expect(avg).toBeLessThan(rest * 1.08);
+  });
+
+  test('exact zero fill renders an empty surface', () => {
+    const w = createFlipWorld(120, 200, 0);
+    settle(w, 40);
+    const s = surfaceHeights(w, 16);
+    expect(meanSurfaceHeight(s)).toBe(0);
+    for (const h of s) expect(h).toBe(0);
+  });
+
+  test('displayed column mean conserves fill across levels, sizes, tilt, and impulses', () => {
+    const cases: { w: number; h: number; fill: number }[] = [
+      { w: 80, h: 120, fill: 0.02 },
+      { w: 120, h: 200, fill: 0.25 },
+      { w: 180, h: 280, fill: 0.5 },
+      { w: 240, h: 360, fill: 1 },
+    ];
+    for (const c of cases) {
+      const world = createFlipWorld(c.w, c.h, c.fill);
+      settle(world, 50);
+      const rest = c.fill * c.h;
+      const avg = meanSurfaceHeight(surfaceHeights(world, 16));
+      if (c.fill === 0) expect(avg).toBe(0);
+      else {
+        expect(avg).toBeGreaterThan(rest * 0.9);
+        expect(avg).toBeLessThan(rest * 1.1);
+      }
+    }
+    const tilted = createFlipWorld(140, 220, 0.5);
+    for (let i = 0; i < 40; i++) stepFlip(tilted, { gx: 1.4, gy: 0.7 }, 1 / 30);
+    for (let i = 0; i < 50; i++) stepFlip(tilted, { gx: 0, gy: 1 }, 1 / 30);
+    const tRest = 0.5 * 220;
+    const tAvg = meanSurfaceHeight(surfaceHeights(tilted, 16));
+    expect(tAvg).toBeGreaterThan(tRest * 0.9);
+    expect(tAvg).toBeLessThan(tRest * 1.1);
+    const violent = createFlipWorld(100, 160, 0.45);
+    stepFlip(violent, { gx: 80, gy: 0 }, 1 / 30);
+    settle(violent, 70);
+    const vRest = 0.45 * 160;
+    const vAvg = meanSurfaceHeight(surfaceHeights(violent, 16));
+    expect(vAvg).toBeGreaterThan(vRest * 0.9);
+    expect(vAvg).toBeLessThan(vRest * 1.1);
+  });
+
+  test('gradual and sudden fill changes rest to the new operational level', () => {
+    const w = createFlipWorld(100, 160, 0.3);
+    settle(w, 20);
+    setRestFill(w, 0.31);
+    settle(w, 20);
+    expect(meanSurfaceHeight(surfaceHeights(w, 16))).toBeGreaterThan(0.31 * 160 * 0.9);
+    setRestFill(w, 0.8);
+    settle(w, 40);
+    const avg = meanSurfaceHeight(surfaceHeights(w, 16));
+    expect(avg).toBeGreaterThan(0.8 * 160 * 0.9);
+    expect(avg).toBeLessThan(0.8 * 160 * 1.1);
+  });
+
+  test('local surface and velocity sampling are finite', () => {
+    const w = createFlipWorld(100, 160, 0.5);
+    settle(w, 20);
+    const s = surfaceHeights(w, 16);
+    expect(sampleSurfaceAtX(s, 50, 100)).toBeGreaterThan(0);
+    const v = sampleVelocity(w, 50, 40);
+    expect(Number.isFinite(v.vx)).toBe(true);
+    expect(Number.isFinite(v.vy)).toBe(true);
   });
 
   test('setRestFill does not change particle count', () => {

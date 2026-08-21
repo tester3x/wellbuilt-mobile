@@ -8,6 +8,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { takeWbmPkce } from '../src/services/ssoPkce';
 import { exchangeSsoCode } from '../src/services/secureDriverAuth';
 import { completeAuthenticatedSession } from '../src/services/driverAuth';
+import { authorizeEstablishedSession } from '../src/services/postAuthGate';
 
 export default function WbmSsoCallback() {
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
@@ -32,7 +33,11 @@ export default function WbmSsoCallback() {
         companyId: exchanged.companyId,
         authMethod: 'sso',
       });
-      router.replace('/(tabs)');
+      const dest = await authorizeEstablishedSession({
+        eligibleDestination: '/(tabs)',
+        revalidation: 'valid',
+      });
+      router.replace(dest);
     })().catch((err) => {
       console.error('[WBM-SSO] callback failed', err);
       setError('sso_failed');

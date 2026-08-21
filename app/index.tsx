@@ -7,8 +7,8 @@ import {
   clearDriverSession,
   getDriverSession,
 } from '../src/services/driverAuth';
-import { resolveCurrentEligibility } from '../src/services/wellConfig';
-import { decideBootstrapRoute, type BootstrapRoute } from '../src/services/eligibility';
+import { authorizeEstablishedSession } from '../src/services/postAuthGate';
+import { type BootstrapRoute } from '../src/services/eligibility';
 import { notifyAuthenticated } from '../src/services/deliveryStatus';
 
 export default function Index() {
@@ -33,13 +33,11 @@ export default function Index() {
       }
 
       const session = await getDriverSession();
-      const eligibility = await resolveCurrentEligibility();
-      const route = decideBootstrapRoute({
-        hasLocalSession: true,
+      const route = await authorizeEstablishedSession({
+        eligibleDestination: '/welcome',
         revalidation,
-        eligibility: eligibility.status,
       });
-      if (route === '/welcome' || route === '/session-verify') {
+      if (route === '/welcome' || route === '/session-verify' || route === '/(tabs)') {
         notifyAuthenticated();
       }
       void session;

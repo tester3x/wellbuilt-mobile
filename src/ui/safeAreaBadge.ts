@@ -46,7 +46,17 @@ export type BadgePlacement = 'left' | 'right' | 'hidden';
  */
 export function badgePlacementForRoute(pathname: string | null | undefined): BadgePlacement {
   const p = String(pathname || '').toLowerCase();
-  if (p.includes('sync-status')) return 'hidden';
+  if (
+    p.includes('sync-status')
+    || p.includes('no-access')
+    || p.includes('driver-login')
+    || p.includes('session-verify')
+    || p.includes('sso-callback')
+    || /(^|\/)welcome$/.test(p)
+    || p.includes('/login')
+    || p.includes('/logout')
+    || p.includes('redirect')
+  ) return 'hidden';
   if (p === '/' || p === '' || p === '/index' || p.includes('(tabs)')) return 'left';
   return 'right';
 }

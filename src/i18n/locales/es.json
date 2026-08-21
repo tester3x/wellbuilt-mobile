@@ -518,6 +518,16 @@
     "invalidCredentials": "Nombre o código inválido",
     "connectionError": "Error de conexión. Verifica tu internet.",
     "connectionErrorRetry": "Error de conexión. Intenta de nuevo.",
+    "error_invalid_credentials": "Nombre o código inválido",
+    "error_deactivated": "Esta cuenta ha sido desactivada",
+    "error_must_change": "Debe restablecer su código",
+    "error_no_network": "Sin conexión de red. Inténtelo de nuevo.",
+    "error_timeout": "Tiempo de conexión agotado. Inténtelo de nuevo.",
+    "error_unreachable": "No se puede alcanzar el servidor WellBuilt.",
+    "error_auth_session": "Sesión vencida. Inicie sesión de nuevo.",
+    "error_permission": "Acceso denegado. Contacte a su despachador.",
+    "error_server": "Error del servidor. Inténtelo de nuevo.",
+    "error_unknown": "No se pudo iniciar sesión. Inténtelo de nuevo.",
     "invalidPasscode": "Código inválido",
     "enterDisplayName": "Por favor ingresa tu nombre",
     "displayNameTooShort": "El nombre debe tener al menos 2 caracteres",
@@ -676,6 +686,12 @@
     "message": "Esta app es para conductores con ruta que administran sus pozos.",
     "subMessage": "Contacte a su despachador si cree que esto es un error.",
     "logOut": "Cerrar Sesión"
+  },
+  "sessionVerify": {
+    "title": "No se pudo verificar la asignación",
+    "message": "Su sesión sigue válida. No pudimos confirmar su asignación de pozos. Revise la conexión e inténtelo de nuevo — esto no es una denegación de acceso.",
+    "retry": "Reintentar",
+    "working": "Comprobando…"
   },
   "appSwitcher": {
     "notInstalledTitle": "No Instalado",

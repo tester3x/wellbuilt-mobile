@@ -196,27 +196,47 @@ export async function getDeliveryCounts(nowMs: number = Date.now()): Promise<Del
  *   absent from all three → the packet vanished (crash/lost write): re-
  *   queue the RETAINED payload under the SAME stable packetId and flush.
  */
+function isExplicitAbsent(r: { found: boolean; diagnosis: ConnectionDiagnosis | null }): boolean {
+  return !r.found && r.diagnosis == null;
+}
+
 export async function recoverStuckSubmission(
   packetId: string,
   fetchFn: typeof fetch = fetch,
-): Promise<'confirmed_sent' | 'confirmed_rejected' | 'still_in_incoming' | 'resubmitted' | 'no_payload'> {
-  const processed = await readPath(`packets/processed/${packetId}`, fetchFn);
-  if (processed) {
-    const at = processed.processedAt ? new Date(processed.processedAt).getTime() : Date.now();
+): Promise<'confirmed_sent' | 'confirmed_rejected' | 'still_in_incoming' | 'resubmitted' | 'no_payload' | 'read_blocked'> {
+  const processed = await readJsonPath(`packets/processed/${packetId}`, fetchFn);
+  if (processed.diagnosis) {
+    rememberReadFailure(`packets/processed/${packetId}`, processed.diagnosis);
+    return 'read_blocked';
+  }
+  if (processed.found && processed.data) {
+    const at = (processed.data as any).processedAt ? new Date((processed.data as any).processedAt).getTime() : Date.now();
     await setPullSyncStatus(packetId, 'sent', { sentConfirmedAt: Number.isFinite(at) ? at : Date.now() });
     await forgetSubmittedPayload(packetId);
     return 'confirmed_sent';
   }
-  const rejected = await readPath(`packets/rejected/${packetId}`, fetchFn);
-  if (rejected) {
-    const reason = [rejected.reason, rejected.readableReason].filter(Boolean).join(': ') || 'rejected by server';
+  const rejected = await readJsonPath(`packets/rejected/${packetId}`, fetchFn);
+  if (rejected.diagnosis) {
+    rememberReadFailure(`packets/rejected/${packetId}`, rejected.diagnosis);
+    return 'read_blocked';
+  }
+  if (rejected.found && rejected.data) {
+    const body = rejected.data as any;
+    const reason = [body.reason, body.readableReason].filter(Boolean).join(': ') || 'rejected by server';
     await setPullSyncStatus(packetId, 'rejected', { rejectionReason: reason });
     await forgetSubmittedPayload(packetId);
     return 'confirmed_rejected';
   }
-  const incoming = await readPath(`packets/incoming/${packetId}`, fetchFn);
-  if (incoming) {
+  const incoming = await readJsonPath(`packets/incoming/${packetId}`, fetchFn);
+  if (incoming.diagnosis) {
+    rememberReadFailure(`packets/incoming/${packetId}`, incoming.diagnosis);
+    return 'read_blocked';
+  }
+  if (incoming.found && incoming.data) {
     return 'still_in_incoming'; // never duplicate a packet already in flight
+  }
+  if (!isExplicitAbsent(processed) || !isExplicitAbsent(rejected) || !isExplicitAbsent(incoming)) {
+    return 'read_blocked';
   }
   const payload = await getSubmittedPayload(packetId);
   if (!payload) {
@@ -226,6 +246,12 @@ export async function recoverStuckSubmission(
   await setPullSyncStatus(packetId, 'pending_sync');
   await flushQueue();
   return 'resubmitted';
+}
+
+/** Bounded, idempotent: safe after login / SSO / auth restore / cold revalidation. */
+export function notifyAuthenticated(): void {
+  reconcileSubmittedPulls().catch(() => {});
+  processEditOperations().catch(() => {});
 }
 
 export interface DeliveryItem {
@@ -429,8 +455,7 @@ export function startDeliveryReconciler(): void {
   if (_reconcilerStarted) return;
   _reconcilerStarted = true;
   const pass = () => {
-    reconcileSubmittedPulls().catch(() => {});
-    processEditOperations().catch(() => {});
+    notifyAuthenticated();
   };
   onFlushComplete(pass);
   // Reconnect: outcomes may have settled server-side while we were dark.
@@ -441,5 +466,8 @@ export function startDeliveryReconciler(): void {
   });
   // Startup pass — catch outcomes that landed while the app was closed.
   setTimeout(pass, 3000);
+  import('./firebaseAuthSession').then((m) => {
+    m.subscribeAuthReady(() => { notifyAuthenticated(); });
+  }).catch(() => {});
   console.log('[DeliveryStatus] Reconciler started');
 }

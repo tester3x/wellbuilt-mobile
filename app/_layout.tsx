@@ -184,6 +184,7 @@ export default function RootLayout() {
             <Stack.Screen name="about" />
             <Stack.Screen name="manager" />
             <Stack.Screen name="no-access" />
+            <Stack.Screen name="session-verify" />
           </Stack>
           {/* Global dispatch button - appears when there are pending sends */}
           {appIsReady && <DispatchButton />}

@@ -1623,7 +1623,9 @@ export default function MainScreen() {
       if (config) {
         // Fetch driver's route/well assignments so fresh install only shows assigned wells
         const assignment = await fetchDriverRouteAssignment();
-        const filteredConfig = filterWellConfigByAssignment(config, assignment.routes, assignment.wells);
+        const filteredConfig = filterWellConfigByAssignment(config, assignment.routes, assignment.wells, {
+          unrestricted: assignment.status === 'eligible' && assignment.routes.length === 0,
+        });
         const wellNames = Object.keys(filteredConfig);
         console.log('[Main] Saving default well selections:', wellNames.length, 'wells (from', Object.keys(config).length, 'total, assigned routes:', assignment.routes.length, ')');
         await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(wellNames));
@@ -1675,7 +1677,12 @@ export default function MainScreen() {
       startBackgroundSync();
     };
     
-    initSync();
+    initSync().catch((err: unknown) => {
+      const name = err instanceof Error ? err.name : 'Error';
+      const msg = err instanceof Error ? err.message : '';
+      console.log('[Main] initSync failed', name, /token|passcode|bearer/i.test(msg) ? '' : String(msg).slice(0, 80));
+      setIsInitialSyncing(false);
+    });
     
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       console.log('[Main] AppState changed to:', nextAppState);
@@ -1796,7 +1803,9 @@ export default function MainScreen() {
             if (allWellNames.length > 0) {
               // Reset selected wells filtered by assignment (not all wells)
               const assignment = await fetchDriverRouteAssignment();
-              const filteredConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells);
+              const filteredConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells, {
+                unrestricted: assignment.status === 'eligible' && assignment.routes.length === 0,
+              });
               const assignedWellNames = Object.keys(filteredConfig);
               console.log('[Main] Recovery: selecting', assignedWellNames.length, 'assigned wells (from', allWellNames.length, 'total)');
               await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
@@ -1805,12 +1814,11 @@ export default function MainScreen() {
 
           // Filter wells by driver's route assignment FIRST, then by user selections
           const assignment = await fetchDriverRouteAssignment();
-          let assignedWellNames = allWellNames;
-          if (assignment.routes.length > 0 || assignment.wells.length > 0) {
-            const assignedConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells);
-            assignedWellNames = Object.keys(assignedConfig);
-            console.log('[Main] Route assignment filter:', assignedWellNames.length, 'of', allWellNames.length, 'wells');
-          }
+          const assignedConfig = filterWellConfigByAssignment(config!, assignment.routes, assignment.wells, {
+            unrestricted: assignment.status === 'eligible' && assignment.routes.length === 0,
+          });
+          let assignedWellNames = Object.keys(assignedConfig);
+          console.log('[Main] Route assignment filter:', assignedWellNames.length, 'of', allWellNames.length, 'wells', assignment.status);
 
           // Load user's selected wells from Settings, intersected with assigned wells
           filteredWells = assignedWellNames;

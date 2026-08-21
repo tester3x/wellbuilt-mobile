@@ -31,6 +31,10 @@ export async function secureLogin(displayName: string, passcode: string) {
     companyName?: string;
     isAdmin?: boolean;
     isViewer?: boolean;
+    roles?: string[];
+    assignedRoutes?: unknown;
+    assignedCustomers?: unknown;
+    tier?: string | null;
   }>('authenticateDriver', { displayName, passcode });
 
   if (!data.customToken) {

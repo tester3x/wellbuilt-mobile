@@ -19,6 +19,7 @@ import {
 } from 'firebase/database';
 import { getFirebaseDatabase, waitForAuthUser } from './firebaseAuthSession';
 import * as SecureStore from 'expo-secure-store';
+import { runCancellableAttach } from './listenerAttach';
 
 void waitForAuthUser();
 
@@ -89,54 +90,51 @@ export function subscribeToOutgoing(
     }
     const outgoingRef = query(ref(db, 'packets/outgoing'), orderByChild('companyId'), equalTo(companyId));
 
-  // Listen for the initial load and ALL changes
-  // onValue fires once with current data, then again on any change
-  unsubscribeValue = onValue(outgoingRef, (snapshot) => {
-    const data = snapshot.val();
-
-    if (!initialLoadComplete) {
-      // First callback - initial load of all data
-      initialLoadComplete = true;
-      console.log('[FirebaseListener] Initial load complete');
-
-      // Call onInitial with all data - let backgroundSync decide whether to process
-      // Don't also call onUpdate for each item - that would cause double processing
-      if (data && onInitial) {
-        onInitial(data);
-      }
-    } else {
-      // Subsequent callbacks - something changed
-      // Firebase doesn't tell us WHAT changed with onValue,
-      // so we'll use onChildChanged for granular updates
-      console.log('[FirebaseListener] Data changed (via onValue)');
+    const run = runCancellableAttach({
+      isCancelled: () => cancelled,
+      attach: [
+        () => onValue(outgoingRef, (snapshot) => {
+          const data = snapshot.val();
+          if (!initialLoadComplete) {
+            initialLoadComplete = true;
+            console.log('[FirebaseListener] Initial load complete');
+            if (data && onInitial) onInitial(data);
+          } else {
+            console.log('[FirebaseListener] Data changed (via onValue)');
+          }
+        }, (error) => {
+          console.error('[FirebaseListener] Error:', error);
+        }),
+        () => onChildChanged(outgoingRef, (snapshot) => {
+          const key = snapshot.key;
+          const data = snapshot.val();
+          if (key?.startsWith('response_') && data && data.wellName) {
+            console.log('[FirebaseListener] Response updated:', data.wellName);
+            checkPendingWatchers(key, data);
+            checkWellWatchers(key, data);
+            onUpdate(data.wellName, data);
+          }
+        }),
+        () => onChildAdded(outgoingRef, (snapshot) => {
+          if (!initialLoadComplete) return;
+          const key = snapshot.key;
+          const data = snapshot.val();
+          if (key?.startsWith('response_') && data && data.wellName) {
+            console.log('[FirebaseListener] New response added:', data.wellName);
+            checkPendingWatchers(key, data);
+            checkWellWatchers(key, data);
+            onUpdate(data.wellName, data);
+          }
+        }),
+      ],
+    });
+    unsubscribeValue = run.teardown;
+    unsubscribeChildChanged = null;
+    unsubscribeChildAdded = null;
+    if (cancelled) {
+      run.teardown();
+      return;
     }
-  }, (error) => {
-    console.error('[FirebaseListener] Error:', error);
-  });
-
-    unsubscribeChildChanged = onChildChanged(outgoingRef, (snapshot) => {
-      const key = snapshot.key;
-      const data = snapshot.val();
-
-      if (key?.startsWith('response_') && data && data.wellName) {
-        console.log('[FirebaseListener] Response updated:', data.wellName);
-        checkPendingWatchers(key, data);
-        checkWellWatchers(key, data);
-        onUpdate(data.wellName, data);
-      }
-    });
-
-    unsubscribeChildAdded = onChildAdded(outgoingRef, (snapshot) => {
-      if (!initialLoadComplete) return;
-      const key = snapshot.key;
-      const data = snapshot.val();
-      if (key?.startsWith('response_') && data && data.wellName) {
-        console.log('[FirebaseListener] New response added:', data.wellName);
-        checkPendingWatchers(key, data);
-        checkWellWatchers(key, data);
-        onUpdate(data.wellName, data);
-      }
-    });
 
     console.log('[FirebaseListener] Subscribed to packets/outgoing companyId=', companyId);
   })().catch((err) => {
@@ -178,6 +176,7 @@ export function subscribeToWell(
     const companyId = await SecureStore.getItemAsync('companyId');
     if (cancelled || !companyId) return;
     const outgoingRef = query(ref(db, 'packets/outgoing'), orderByChild('companyId'), equalTo(companyId));
+    if (cancelled) return;
     unsubscribe = onChildChanged(outgoingRef, (snapshot) => {
       const key = snapshot.key;
       const data = snapshot.val();

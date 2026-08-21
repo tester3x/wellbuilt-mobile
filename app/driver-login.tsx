@@ -18,6 +18,7 @@ import {
 import {
   verifyLogin,
   saveDriverSession,
+  completeAuthenticatedSession,
   isDriverVerified,
   submitRegistration,
   isPasscodeAvailable,
@@ -191,14 +192,27 @@ export default function DriverLoginScreen() {
       const result = await verifyLogin(displayName.trim(), passcode.trim());
 
       if (result.valid && result.driverId && result.displayName) {
-        await saveDriverSession(result.driverId, result.displayName, undefined, result.isAdmin || false, result.isViewer || false, result.companyId, result.companyName, result.tier, 'manual', {
+        await completeAuthenticatedSession({
+          driverId: result.driverId,
+          displayName: result.displayName,
+          isAdmin: result.isAdmin,
+          isViewer: result.isViewer,
+          companyId: result.companyId,
+          companyName: result.companyName,
+          tier: result.tier,
           roles: result.roles,
           assignedRoutes: result.assignedRoutes,
+          authMethod: 'manual',
         });
         router.replace('/welcome');
+      } else if (!result.valid) {
+        setMode('login');
+        const key = `driverLogin.error_${result.errorKind}` as const;
+        const mapped = t(key);
+        setError(mapped === key ? result.error : mapped);
       } else {
         setMode('login');
-        setError(result.error || t('driverLogin.invalidCredentials'));
+        setError(t('driverLogin.invalidCredentials'));
       }
     } catch (err) {
       console.error('[DriverLogin] Login error:', err);

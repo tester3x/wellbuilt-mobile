@@ -19,6 +19,8 @@
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
+import { diagnoseThrown } from "./connectionDiagnosis";
+import { normalizeRouteList } from "./eligibility";
 
 // Firebase configuration (same as firebase.ts)
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
@@ -50,6 +52,10 @@ export interface DriverSession {
   companyId?: string;
   companyName?: string;
   tier?: CompanyTier;
+  roles?: string[];
+  assignedRoutes?: string[];
+  assignedCustomers?: unknown;
+  authMethod?: 'sso' | 'manual';
 }
 
 // --- Firebase helpers ---
@@ -165,51 +171,83 @@ export const getDeviceId = async (): Promise<string> => {
  * Structure: drivers/approved/{passcodeHash}/ = { displayName, active, isAdmin? }
  * Also supports legacy structure: drivers/approved/{passcodeHash}/{deviceId}/
  */
+export type LoginErrorKind =
+  | 'invalid_credentials'
+  | 'deactivated'
+  | 'must_change'
+  | 'no_network'
+  | 'timeout'
+  | 'unreachable'
+  | 'auth_session'
+  | 'permission'
+  | 'server'
+  | 'unknown';
+
+export type VerifyLoginResult =
+  | {
+      valid: true;
+      driverId: string;
+      displayName: string;
+      isAdmin: boolean;
+      isViewer: boolean;
+      companyId?: string;
+      companyName?: string;
+      tier?: CompanyTier;
+      roles: string[];
+      assignedRoutes: unknown;
+      assignedCustomers?: unknown;
+    }
+  | {
+      valid: false;
+      error: string;
+      errorKind: LoginErrorKind;
+      errorCode: string;
+    };
+
+export function classifyLoginFailure(err: unknown): { kind: LoginErrorKind; code: string; message: string } {
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  if (/reset required|must.?change/i.test(msg)) {
+    return { kind: 'must_change', code: 'must_change', message: msg };
+  }
+  if (/deactivated/i.test(msg)) {
+    return { kind: 'deactivated', code: 'deactivated', message: 'deactivated' };
+  }
+  if (/too many login/i.test(msg)) {
+    return { kind: 'permission', code: 'rate_limited', message: 'rate_limited' };
+  }
+  if (/invalid|not found|incorrect|name or passcode|unauthenticated/i.test(msg)) {
+    return { kind: 'invalid_credentials', code: 'invalid_credentials', message: 'invalid_credentials' };
+  }
+  const d = diagnoseThrown(err);
+  const mapped: LoginErrorKind[] = ['no_network', 'timeout', 'unreachable', 'auth_session', 'permission', 'server'];
+  const kind: LoginErrorKind = mapped.includes(d.kind as LoginErrorKind) ? (d.kind as LoginErrorKind) : 'unknown';
+  return { kind, code: d.code, message: `${d.kind} [${d.code}]` };
+}
+
 export const verifyLogin = async (
   displayName: string,
   passcode: string
-): Promise<{
-  valid: boolean;
-  driverId?: string;
-  displayName?: string;
-  passcodeHash?: string;
-  isAdmin?: boolean;
-  isViewer?: boolean;
-  companyId?: string;
-  companyName?: string;
-  tier?: CompanyTier;
-  roles?: string[];
-  assignedRoutes?: unknown;
-  error?: string;
-}> => {
+): Promise<VerifyLoginResult> => {
   console.log("[DriverAuth] Verifying login for:", displayName);
 
   try {
-    try {
-      const { secureLogin } = await import('./secureDriverAuth');
-      const s = await secureLogin(displayName, passcode);
-      return {
-        valid: true,
-        driverId: s.driverId,
-        displayName: s.displayName,
-        isAdmin: s.isAdmin === true,
-        isViewer: s.isViewer === true,
-        companyId: s.companyId || undefined,
-        companyName: s.companyName || undefined,
-        roles: s.roles,
-        assignedRoutes: s.assignedRoutes,
-      };
-    } catch (secureErr: any) {
-      if (secureErr?.message && /reset required|Too many login|deactivated/i.test(secureErr.message)) {
-        return { valid: false, error: secureErr.message };
-      }
-      return { valid: false, error: secureErr?.message || 'Invalid name or passcode' };
-    }
+    const { secureLogin } = await import('./secureDriverAuth');
+    const s = await secureLogin(displayName, passcode);
+    return {
+      valid: true,
+      driverId: s.driverId,
+      displayName: s.displayName,
+      isAdmin: s.isAdmin === true,
+      isViewer: s.isViewer === true,
+      companyId: s.companyId || undefined,
+      companyName: s.companyName || undefined,
+      roles: Array.isArray(s.roles) ? s.roles : ['driver'],
+      assignedRoutes: s.assignedRoutes,
+    };
   } catch (error) {
-    console.error("[DriverAuth] Error verifying login:", error);
-    const { diagnoseThrown, formatDiagnosis } = await import('./connectionDiagnosis');
-    const d = diagnoseThrown(error);
-    return { valid: false, error: formatDiagnosis(d) };
+    console.error("[DriverAuth] Login failed:", error);
+    const c = classifyLoginFailure(error);
+    return { valid: false, error: c.message, errorKind: c.kind, errorCode: c.code };
   }
 };
 
@@ -437,6 +475,21 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
   const companyName = await SecureStore.getItemAsync("companyName");
   const tier = await SecureStore.getItemAsync("tier");
 
+  const rolesRaw = await SecureStore.getItemAsync("roles");
+  const routesRaw = await SecureStore.getItemAsync("assignedRoutes");
+  const customersRaw = await SecureStore.getItemAsync("assignedCustomers");
+  const authMethod = await SecureStore.getItemAsync("authMethod");
+  let roles: string[] | undefined;
+  let assignedRoutes: string[] | undefined;
+  let assignedCustomers: unknown;
+  try { roles = rolesRaw ? JSON.parse(rolesRaw) : undefined; } catch { roles = undefined; }
+  try {
+    const parsed = routesRaw ? JSON.parse(routesRaw) : undefined;
+    const n = normalizeRouteList(parsed);
+    assignedRoutes = n.present ? n.routes : undefined;
+  } catch { assignedRoutes = undefined; }
+  try { assignedCustomers = customersRaw ? JSON.parse(customersRaw) : undefined; } catch { assignedCustomers = undefined; }
+
   if (driverId && displayName) {
     return {
       driverId,
@@ -446,6 +499,10 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
       companyId: companyId || undefined,
       companyName: companyName || undefined,
       tier: (tier as CompanyTier) || undefined,
+      roles,
+      assignedRoutes,
+      assignedCustomers,
+      authMethod: authMethod === 'sso' || authMethod === 'manual' ? authMethod : undefined,
     };
   }
   return null;
@@ -479,18 +536,112 @@ export const isDriverVerified = async (): Promise<boolean> => {
  * Revalidate driver session - verify driver is still approved
  * Checks drivers/approved/{passcodeHash}/
  */
+export type Revalidation = 'valid' | 'revoked' | 'unknown';
+
 export const revalidateDriverSession = async (): Promise<boolean> => {
+  const r = await revalidateDriverSessionClassified();
+  return r === 'valid';
+};
+
+export async function revalidateDriverSessionClassified(): Promise<Revalidation> {
   const session = await getDriverSession();
-  if (!session) return false;
+  if (!session) return 'revoked';
   try {
     const { verifySessionOnServer } = await import('./firebaseAuthSession');
     const live = await verifySessionOnServer();
-    return live.active === true && live.driverId === session.driverId;
+    if (live.active === true && live.driverId === session.driverId) return 'valid';
+    return 'revoked';
   } catch (error) {
     console.error("[DriverAuth] Server revalidation failed:", error);
-    return false;
+    return 'unknown';
   }
-};
+}
+
+/**
+ * Persist a complete session after Firebase Auth exists. Manual and SSO
+ * both land here so cold start reads the same contract.
+ * If local save fails after Firebase sign-in, the auth session is cleared.
+ */
+export async function completeAuthenticatedSession(input: {
+  driverId: string;
+  displayName: string;
+  isAdmin?: boolean;
+  isViewer?: boolean;
+  companyId?: string | null;
+  companyName?: string | null;
+  tier?: string | null;
+  roles?: unknown;
+  assignedRoutes?: unknown;
+  assignedCustomers?: unknown;
+  authMethod: 'sso' | 'manual';
+}): Promise<DriverSession> {
+  let merged = { ...input };
+  try {
+    const { bootstrapDriverSession } = await import('./secureDriverAuth');
+    const profile = await bootstrapDriverSession();
+    merged = {
+      ...merged,
+      driverId: profile.driverId || merged.driverId,
+      displayName: profile.displayName || merged.displayName,
+      isAdmin: profile.isAdmin === true,
+      isViewer: profile.isViewer === true,
+      companyId: profile.companyId ?? merged.companyId,
+      companyName: profile.companyName ?? merged.companyName,
+      tier: profile.tier ?? merged.tier,
+      roles: profile.roles ?? merged.roles,
+      assignedRoutes: profile.assignedRoutes !== undefined ? profile.assignedRoutes : merged.assignedRoutes,
+      assignedCustomers: profile.assignedCustomers !== undefined ? profile.assignedCustomers : merged.assignedCustomers,
+    };
+  } catch (err) {
+    console.log('[DriverAuth] bootstrapDriverSession unavailable, using authenticate/SSO payload', err);
+  }
+  const roles = Array.isArray(merged.roles) ? merged.roles.filter((r): r is string => typeof r === 'string') : ['driver'];
+  const routesNorm = normalizeRouteList(merged.assignedRoutes);
+  try {
+    await saveDriverSession(
+      merged.driverId,
+      merged.displayName,
+      undefined,
+      merged.isAdmin === true,
+      merged.isViewer === true,
+      merged.companyId || undefined,
+      merged.companyName || undefined,
+      (merged.tier as CompanyTier | undefined) || undefined,
+      merged.authMethod,
+      {
+        roles,
+        assignedRoutes: routesNorm.present ? routesNorm.routes : merged.assignedRoutes,
+        assignedCustomers: merged.assignedCustomers,
+      },
+    );
+  } catch (err) {
+    try {
+      const { clearAuthSession } = await import('./firebaseAuthSession');
+      await clearAuthSession();
+    } catch { /* ignore */ }
+    await clearDriverSession();
+    throw err;
+  }
+  const session = await getDriverSession();
+  if (!session) {
+    await clearDriverSession();
+    throw new Error('session_persist_failed');
+  }
+  try {
+    const { notifyAuthenticated } = await import('./deliveryStatus');
+    notifyAuthenticated();
+  } catch { /* reconcile is not a login blocker */ }
+  try {
+    const { persistDurableEligibility } = await import('./wellConfig');
+    const { eligibilityFromSameProfile } = await import('./eligibility');
+    const verdict = eligibilityFromSameProfile(
+      routesNorm.present ? routesNorm.routes : merged.assignedRoutes,
+      !!session.companyId,
+    );
+    if (verdict.status !== 'unknown') await persistDurableEligibility(verdict);
+  } catch { /* eligibility persistence is not a login blocker */ }
+  return session;
+}
 
 /**
  * Clear driver session (logout)

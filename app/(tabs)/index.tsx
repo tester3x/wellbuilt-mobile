@@ -350,7 +350,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     kind: 'none' | 'fish' | 'fisherman' | 'duck';
     fishCount: number;
     fish: { topPct: number; leftPct: number; freq: number; phase: number; rangePx: number }[];
-    duck: DuckSpawn & { phase: number };
+    duck: DuckSpawn & { phase: number; onLeft: boolean };
     fisher: FishermanLayout;
   } | null>(null);
   if (aliveEggRef.current === null) {
@@ -384,10 +384,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       // Duck: side band + jittered start + random phase — decided once, so
       // every tank's duck starts somewhere different (never synchronized)
       // yet stays inside its band and out of the level-text column.
-      duck: {
-        ...computeDuckBand(INTERIOR_WIDTH, Math.random() < 0.5, Math.random()),
-        phase: Math.random() * TWO_PI,
-      },
+      duck: (() => {
+        const onLeft = Math.random() < 0.5;
+        return {
+          ...computeDuckBand(INTERIOR_WIDTH, onLeft, Math.random()),
+          phase: Math.random() * TWO_PI,
+          onLeft,
+        };
+      })(),
       // Fisherman: seated on the rim at a jittered side spot; the pole tip
       // (where the line hangs) is clamped out of the center column.
       fisher: computeFishermanLayout(INTERIOR_WIDTH, Math.random() < 0.5, Math.random()),
@@ -1184,28 +1188,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 reducedMotion={!!reducedMotion}
                 showFish={showFish}
                 fishCount={aliveEgg.fishCount}
+                showDuck={showFloat && aliveEgg.kind === 'duck'}
+                duckOnLeft={aliveEgg.duck.onLeft}
               />
             </View>
 
-            {/* Surface layer — duck rides the NOMINAL waterline (operational
-                fill), not FLIP splash crests. Clipped only by the tank interior. */}
-            <Animated.View pointerEvents="none" style={[styles.aliveSurfaceLayer, aliveLayerStyle]}>
-              {showFloat && aliveEgg.kind === 'duck' && (
-                // Rendered AFTER the water fill (later sibling ⇒ above the
-                // blue layer). Belly just in the waterline, most of the
-                // body above it; band + clamp keep it inside the tank.
-                <Animated.View
-                  pointerEvents="none"
-                  style={[styles.aliveDuckWrap, { left: duck.basePx }, duckSurfaceStyle, duckMoveStyle]}
-                >
-                  <Animated.Text
-                    accessible={false}
-                    importantForAccessibility="no"
-                    style={[styles.aliveDuckGlyph, duckFaceStyle]}
-                  >🦆</Animated.Text>
-                </Animated.View>
-              )}
-            </Animated.View>
+            {/* Surface layer kept for layout; duck now rides the FLIP surface
+                inside TankFlipAquarium. Fisherman is unchanged. */}
+            <Animated.View pointerEvents="none" style={[styles.aliveSurfaceLayer, aliveLayerStyle]} />
 
             {/* Fisherman scene — anchored to the INTERIOR TOP (the rim),
                 never floating in the water. Line + hooked fish track the

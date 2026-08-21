@@ -47,6 +47,12 @@ describe('badgePlacementForRoute — route-aware collision avoidance', () => {
     expect(badgePlacementForRoute('/sync-status')).toBe('hidden');
   });
 
+  test('auth/verification/denial routes hide the badge so it cannot skip the gate', () => {
+    for (const r of ['/driver-login', '/welcome', '/no-access', '/session-verify', '/sso-callback', '/login', '/logout']) {
+      expect(badgePlacementForRoute(r)).toBe('hidden');
+    }
+  });
+
   test('Record Load and audited routes with top-LEFT back controls: RIGHT', () => {
     for (const r of ['/record', '/well-data', '/settings', '/history', '/manager', '/summary', '/performance']) {
       expect(badgePlacementForRoute(r)).toBe('right');

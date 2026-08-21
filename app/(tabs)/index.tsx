@@ -1765,7 +1765,12 @@ export default function MainScreen() {
       startBackgroundSync();
     };
     
-    initSync();
+    initSync().catch((err: unknown) => {
+      const name = err instanceof Error ? err.name : 'Error';
+      const msg = err instanceof Error ? err.message : '';
+      console.log('[Main] initSync failed', name, /token|passcode|bearer/i.test(msg) ? '' : String(msg).slice(0, 80));
+      setIsInitialSyncing(false);
+    });
     
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       console.log('[Main] AppState changed to:', nextAppState);

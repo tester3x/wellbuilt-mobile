@@ -55,6 +55,17 @@ export async function secureRegister(params: {
   });
 }
 
+export async function changeOwnPasscode(params: {
+  currentPasscode: string;
+  newPasscode: string;
+}) {
+  const { authorizedCallable } = await import('./firebaseAuthSession');
+  return authorizedCallable<{ ok: true }>('driverChangeOwnPasscode', {
+    currentPasscode: params.currentPasscode,
+    newPasscode: params.newPasscode,
+  });
+}
+
 export async function upgradeOwnLegacyLogin(params: {
   displayName: string;
   currentPasscode: string;

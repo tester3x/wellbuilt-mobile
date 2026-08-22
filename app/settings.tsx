@@ -75,6 +75,7 @@ const getAlertFunctions = async () => {
   }
 };
 import { hp, spacing, wp } from "../src/ui/layout";
+import ChangePasswordPanel from "../src/components/ChangePasswordPanel";
 
 // Storage key for selected wells
 const STORAGE_KEY_SELECTED_WELLS = "wellbuilt_selected_wells";
@@ -680,6 +681,7 @@ export default function SettingsScreen() {
         <Text style={styles.cardSubtitle}>
           {t("settings.accountSubtitle")}
         </Text>
+        <ChangePasswordPanel />
 
         {/* Button row - evenly spaced */}
         <View style={styles.accountButtonRow}>

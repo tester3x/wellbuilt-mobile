@@ -70,5 +70,13 @@ describe('WB-M historical-pull union', () => {
     const login = readFileSync(join(srcRoot, '../../app/driver-login.tsx'), 'utf8');
     expect(login).toMatch(/upgradeOwnLegacyLogin/);
     expect(login).toMatch(/clearUpgradeSecrets/);
+    const settings = readFileSync(join(srcRoot, '../../app/settings.tsx'), 'utf8');
+    const panel = readFileSync(join(srcRoot, '../components/ChangePasswordPanel.tsx'), 'utf8');
+    expect(settings).toMatch(/ChangePasswordPanel/);
+    expect(panel).toMatch(/changeOwnPasscode/);
+    expect(panel).toMatch(/clearSecrets/);
+    expect(panel).not.toMatch(/console\.(log|info|debug|warn).*passcode/i);
+    const auth = readFileSync(join(srcRoot, 'secureDriverAuth.ts'), 'utf8');
+    expect(auth).toMatch(/driverChangeOwnPasscode/);
   });
 });

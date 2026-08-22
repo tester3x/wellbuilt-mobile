@@ -14,6 +14,7 @@ import {
   verdictFromAuthoritative,
 } from "./eligibility";
 import {
+  aliasesFromEnvelope,
   envelopeExactMatch,
   envelopeMatchesRevision,
   envelopeMatchesSession,
@@ -244,12 +245,8 @@ async function fenceHolds(
   });
 }
 
-export function getTrustedHistoryDriverIds(): string[] {
-  if (cachedEnvelope?.trustedHistoryDriverIds?.length) {
-    return [...cachedEnvelope.trustedHistoryDriverIds];
-  }
-  if (cachedEnvelope?.driverId) return [cachedEnvelope.driverId];
-  return [];
+export function getTrustedHistoryDriverIds(expectedDriverId?: string | null): string[] {
+  return aliasesFromEnvelope(cachedEnvelope, expectedDriverId || cachedEnvelope?.driverId || null);
 }
 
 function installEnvelopeMemory(env: WbmBootstrapEnvelope): void {

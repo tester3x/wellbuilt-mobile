@@ -537,7 +537,17 @@
     "passcodeRequired": "Por favor crea un código",
     "passcodeTooShort": "El código debe tener al menos 4 caracteres",
     "passcodeTooLong": "El código debe tener 12 caracteres o menos",
-    "passcodeInvalidChars": "El código contiene caracteres inválidos"
+    "passcodeInvalidChars": "El código contiene caracteres inválidos",
+    "upgradeLink": "Establecer una contraseña segura",
+    "upgradeTitle": "Establecer una contraseña segura",
+    "upgradeSubtitle": "Confirme su acceso actual y elija una contraseña nueva en este dispositivo.",
+    "currentPasscode": "Código actual",
+    "newPassword": "Nueva contraseña",
+    "confirmNewPassword": "Confirmar nueva contraseña",
+    "upgradeSubmit": "Actualizar acceso",
+    "upgradeBusy": "Actualizando acceso…",
+    "upgradeFailed": "No se pudo completar la actualización",
+    "backToSignIn": "Volver a iniciar sesión"
   },
   "wellData": {
     "subtitle": "Base de Datos WellBuilt",

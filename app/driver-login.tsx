@@ -29,6 +29,7 @@ import {
   completeRegistration,
   clearPendingRegistration,
 } from '../src/services/driverAuth';
+import { upgradeOwnLegacyLogin } from '../src/services/secureDriverAuth';
 import { diagnoseThrown } from '../src/services/connectionDiagnosis';
 import { userFacingErrorMessage } from '../src/i18n/userFacingError';
 import { authorizeEstablishedSession } from '../src/services/postAuthGate';
@@ -38,6 +39,8 @@ type Mode =
   | 'checking'
   | 'login'
   | 'register'
+  | 'upgrade'
+  | 'upgrading'
   | 'verifying'
   | 'registering'
   | 'pending'
@@ -69,6 +72,9 @@ export default function DriverLoginScreen() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('checking');
   const [passcode, setPasscode] = useState('');
+  const [currentPasscode, setCurrentPasscode] = useState('');
+  const [newPasscode, setNewPasscode] = useState('');
+  const [confirmPasscode, setConfirmPasscode] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [legalName, setLegalName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -344,6 +350,58 @@ export default function DriverLoginScreen() {
     setMode('login');
   };
 
+  const clearUpgradeSecrets = () => {
+    setCurrentPasscode('');
+    setNewPasscode('');
+    setConfirmPasscode('');
+    setPasscode('');
+  };
+
+  const handleUpgrade = async () => {
+    if (!displayName.trim() || !currentPasscode.trim() || !newPasscode.trim() || newPasscode !== confirmPasscode) {
+      setError(t('driverLogin.upgradeFailed'));
+      return;
+    }
+    setMode('upgrading');
+    setError('');
+    try {
+      await upgradeOwnLegacyLogin({
+        displayName: displayName.trim(),
+        currentPasscode,
+        newPasscode,
+      });
+      const result = await verifyLogin(displayName.trim(), newPasscode);
+      clearUpgradeSecrets();
+      if (result.valid && result.driverId && result.displayName && result.customToken) {
+        await completeAuthenticatedSession({
+          customToken: result.customToken,
+          driverId: result.driverId,
+          displayName: result.displayName,
+          isAdmin: result.isAdmin,
+          isViewer: result.isViewer,
+          companyId: result.companyId,
+          companyName: result.companyName,
+          tier: result.tier,
+          roles: result.roles,
+          assignedRoutes: result.assignedRoutes,
+          authMethod: 'manual',
+        });
+        const dest = await authorizeEstablishedSession({
+          eligibleDestination: '/welcome',
+          revalidation: 'valid',
+        });
+        router.replace(dest);
+      } else {
+        setMode('upgrade');
+        setError(t('driverLogin.upgradeFailed'));
+      }
+    } catch {
+      clearUpgradeSecrets();
+      setMode('upgrade');
+      setError(t('driverLogin.upgradeFailed'));
+    }
+  };
+
   // Switch to register mode
   const handleSwitchToRegister = () => {
     setError('');
@@ -461,6 +519,67 @@ export default function DriverLoginScreen() {
                 {t('driverLogin.newDriver')} <Text style={styles.linkBold}>{t('driverLogin.registerHere')}</Text>
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setError(''); clearUpgradeSecrets(); setMode('upgrade'); }}>
+              <Text style={styles.linkText}>
+                {t('driverLogin.upgradeLink')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {mode === 'upgrade' && (
+          <View style={styles.formContainer}>
+            <Text style={styles.title}>{t('driverLogin.upgradeTitle')}</Text>
+            <Text style={styles.subtitle}>{t('driverLogin.upgradeSubtitle')}</Text>
+            <TextInput
+              style={styles.input}
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder={t('driverLogin.namePlaceholder')}
+              placeholderTextColor="#6B7280"
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              value={currentPasscode}
+              onChangeText={setCurrentPasscode}
+              placeholder={t('driverLogin.currentPasscode')}
+              placeholderTextColor="#6B7280"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              value={newPasscode}
+              onChangeText={setNewPasscode}
+              placeholder={t('driverLogin.newPassword')}
+              placeholderTextColor="#6B7280"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              value={confirmPasscode}
+              onChangeText={setConfirmPasscode}
+              placeholder={t('driverLogin.confirmNewPassword')}
+              placeholderTextColor="#6B7280"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <TouchableOpacity style={styles.button} onPress={handleUpgrade}>
+              <Text style={styles.buttonText}>{t('driverLogin.upgradeSubmit')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setError(''); clearUpgradeSecrets(); setMode('login'); }}>
+              <Text style={styles.linkText}>{t('driverLogin.backToSignIn')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {mode === 'upgrading' && (
+          <View style={styles.formContainer}>
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text style={styles.subtitle}>{t('driverLogin.upgradeBusy')}</Text>
           </View>
         )}
 

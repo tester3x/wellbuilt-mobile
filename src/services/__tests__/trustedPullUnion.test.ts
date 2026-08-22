@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { normalizeTrustedHistoryIds, pullBelongsToDriver } from '../trustedHistoryKeys';
+import { aliasesFromEnvelope, snapshotToEnvelope } from '../wbmBootstrapCache';
 
 const srcRoot = join(__dirname, '..');
 
@@ -34,6 +35,29 @@ describe('WB-M historical-pull union', () => {
     expect(pullBelongsToDriver({ driverId: OTHER, driverName: 'FixtureDriverAlpha' }, trusted, 'FixtureDriverAlpha')).toBe(false);
   });
 
+  it('aliases from driver A cannot survive into driver B session', () => {
+    const envA = snapshotToEnvelope({
+      ok: true,
+      driverId: UUID,
+      companyId: 'fixture-co',
+      active: true,
+      assignedRoutes: ['North Route'],
+      assignedWells: [],
+      assignmentRevision: 1,
+      assignmentDigest: 'd',
+      eligibilityStatus: 'eligible',
+      eligibilityReason: 'scope_ok',
+      wells: {},
+      wellCount: 0,
+      trustedHistoryDriverIds: [UUID, LEGACY],
+    });
+    expect(aliasesFromEnvelope(envA, UUID)).toEqual([UUID, LEGACY]);
+    expect(aliasesFromEnvelope(envA, 'bbbbbbbb-cccc-4ddd-8eee-000000000002')).toEqual([
+      'bbbbbbbb-cccc-4ddd-8eee-000000000002',
+    ]);
+    expect(aliasesFromEnvelope(null, UUID)).toEqual([UUID]);
+  });
+
   it('bootstrap and pullHistory source use trusted aliases, not client-supplied keys', () => {
     const well = readFileSync(join(srcRoot, 'wellConfig.ts'), 'utf8');
     const pull = readFileSync(join(srcRoot, 'pullHistory.ts'), 'utf8');
@@ -43,5 +67,8 @@ describe('WB-M historical-pull union', () => {
     expect(pull).toMatch(/pullBelongsToDriver/);
     expect(pull).toMatch(/normalizeTrustedHistoryIds/);
     expect(pull).not.toMatch(/p\.driverId !== driverId/);
+    const login = readFileSync(join(srcRoot, '../../app/driver-login.tsx'), 'utf8');
+    expect(login).toMatch(/upgradeOwnLegacyLogin/);
+    expect(login).toMatch(/clearUpgradeSecrets/);
   });
 });

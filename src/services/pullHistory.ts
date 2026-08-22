@@ -6,7 +6,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDriverId, getDriverName } from "./driverAuth";
 import { packetShowsEditBadge } from "./editMarkers";
-import { getTrustedHistoryDriverIds } from "./wellConfig";
 import { normalizeTrustedHistoryIds, pullBelongsToDriver } from "./trustedHistoryKeys";
 
 const STORAGE_KEY = "@wellbuilt_pull_history";
@@ -143,7 +142,8 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
     if (response.ok) {
       const data = await response.json();
       if (data && typeof data === "object") {
-        const trustedIds = normalizeTrustedHistoryIds(driverId, getTrustedHistoryDriverIds());
+        const { getTrustedHistoryDriverIds } = await import("./wellConfig");
+        const trustedIds = normalizeTrustedHistoryIds(driverId, getTrustedHistoryDriverIds(driverId));
         for (const [packetId, packet] of Object.entries(data)) {
           const p = packet as any;
           if (!pullBelongsToDriver(p, trustedIds)) continue;
@@ -202,7 +202,8 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
         if (nameResponse.ok) {
           const nameData = await nameResponse.json();
           if (nameData && typeof nameData === "object") {
-            const trustedIds = normalizeTrustedHistoryIds(driverId, getTrustedHistoryDriverIds());
+            const { getTrustedHistoryDriverIds } = await import("./wellConfig");
+        const trustedIds = normalizeTrustedHistoryIds(driverId, getTrustedHistoryDriverIds(driverId));
             for (const [packetId, packet] of Object.entries(nameData)) {
               const p = packet as any;
               if (!pullBelongsToDriver(p, trustedIds, driverName)) continue;

@@ -89,6 +89,22 @@ export function parseBootstrapEnvelope(raw: unknown): WbmBootstrapEnvelope | nul
   };
 }
 
+/**
+ * Aliases from an envelope only apply to that envelope's driverId.
+ * Driver A's aliases must never survive into Driver B's session.
+ */
+export function aliasesFromEnvelope(
+  env: WbmBootstrapEnvelope | null,
+  expectedDriverId: string | null | undefined,
+): string[] {
+  if (!expectedDriverId) return [];
+  if (!env || env.driverId !== expectedDriverId) return [expectedDriverId];
+  const ids = Array.isArray(env.trustedHistoryDriverIds)
+    ? env.trustedHistoryDriverIds.filter((id): id is string => typeof id === 'string' && !!id)
+    : [];
+  return ids.length ? Array.from(new Set([expectedDriverId, ...ids])) : [expectedDriverId];
+}
+
 export function envelopeMatchesSession(
   env: WbmBootstrapEnvelope | null,
   driverId: string | null,

@@ -537,7 +537,17 @@
     "passcodeRequired": "Please create a passcode",
     "passcodeTooShort": "Passcode must be at least 4 characters",
     "passcodeTooLong": "Passcode must be 12 characters or less",
-    "passcodeInvalidChars": "Passcode contains invalid characters"
+    "passcodeInvalidChars": "Passcode contains invalid characters",
+    "upgradeLink": "Set a secure password",
+    "upgradeTitle": "Set a secure password",
+    "upgradeSubtitle": "Prove your existing login, then choose a new password on this device.",
+    "currentPasscode": "Current passcode",
+    "newPassword": "New password",
+    "confirmNewPassword": "Confirm new password",
+    "upgradeSubmit": "Upgrade login",
+    "upgradeBusy": "Upgrading login…",
+    "upgradeFailed": "Could not complete upgrade",
+    "backToSignIn": "Back to sign in"
   },
   "wellData": {
     "subtitle": "WellBuilt Database",

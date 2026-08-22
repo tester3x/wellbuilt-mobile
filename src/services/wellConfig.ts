@@ -244,6 +244,14 @@ async function fenceHolds(
   });
 }
 
+export function getTrustedHistoryDriverIds(): string[] {
+  if (cachedEnvelope?.trustedHistoryDriverIds?.length) {
+    return [...cachedEnvelope.trustedHistoryDriverIds];
+  }
+  if (cachedEnvelope?.driverId) return [cachedEnvelope.driverId];
+  return [];
+}
+
 function installEnvelopeMemory(env: WbmBootstrapEnvelope): void {
   cachedEnvelope = env;
   cachedConfig = env.wells as unknown as WellConfigMap;

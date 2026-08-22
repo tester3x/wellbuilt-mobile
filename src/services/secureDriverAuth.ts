@@ -55,6 +55,24 @@ export async function secureRegister(params: {
   });
 }
 
+export async function upgradeOwnLegacyLogin(params: {
+  displayName: string;
+  currentPasscode: string;
+  newPasscode: string;
+}) {
+  return callUnauthed<{
+    driverId: string;
+    displayName: string;
+    conflicts: unknown[];
+    preserved: string[];
+    copiedFields: string[];
+  }>('upgradeOwnLegacyDriverLogin', {
+    displayName: params.displayName,
+    currentPasscode: params.currentPasscode,
+    newPasscode: params.newPasscode,
+  });
+}
+
 export async function checkDriverRegistrationStatus(pendingId: string) {
   return callUnauthed<{ status: 'none' | 'pending' | 'approved' | 'rejected'; driverId?: string | null }>(
     'checkDriverRegistrationStatus',

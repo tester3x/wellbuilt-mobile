@@ -22,6 +22,7 @@ export type WbmBootstrapSnapshot = {
   wells: WellConfigMap;
   wellCount: number;
   logoutAt?: number | null;
+  trustedHistoryDriverIds?: string[];
 };
 
 export type WbmBootstrapEnvelope = {
@@ -33,6 +34,7 @@ export type WbmBootstrapEnvelope = {
   eligibility: EligibilityVerdict;
   wells: WellConfigMap;
   fetchedAt: number;
+  trustedHistoryDriverIds?: string[];
 };
 
 export function snapshotToEnvelope(snap: WbmBootstrapSnapshot): WbmBootstrapEnvelope {
@@ -52,6 +54,9 @@ export function snapshotToEnvelope(snap: WbmBootstrapSnapshot): WbmBootstrapEnve
     },
     wells: snap.wells,
     fetchedAt: Date.now(),
+    trustedHistoryDriverIds: Array.isArray(snap.trustedHistoryDriverIds)
+      ? snap.trustedHistoryDriverIds.filter((id): id is string => typeof id === 'string' && !!id)
+      : [snap.driverId],
   };
 }
 
@@ -78,6 +83,9 @@ export function parseBootstrapEnvelope(raw: unknown): WbmBootstrapEnvelope | nul
     eligibility: elig,
     wells: o.wells as WellConfigMap,
     fetchedAt: o.fetchedAt,
+    trustedHistoryDriverIds: Array.isArray(o.trustedHistoryDriverIds)
+      ? o.trustedHistoryDriverIds.filter((id): id is string => typeof id === 'string' && !!id)
+      : undefined,
   };
 }
 

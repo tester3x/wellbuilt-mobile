@@ -6,6 +6,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDriverId, getDriverName } from "./driverAuth";
 import { packetShowsEditBadge } from "./editMarkers";
+import { getTrustedHistoryDriverIds } from "./wellConfig";
+import { normalizeTrustedHistoryIds, pullBelongsToDriver } from "./trustedHistoryKeys";
 
 const STORAGE_KEY = "@wellbuilt_pull_history";
 const SETTINGS_KEY = "@wellbuilt_pull_history_days";
@@ -141,9 +143,10 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
     if (response.ok) {
       const data = await response.json();
       if (data && typeof data === "object") {
+        const trustedIds = normalizeTrustedHistoryIds(driverId, getTrustedHistoryDriverIds());
         for (const [packetId, packet] of Object.entries(data)) {
           const p = packet as any;
-          if (p.driverId && p.driverId !== driverId) continue;
+          if (!pullBelongsToDriver(p, trustedIds)) continue;
           if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
           if (p.deleted === true) continue;
 
@@ -186,11 +189,10 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
       }
     }
 
-    // Fallback: try driverName for older packets without driverId (e.g. WB T packets)
     if (entries.length === 0) {
       const driverName = await getDriverName();
       if (driverName) {
-        console.log("[PullHistory] No driverId matches, trying driverName fallback:", driverName);
+        console.log("[PullHistory] No driverId matches, trying nameless-packet fallback:", driverName);
         const nameUrl = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${encodeURIComponent(token)}&orderBy=${encodeURIComponent('"companyId"')}&equalTo=${encodeURIComponent(`"${session.companyId}"`)}`;
         const nameResponse = await fetch(nameUrl, {
           method: "GET",
@@ -200,8 +202,10 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
         if (nameResponse.ok) {
           const nameData = await nameResponse.json();
           if (nameData && typeof nameData === "object") {
+            const trustedIds = normalizeTrustedHistoryIds(driverId, getTrustedHistoryDriverIds());
             for (const [packetId, packet] of Object.entries(nameData)) {
               const p = packet as any;
+              if (!pullBelongsToDriver(p, trustedIds, driverName)) continue;
               if (p.requestType === "wellHistory" || p.requestType === "performanceReport") continue;
               if (p.deleted === true) continue;
 

@@ -24,28 +24,31 @@ export function SyncAttentionBadge() {
   const insets = useSafeAreaInsets();
   const [counts, setCounts] = useState<DeliveryCounts | null>(null);
 
+  const loadCounts = useCallback(async () => {
+    try {
+      setCounts(await getDeliveryCounts());
+    } catch {
+      // storage hiccup / offline — keep the last known truthful counts
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       await reconcileSubmittedPulls();
     } catch {
       // offline / auth — still show local truth
     }
-    try {
-      setCounts(await getDeliveryCounts());
-    } catch {
-      // storage hiccup — keep the last known counts
-    }
-  }, []);
+    await loadCounts();
+  }, [loadCounts]);
 
   useEffect(() => {
     refresh();
     const unsubFlush = onFlushComplete(() => { refresh(); });
-    // Immediate update when a reconcile pass settles outcomes — the badge
-    // must never lag behind a processed/rejected confirmation.
-    const unsubReconcile = onReconcileResult(() => { refresh(); });
+    // Reconcile completion only recounts — never starts another reconcile.
+    const unsubReconcile = onReconcileResult(() => { loadCounts(); });
     const timer = setInterval(refresh, POLL_MS);
     return () => { unsubFlush(); unsubReconcile(); clearInterval(timer); };
-  }, [refresh]);
+  }, [refresh, loadCounts]);
 
   // Route-aware placement (field-test fix): left on the tank overview
   // (settings gear owns top-right), hidden on Sync Status (the screen IS

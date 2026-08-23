@@ -64,12 +64,14 @@ describe('P0-8 incompatible paths are gated, not outages', () => {
     expect(firebase).not.toMatch(/firebaseGet\(`well_config\/\$\{wellName\}`\)/);
   });
 
-  it('performance reads are gated as update-required, not a system outage', () => {
-    expect(firebase).toMatch(/PERFORMANCE_READS_AVAILABLE/);
-    expect(firebase).toMatch(/status: "unavailable"/);
-    expect(performance).toMatch(/PERFORMANCE_READS_AVAILABLE/);
-    expect(performance).toMatch(/updateRequired/);
-    expect(perfDetail).toMatch(/PERFORMANCE_READS_AVAILABLE/);
-    expect(perfDetail).toMatch(/updateRequired/);
+  it('performance reads go through getDriverWellPerformance, not a client RTDB path', () => {
+    expect(firebase).toMatch(/getDriverWellPerformance/);
+    expect(firebase).not.toMatch(/firebaseGet\([`'"]performance/);
+    expect(firebase).not.toMatch(/PERFORMANCE_READS_AVAILABLE/);
+    expect(performance).not.toMatch(/PERFORMANCE_READS_AVAILABLE/);
+    expect(performance).not.toMatch(/updateRequired/);
+    expect(perfDetail).not.toMatch(/PERFORMANCE_READS_AVAILABLE/);
+    expect(perfDetail).not.toMatch(/updateRequired/);
+    expect(perfDetail).toMatch(/getWellPerformance/);
   });
 });

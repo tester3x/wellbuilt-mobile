@@ -28,6 +28,15 @@ import { addPullToHistory, updatePullHistoryEntry } from '../src/services/pullHi
 import { getBblPerFoot, getWellConfig, loadWellConfig } from '../src/services/wellConfig';
 import { getLevelSnapshot, savePendingPull, saveWellPull, saveLevelSnapshot } from '../src/services/wellHistory';
 import { hp, spacing, wp } from '../src/ui/layout';
+import {
+  MeasurementKeypadDismissOverlay,
+  MeasurementKeypadProvider,
+  MeasurementKeypadSlot,
+  useMeasurementKeypad,
+} from '../src/contexts/MeasurementKeypadContext';
+import LevelFieldInput, { type LevelFieldInputHandle } from '../src/components/LevelFieldInput';
+
+const BBLS_FIELD_KEY = 'record-bbls-taken';
 
 // Key prefix for persisting draft form data (per-well)
 const DRAFT_STORAGE_PREFIX = 'wellbuilt_draft_';
@@ -173,10 +182,11 @@ interface DraftData {
   savedAt: number; // timestamp
 }
 
-export default function RecordScreen() {
+function RecordScreenInner() {
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const keypad = useMeasurementKeypad();
   const params = useLocalSearchParams();
   const wellName = String(params.wellName || "");
   const { initiateSendQueue } = useDispatch();
@@ -226,6 +236,8 @@ export default function RecordScreen() {
 
   const levelRef = useRef<TextInput>(null);
   const barrelsRef = useRef<TextInput>(null);
+  const barrelsFieldRef = useRef<LevelFieldInputHandle>(null);
+  const committedBarrelsRef = useRef('');
   const scrollViewRef = useRef<ScrollView>(null);
   const barrelsInputY = useRef<number>(0);
   const isBarrelsFocused = useRef<boolean>(false);
@@ -588,18 +600,19 @@ export default function RecordScreen() {
     setTempDateTime(now);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (committed?: { barrels?: string }) => {
     if (!wellName) {
       alert.show("Error", "No well selected");
       return;
     }
 
+    const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
     const tankLevelFeet = parseLevel(level);
     if (tankLevelFeet === null && !wellDown) {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingLevel'));
       return;
     }
-    if (!barrels && !wellDown) {
+    if (!barrelsValue && !wellDown) {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingBarrels'));
       return;
     }
@@ -607,7 +620,7 @@ export default function RecordScreen() {
     try {
       setIsSending(true);
 
-      const bblsTakenNum = parseFloat(barrels) || 0;
+      const bblsTakenNum = parseFloat(barrelsValue) || 0;
       const rawLevelFeet = tankLevelFeet ?? 0;
 
       // Floor the level to whole inches for VBA
@@ -920,7 +933,10 @@ export default function RecordScreen() {
     ? (isSending ? t('recordExtra.sendingEdit') : t('recordExtra.saveEdit'))
     : (isSending ? t('record.buttonSubmitSending') : t('record.buttonSubmit'));
 
+  useEffect(() => { committedBarrelsRef.current = barrels; }, [barrels]);
+
   return (
+    <MeasurementKeypadDismissOverlay>
     <View style={{ flex: 1, backgroundColor: '#05060B' }}>
       {/* Fixed Header with back button */}
       <View style={[styles.fixedHeader, { paddingTop: insets.top + spacing.sm }]}>
@@ -1064,19 +1080,24 @@ export default function RecordScreen() {
           }}
         >
           <Text style={styles.label}>{t('record.barrelsTakenLabel')}</Text>
-          <TextInput
-            ref={barrelsRef}
-            style={styles.input}
+          <LevelFieldInput
+            ref={barrelsFieldRef}
+            fieldKey={BBLS_FIELD_KEY}
             value={barrels}
-            onChangeText={setBarrels}
-            keyboardType="number-pad"
+            onChange={(v) => {
+              committedBarrelsRef.current = v;
+              setBarrels(v);
+            }}
+            variant="numeric"
             placeholder="140"
-            placeholderTextColor="#6B7280"
-            returnKeyType="go"
-            onSubmitEditing={handleSubmit}
-            onFocus={handleBarrelsFocus}
-            onBlur={handleBarrelsBlur}
-            selectTextOnFocus={isEditMode}
+            style={styles.input}
+            onDoneComplete={(formatted) => {
+              committedBarrelsRef.current = formatted;
+              setBarrels(formatted);
+              if (!isEditMode) {
+                void handleSubmit({ barrels: formatted });
+              }
+            }}
           />
           <Text style={styles.bottomLevelHint}>
             {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : ' '}
@@ -1095,7 +1116,12 @@ export default function RecordScreen() {
               styles.buttonEdit,
               isSending && styles.buttonDisabled
             ]}
-            onPress={handleSubmit}
+            onPress={() => {
+              const flushed = keypad.flushActiveDraft();
+              void handleSubmit({
+                barrels: flushed?.fieldKey === BBLS_FIELD_KEY ? flushed.committed : committedBarrelsRef.current,
+              });
+            }}
             disabled={isSending}
           >
             <Text style={styles.buttonText}>{submitButtonText}</Text>
@@ -1168,7 +1194,17 @@ export default function RecordScreen() {
 
       {/* Custom Alert Modal */}
       <alert.AlertComponent />
+      <MeasurementKeypadSlot />
     </View>
+    </MeasurementKeypadDismissOverlay>
+  );
+}
+
+export default function RecordScreen() {
+  return (
+    <MeasurementKeypadProvider>
+      <RecordScreenInner />
+    </MeasurementKeypadProvider>
   );
 }
 

@@ -2,6 +2,8 @@ import {
   decideIncomingVersionEvent,
   appliedVersionStorageKey,
   parseStoredVersion,
+  shouldMarkIncomingVersionApplied,
+  appliedVersionForDriver,
 } from '../incomingVersion';
 import { createCoalescedRunner } from '../syncCoalesce';
 import { readFileSync } from 'fs';
@@ -66,6 +68,14 @@ describe('incoming_version attach / apply', () => {
     expect(parseStoredVersion('41')).toBe(41);
     expect(parseStoredVersion(null)).toBeNull();
   });
+
+  it('failed fetch does not mark the version applied', () => {
+    expect(shouldMarkIncomingVersionApplied({ fetchOk: false, snapshotsSaved: true })).toBe(false);
+    expect(shouldMarkIncomingVersionApplied({ fetchOk: true, snapshotsSaved: false })).toBe(false);
+    expect(shouldMarkIncomingVersionApplied({ fetchOk: true, snapshotsSaved: true })).toBe(true);
+    expect(appliedVersionForDriver({ driverId: 'a', version: 40 }, 'b')).toBeNull();
+    expect(appliedVersionForDriver({ driverId: 'a', version: 40 }, 'a')).toBe(40);
+  });
 });
 
 describe('foreground / version wiring', () => {
@@ -85,5 +95,12 @@ describe('foreground / version wiring', () => {
     expect(listener).toMatch(/decideIncomingVersionEvent/);
     expect(listener).toMatch(/loadAppliedIncomingVersion/);
     expect(sync).toMatch(/markIncomingVersionApplied/);
+  });
+
+  it('active second phone version event syncs through the coalesced callable once', () => {
+    expect(sync).toMatch(/incoming_version changed - fetching updated responses/);
+    expect(sync).toMatch(/runOutgoingStatusSync/);
+    expect(sync).toMatch(/createCoalescedRunner/);
+    expect(sync).toMatch(/shouldMarkIncomingVersionApplied/);
   });
 });

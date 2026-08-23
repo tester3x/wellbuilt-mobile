@@ -17,6 +17,7 @@ import {
   loadAppliedIncomingVersion,
   markIncomingVersionApplied,
   peekAppliedIncomingVersion,
+  shouldMarkIncomingVersionApplied,
 } from "./incomingVersion";
 
 // Lazy import to avoid expo-notifications warning in Expo Go
@@ -271,7 +272,7 @@ const runOutgoingStatusSync = createCoalescedRunner(async (): Promise<number> =>
         await markLevelUnavailable(wellName);
       }
       const version = await fetchIncomingVersion();
-      if (version != null) {
+      if (version != null && shouldMarkIncomingVersionApplied({ fetchOk: true, snapshotsSaved: true })) {
         await markIncomingVersionApplied(version);
       }
     }

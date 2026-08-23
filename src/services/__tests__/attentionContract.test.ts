@@ -126,6 +126,13 @@ describe('attention wiring', () => {
     expect(screen).toMatch(/selectDeliveryItems\(items, filter\)/);
   });
 
+  it('reconcile-result event counts only and does not re-enter reconcile', () => {
+    expect(badge).toMatch(/unsubReconcile = onReconcileResult\(\(\) => \{ loadCounts\(\); \}\)/);
+    const effect = badge.slice(badge.indexOf('useEffect(() => {'));
+    expect(effect).toMatch(/onReconcileResult\(\(\) => \{ loadCounts\(\); \}\)/);
+    expect(effect).not.toMatch(/onReconcileResult\(\(\) => \{ refresh\(\); \}\)/);
+  });
+
   it('removes the delivered-success badge', () => {
     expect(toast).not.toMatch(/title: 'Delivered'/);
     expect(badge).not.toMatch(/delivered/i);

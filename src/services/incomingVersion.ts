@@ -1,11 +1,10 @@
 /**
  * incoming_version attach/apply contract.
  *
- * Live processIncomingPull writes packets/outgoing and does NOT increment
- * incoming_version (only edit/delete do). A sleeping phone therefore cannot
- * recover from the version watcher alone. Foreground fetch is the durable
- * path; this module still preserves applied versions so a reattached
- * watcher cannot treat a missed increment as a fresh baseline.
+ * Live processIncomingPull historically wrote packets/outgoing without
+ * bumping this counter. Foreground fetch remains the durable wake path;
+ * applied versions are stored per authenticated driver so a previous
+ * driver's in-memory value cannot suppress the next driver's first sync.
  */
 
 export type IncomingVersionDecision = 'sync' | 'ignore';
@@ -40,10 +39,32 @@ export function parseStoredVersion(raw: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-let memoryApplied: number | null = null;
+export type AppliedVersionMemory = { driverId: string; version: number };
+
+export function appliedVersionForDriver(
+  memory: AppliedVersionMemory | null,
+  driverId: string,
+): number | null {
+  if (!memory) return null;
+  if (memory.driverId !== driverId) return null;
+  return memory.version;
+}
+
+export function shouldMarkIncomingVersionApplied(input: {
+  fetchOk: boolean;
+  snapshotsSaved: boolean;
+}): boolean {
+  return input.fetchOk === true && input.snapshotsSaved === true;
+}
+
+let memoryApplied: AppliedVersionMemory | null = null;
 
 export function peekAppliedIncomingVersion(): number | null {
-  return memoryApplied;
+  return memoryApplied?.version ?? null;
+}
+
+export function peekAppliedIncomingVersionOwner(): string | null {
+  return memoryApplied?.driverId ?? null;
 }
 
 export function resetAppliedIncomingVersionForTests(): void {
@@ -51,26 +72,31 @@ export function resetAppliedIncomingVersionForTests(): void {
 }
 
 export async function loadAppliedIncomingVersion(): Promise<number | null> {
-  if (memoryApplied != null) return memoryApplied;
   try {
     const { getDriverId } = await import('./driverAuth');
     const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
     const driverId = (await getDriverId()) || 'unknown';
+    const scoped = appliedVersionForDriver(memoryApplied, driverId);
+    if (scoped != null) return scoped;
+    if (memoryApplied && memoryApplied.driverId !== driverId) {
+      memoryApplied = null;
+    }
     const raw = await AsyncStorage.getItem(appliedVersionStorageKey(driverId));
-    memoryApplied = parseStoredVersion(raw);
-    return memoryApplied;
+    const version = parseStoredVersion(raw);
+    memoryApplied = version == null ? null : { driverId, version };
+    return memoryApplied?.version ?? null;
   } catch {
-    return memoryApplied;
+    return appliedVersionForDriver(memoryApplied, memoryApplied?.driverId || 'unknown');
   }
 }
 
 export async function markIncomingVersionApplied(version: number): Promise<void> {
   if (!Number.isFinite(version)) return;
-  memoryApplied = version;
   try {
     const { getDriverId } = await import('./driverAuth');
     const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
     const driverId = (await getDriverId()) || 'unknown';
+    memoryApplied = { driverId, version };
     await AsyncStorage.setItem(appliedVersionStorageKey(driverId), String(version));
   } catch {
     // in-memory applied version still prevents reattach baseline hide

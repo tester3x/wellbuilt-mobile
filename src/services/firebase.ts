@@ -1142,8 +1142,7 @@ export interface PerformanceResponse {
   lastUpdated?: string;
 }
 
-/** Proposed RTDB rules deny driver reads of performance/ and performance/{well}. */
-export const PERFORMANCE_READS_AVAILABLE = false;
+/** Performance rows are served by getDriverWellPerformance — never a client RTDB read. */
 
 // --- Helper functions for accuracy calculation ---
 
@@ -1540,107 +1539,52 @@ const extractPullsByWell = (processedData: any): {
  * No rolling growth rate calculation — just reads what Firebase already computed
  */
 export const getPerformanceData = async (
-  fromDate?: Date,
-  toDate?: Date
+  _fromDate?: Date,
+  _toDate?: Date
 ): Promise<PerformanceResponse> => {
-  if (!PERFORMANCE_READS_AVAILABLE) {
-    return {
-      wellCount: 0,
-      wells: [],
-      status: "unavailable",
-      errorMessage: "update_required",
-    };
-  }
-
-  try {
-    console.log("[Performance] Reading from performance/ folder...");
-
-    // performance/ has tiny {d,a,p} rows — way less bandwidth than packets/processed
-    // DECISION 2/23/2026: performance/ is the source of truth for prediction data
-    const [perfData, wellConfig] = await Promise.all([
-      firebaseGet("performance"),
-      loadWellConfig(),
-    ]);
-
-    if (!perfData) {
-      return {
-        wellCount: 0,
-        wells: [],
-        status: "error",
-        errorMessage: "No performance data found. Pull data will appear here after drivers submit pulls.",
-      };
-    }
-
-    const wells: WellPerformance[] = [];
-
-    for (const [wellKey, wellData] of Object.entries(perfData)) {
-      const wd = wellData as any;
-      if (!wd || !wd.rows) continue;
-
-      const wellName = wd.wellName || wellKey.replace(/_/g, " ");
-      const config = wellConfig?.[wellName];
-      const route = config?.route || undefined;
-
-      const rawRows: RawPullData[] = [];
-      for (const [, row] of Object.entries(wd.rows)) {
-        const r = row as any;
-        if (r && r.d && r.a > 0 && r.p > 0) {
-          rawRows.push({ d: r.d, a: r.a, p: r.p });
-        }
-      }
-
-      if (rawRows.length === 0) continue;
-
-      const allRows = processRawPulls(rawRows);
-      allRows.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
-
-      const filteredRows = filterRowsByDate(allRows, fromDate, toDate);
-      if (filteredRows.length === 0) continue;
-
-      const stats = calculateStats(filteredRows);
-      const displayRows = [...filteredRows].reverse();
-
-      wells.push({
-        wellName,
-        totalPulls: allRows.length,
-        filteredPulls: filteredRows.length,
-        avgAccuracy: stats.avgAccuracy,
-        bestAccuracy: stats.bestAccuracy,
-        worstAccuracy: stats.worstAccuracy,
-        bestPullIndex: stats.bestPullIndex,
-        worstPullIndex: stats.worstPullIndex,
-        trend: stats.trend,
-        firstDate: filteredRows[0]?.date || "",
-        lastDate: filteredRows[filteredRows.length - 1]?.date || "",
-        rows: displayRows,
-        route,
-        anomalyCount: stats.anomalyCount,
-      });
-    }
-
-    console.log("[Performance] Read from performance/:", wells.length, "wells,",
-      wells.reduce((sum, w) => sum + w.filteredPulls, 0), "total pulls");
-
-    return {
-      wellCount: wells.length,
-      wells,
-      status: "success",
-    };
-  } catch (error) {
-    console.error("[Performance] Error reading data:", error);
-    return {
-      wellCount: 0,
-      wells: [],
-      status: "error",
-      errorMessage: error instanceof Error ? error.message : "Failed to read performance data",
-    };
-  }
+  return {
+    wellCount: 0,
+    wells: [],
+    status: "error",
+    errorMessage: "use getWellPerformance",
+  };
 };
+
+function toIsoDate(d?: Date): string | undefined {
+  if (!d) return undefined;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export type DriverWellPerformanceFetch = {
+  ok: true;
+  wellName: string;
+  updated: string;
+  rows: RawPullData[];
+};
+
+const emptyWellPerformance = (wellName: string, updated?: string): WellPerformance => ({
+  wellName,
+  totalPulls: 0,
+  filteredPulls: 0,
+  avgAccuracy: 0,
+  bestAccuracy: 0,
+  worstAccuracy: 0,
+  bestPullIndex: -1,
+  worstPullIndex: -1,
+  trend: "stable",
+  firstDate: "",
+  lastDate: "",
+  updated,
+  rows: [],
+  anomalyCount: 0,
+});
 
 /**
  * Get just the list of well names with their routes.
- * Uses well_config (tiny payload) — does NOT download packets.
- * Used by performance-detail dropdown to avoid a full packets/processed fetch.
+ * Uses the already-authorized WB-M well catalog.
  */
 export const getWellNameList = async (): Promise<{ name: string; route?: string }[]> => {
   const config = await loadWellConfig();
@@ -1651,104 +1595,72 @@ export const getWellNameList = async (): Promise<{ name: string; route?: string 
   }));
 };
 
-/**
- * Get raw performance data for a single well
- * Reads from performance/{wellKey} — tiny {d,a,p} rows written by Firebase Cloud Function
- * DECISION 2/23/2026: Read from performance/ not packets/processed because:
- *   - performance/ rows are ~30 bytes each ({d,a,p})
- *   - processed packets are 30+ fields each (huge waste for 3 values)
- *   - Firebase Cloud Function is the single source of truth for predictions
- */
-export const getRawWellData = async (wellName: string): Promise<RawWellData | null> => {
-  if (!PERFORMANCE_READS_AVAILABLE) {
-    return null;
-  }
-
-  try {
-    const wellKey = wellName.replace(/\s+/g, "_");
-    console.log("[Performance] Reading performance/", wellKey);
-
-    const perfData = await firebaseGet(`performance/${wellKey}`);
-    if (!perfData || !perfData.rows) return null;
-
-    const rows: RawPullData[] = [];
-    for (const [, row] of Object.entries(perfData.rows)) {
-      const r = row as any;
-      if (r && r.d && r.a > 0 && r.p > 0) {
+export const getRawWellData = async (
+  wellName: string,
+  fromDate?: Date,
+  toDate?: Date,
+): Promise<RawWellData> => {
+  const { authorizedCallable } = await import('./firebaseAuthSession');
+  const payload: Record<string, unknown> = { wellName };
+  const from = toIsoDate(fromDate);
+  const to = toIsoDate(toDate);
+  if (from) payload.fromDate = from;
+  if (to) payload.toDate = to;
+  const result = await authorizedCallable<DriverWellPerformanceFetch>(
+    'getDriverWellPerformance',
+    payload,
+  );
+  const rows: RawPullData[] = [];
+  if (Array.isArray(result?.rows)) {
+    for (const row of result.rows) {
+      const r = row as RawPullData;
+      if (r && typeof r.d === 'string' && Number.isFinite(r.a) && Number.isFinite(r.p) && r.a > 0 && r.p > 0) {
         rows.push({ d: r.d, a: r.a, p: r.p });
       }
     }
-
-    if (rows.length === 0) return null;
-
-    return {
-      wellName: perfData.wellName || wellName,
-      totalPulls: rows.length,
-      updated: perfData.updated || "",
-      rows,
-    };
-  } catch (error) {
-    console.error("[Performance] Error reading well:", error);
-    return null;
   }
+  return {
+    wellName: result?.wellName || wellName,
+    totalPulls: rows.length,
+    updated: result?.updated || '',
+    rows,
+  };
 };
 
-/**
- * Get processed performance data for a single well with date filtering
- * Reads from packets/processed (same source as history)
- */
 export const getWellPerformance = async (
   wellName: string,
   fromDate?: Date,
   toDate?: Date
-): Promise<WellPerformance | null> => {
-  if (!PERFORMANCE_READS_AVAILABLE) {
-    const err = new Error("update_required");
-    err.name = "FeatureUnavailableError";
-    throw err;
+): Promise<WellPerformance> => {
+  const rawWell = await getRawWellData(wellName, fromDate, toDate);
+  const allRows = processRawPulls(normalizeRows(rawWell.rows));
+  allRows.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+  const filteredRows = filterRowsByDate(allRows, fromDate, toDate);
+  if (filteredRows.length === 0) {
+    return emptyWellPerformance(wellName, rawWell.updated);
   }
-
-  try {
-    const rawWell = await getRawWellData(wellName);
-    if (!rawWell) {
-      console.log("[Performance] No data for well:", wellName);
-      return null;
-    }
-
-    const allRows = processRawPulls(normalizeRows(rawWell.rows));
-    allRows.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
-
-    const filteredRows = filterRowsByDate(allRows, fromDate, toDate);
-    if (filteredRows.length === 0) return null;
-
-    const stats = calculateStats(filteredRows);
-    const displayRows = [...filteredRows].reverse();
-
-    const wellConfig = await loadWellConfig();
-    const config = wellConfig?.[wellName];
-    const route = config?.route || undefined;
-
-    return {
-      wellName,
-      totalPulls: allRows.length,
-      filteredPulls: filteredRows.length,
-      avgAccuracy: stats.avgAccuracy,
-      bestAccuracy: stats.bestAccuracy,
-      worstAccuracy: stats.worstAccuracy,
-      bestPullIndex: stats.bestPullIndex,
-      worstPullIndex: stats.worstPullIndex,
-      trend: stats.trend,
-      firstDate: filteredRows[0]?.date || "",
-      lastDate: filteredRows[filteredRows.length - 1]?.date || "",
-      updated: rawWell.updated,
-      rows: displayRows,
-      route,
-      anomalyCount: stats.anomalyCount,
-    };
-  } catch (error) {
-    console.error("[Performance] Error reading well:", error);
-    return null;
-  }
+  const stats = calculateStats(filteredRows);
+  const displayRows = [...filteredRows].reverse();
+  const wellConfig = await loadWellConfig();
+  const config = wellConfig?.[wellName];
+  const route = config?.route || undefined;
+  return {
+    wellName,
+    totalPulls: allRows.length,
+    filteredPulls: filteredRows.length,
+    avgAccuracy: stats.avgAccuracy,
+    bestAccuracy: stats.bestAccuracy,
+    worstAccuracy: stats.worstAccuracy,
+    bestPullIndex: stats.bestPullIndex,
+    worstPullIndex: stats.worstPullIndex,
+    trend: stats.trend,
+    firstDate: filteredRows[0]?.date || "",
+    lastDate: filteredRows[filteredRows.length - 1]?.date || "",
+    updated: rawWell.updated,
+    rows: displayRows,
+    route,
+    anomalyCount: stats.anomalyCount,
+  };
 };
 
 // --- Test connection ------------------------------------------------

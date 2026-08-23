@@ -1278,7 +1278,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             )}
 
             <Animated.View style={[styles.numberContainer, numberStyle]}>
-              <Text style={styles.tankNumber}>{currentLevelDisplay}</Text>
+              <Text style={levelSnapshot?.unavailable ? styles.tankUnavailableLabel : styles.tankNumber}>
+                {currentLevelDisplay}
+              </Text>
             </Animated.View>
           </View>
           <Image source={WellBuiltTankFrame} style={styles.tankFrame} resizeMode="stretch" />
@@ -2920,6 +2922,17 @@ const styles = StyleSheet.create({
   tankNumber: {
     color: 'white',
     fontSize: scaledFont(0.028),
+    fontWeight: '700',
+    textShadowColor: '#000',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  // Unavailable is 11 glyphs vs ~5 for "12'3\"". Same tankNumber size overflowed
+  // the interior (S24 / Z Fold cover) and clipped to "Unavailabl". 0.016 leaves
+  // margin after numberContainer's left:15 inset. Numeric level font unchanged.
+  tankUnavailableLabel: {
+    color: 'white',
+    fontSize: scaledFont(0.016),
     fontWeight: '700',
     textShadowColor: '#000',
     textShadowOffset: { width: 1, height: 1 },

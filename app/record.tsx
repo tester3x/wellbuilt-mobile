@@ -235,12 +235,10 @@ function RecordScreenInner() {
   const wellIsDownRef = useRef<boolean>(false);
 
   const levelRef = useRef<TextInput>(null);
-  const barrelsRef = useRef<TextInput>(null);
   const barrelsFieldRef = useRef<LevelFieldInputHandle>(null);
   const committedBarrelsRef = useRef('');
   const scrollViewRef = useRef<ScrollView>(null);
   const barrelsInputY = useRef<number>(0);
-  const isBarrelsFocused = useRef<boolean>(false);
   // Keyboard-aware scroll: track current offset + which field is focused so we
   // can scroll by the MEASURED overlap (never a device-specific constant).
   const scrollYRef = useRef<number>(0);
@@ -392,18 +390,12 @@ function RecordScreenInner() {
     }
   }, [isEditMode, editDateTime, editLevel, editBbls, editWellDown]);
 
-  // Record which field is focused so the keyboard-show handler can measure it.
-  const handleBarrelsFocus = () => {
-    isBarrelsFocused.current = true;
-    focusedFieldRef.current = barrelsRef.current;
-  };
-
-  const handleBarrelsBlur = () => {
-    isBarrelsFocused.current = false;
-  };
-
   const handleLevelFocus = () => {
     focusedFieldRef.current = levelRef.current;
+  };
+
+  const openBblsKeypad = () => {
+    barrelsFieldRef.current?.focus();
   };
 
   // Keyboard-aware scroll. On show, measure the focused field and scroll up by
@@ -612,7 +604,7 @@ function RecordScreenInner() {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingLevel'));
       return;
     }
-    if (!barrelsValue && !wellDown) {
+    if (!wellDown && (!barrelsValue || !/^\d+(\.\d+)?$/.test(barrelsValue.trim()))) {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingBarrels'));
       return;
     }
@@ -1063,7 +1055,7 @@ function RecordScreenInner() {
             placeholderTextColor="#6B7280"
             returnKeyType="next"
             blurOnSubmit={false}
-            onSubmitEditing={() => barrelsRef.current?.focus()}
+            onSubmitEditing={openBblsKeypad}
             onFocus={handleLevelFocus}
             autoCapitalize="none"
             autoCorrect={false}

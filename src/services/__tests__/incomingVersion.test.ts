@@ -4,6 +4,11 @@ import {
   parseStoredVersion,
   shouldMarkIncomingVersionApplied,
   appliedVersionForDriver,
+  verifiedDriverId,
+  loadAppliedIncomingVersion,
+  markIncomingVersionApplied,
+  resetAppliedIncomingVersionForTests,
+  type AppliedVersionReaders,
 } from '../incomingVersion';
 import { createCoalescedRunner } from '../syncCoalesce';
 import { readFileSync } from 'fs';
@@ -102,5 +107,85 @@ describe('foreground / version wiring', () => {
     expect(sync).toMatch(/runOutgoingStatusSync/);
     expect(sync).toMatch(/createCoalescedRunner/);
     expect(sync).toMatch(/shouldMarkIncomingVersionApplied/);
+  });
+});
+
+function memoryStore(): { store: Record<string, string>; readers: (driverId: string | null | (() => Promise<string | null>)) => AppliedVersionReaders } {
+  const store: Record<string, string> = {};
+  return {
+    store,
+    readers: (driverId) => ({
+      getDriverId: typeof driverId === 'function' ? driverId : async () => driverId,
+      getItem: async (key) => store[key] ?? null,
+      setItem: async (key, value) => {
+        store[key] = value;
+      },
+    }),
+  };
+}
+
+describe('incoming_version driver identity fail-closed', () => {
+  beforeEach(() => {
+    resetAppliedIncomingVersionForTests();
+  });
+
+  it('never stores applied versions under an unknown driver key', () => {
+    expect(verifiedDriverId('unknown')).toBeNull();
+    expect(verifiedDriverId('')).toBeNull();
+    expect(verifiedDriverId(null)).toBeNull();
+    expect(() => appliedVersionStorageKey('unknown')).toThrow('applied_version_requires_verified_driver');
+    expect(() => appliedVersionStorageKey('')).toThrow('applied_version_requires_verified_driver');
+  });
+
+  it('Driver A memory cannot be returned for Driver B', async () => {
+    const { store, readers } = memoryStore();
+    await markIncomingVersionApplied(41, readers('driver-a'));
+    expect(store[appliedVersionStorageKey('driver-a')]).toBe('41');
+    expect(store[appliedVersionStorageKey('driver-b')]).toBeUndefined();
+    expect(await loadAppliedIncomingVersion(readers('driver-b'))).toBeNull();
+    expect(await loadAppliedIncomingVersion(readers('driver-a'))).toBe(41);
+  });
+
+  it('getDriverId() rejection returns null', async () => {
+    const { readers } = memoryStore();
+    await markIncomingVersionApplied(41, readers('driver-a'));
+    const rejected = readers(async () => {
+      throw new Error('identity_unavailable');
+    });
+    expect(await loadAppliedIncomingVersion(rejected)).toBeNull();
+  });
+
+  it('missing authenticated driver returns null', async () => {
+    const { readers } = memoryStore();
+    await markIncomingVersionApplied(41, readers('driver-a'));
+    expect(await loadAppliedIncomingVersion(readers(null))).toBeNull();
+    expect(await loadAppliedIncomingVersion(readers('unknown'))).toBeNull();
+  });
+
+  it('a failed identity lookup cannot suppress the next driver’s first sync', async () => {
+    const { store, readers } = memoryStore();
+    await markIncomingVersionApplied(41, readers('driver-a'));
+    expect(await loadAppliedIncomingVersion(readers(async () => {
+      throw new Error('identity_unavailable');
+    }))).toBeNull();
+
+    store[appliedVersionStorageKey('driver-b')] = '40';
+    const appliedB = await loadAppliedIncomingVersion(readers('driver-b'));
+    expect(appliedB).toBe(40);
+    expect(decideIncomingVersionEvent({
+      appliedVersion: appliedB,
+      incomingVersion: 41,
+      seenThisAttach: false,
+    })).toBe('sync');
+  });
+
+  it('a successfully saved snapshot/version remains scoped to its verified driver', async () => {
+    const { store, readers } = memoryStore();
+    await markIncomingVersionApplied(7, readers('driver-a'));
+    await markIncomingVersionApplied(9, readers('unknown'));
+    await markIncomingVersionApplied(9, readers(null));
+    expect(store).toEqual({ [appliedVersionStorageKey('driver-a')]: '7' });
+    expect(await loadAppliedIncomingVersion(readers('driver-a'))).toBe(7);
+    expect(await loadAppliedIncomingVersion(readers('driver-b'))).toBeNull();
   });
 });

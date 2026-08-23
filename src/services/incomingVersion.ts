@@ -1,10 +1,8 @@
 /**
  * incoming_version attach/apply contract.
  *
- * Live processIncomingPull historically wrote packets/outgoing without
- * bumping this counter. Foreground fetch remains the durable wake path;
- * applied versions are stored per authenticated driver so a previous
- * driver's in-memory value cannot suppress the next driver's first sync.
+ * Applied versions are stored only under a verified authenticated driver id.
+ * Identity/storage failure returns null and never reuses unverified memory.
  */
 
 export type IncomingVersionDecision = 'sync' | 'ignore';
@@ -28,8 +26,18 @@ export function decideIncomingVersionEvent(input: {
   return 'sync';
 }
 
+export function verifiedDriverId(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const id = raw.trim();
+  if (!id || id === 'unknown') return null;
+  return id;
+}
+
 export function appliedVersionStorageKey(driverId: string): string {
-  const id = (driverId || '').trim() || 'unknown';
+  const id = verifiedDriverId(driverId);
+  if (!id) {
+    throw new Error('applied_version_requires_verified_driver');
+  }
   return `@wbm_applied_incoming_version:${id}`;
 }
 
@@ -43,9 +51,9 @@ export type AppliedVersionMemory = { driverId: string; version: number };
 
 export function appliedVersionForDriver(
   memory: AppliedVersionMemory | null,
-  driverId: string,
+  driverId: string | null,
 ): number | null {
-  if (!memory) return null;
+  if (!memory || !driverId) return null;
   if (memory.driverId !== driverId) return null;
   return memory.version;
 }
@@ -71,34 +79,72 @@ export function resetAppliedIncomingVersionForTests(): void {
   memoryApplied = null;
 }
 
-export async function loadAppliedIncomingVersion(): Promise<number | null> {
+export type AppliedVersionReaders = {
+  getDriverId: () => Promise<string | null | undefined>;
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+};
+
+async function productionReaders(): Promise<AppliedVersionReaders> {
+  const { getDriverId } = await import('./driverAuth');
+  const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+  return {
+    getDriverId,
+    getItem: (k) => AsyncStorage.getItem(k),
+    setItem: (k, v) => AsyncStorage.setItem(k, v),
+  };
+}
+
+export async function loadAppliedIncomingVersion(
+  readers?: AppliedVersionReaders,
+): Promise<number | null> {
   try {
-    const { getDriverId } = await import('./driverAuth');
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    const driverId = (await getDriverId()) || 'unknown';
+    const io = readers || await productionReaders();
+    let rawId: string | null | undefined;
+    try {
+      rawId = await io.getDriverId();
+    } catch {
+      memoryApplied = null;
+      return null;
+    }
+    const driverId = verifiedDriverId(rawId);
+    if (!driverId) {
+      memoryApplied = null;
+      return null;
+    }
     const scoped = appliedVersionForDriver(memoryApplied, driverId);
     if (scoped != null) return scoped;
     if (memoryApplied && memoryApplied.driverId !== driverId) {
       memoryApplied = null;
     }
-    const raw = await AsyncStorage.getItem(appliedVersionStorageKey(driverId));
+    const raw = await io.getItem(appliedVersionStorageKey(driverId));
     const version = parseStoredVersion(raw);
     memoryApplied = version == null ? null : { driverId, version };
     return memoryApplied?.version ?? null;
   } catch {
-    return appliedVersionForDriver(memoryApplied, memoryApplied?.driverId || 'unknown');
+    memoryApplied = null;
+    return null;
   }
 }
 
-export async function markIncomingVersionApplied(version: number): Promise<void> {
+export async function markIncomingVersionApplied(
+  version: number,
+  readers?: AppliedVersionReaders,
+): Promise<void> {
   if (!Number.isFinite(version)) return;
   try {
-    const { getDriverId } = await import('./driverAuth');
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    const driverId = (await getDriverId()) || 'unknown';
+    const io = readers || await productionReaders();
+    let rawId: string | null | undefined;
+    try {
+      rawId = await io.getDriverId();
+    } catch {
+      return;
+    }
+    const driverId = verifiedDriverId(rawId);
+    if (!driverId) return;
     memoryApplied = { driverId, version };
-    await AsyncStorage.setItem(appliedVersionStorageKey(driverId), String(version));
+    await io.setItem(appliedVersionStorageKey(driverId), String(version));
   } catch {
-    // in-memory applied version still prevents reattach baseline hide
+    // unverified identity: do not persist under unknown
   }
 }

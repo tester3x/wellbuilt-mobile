@@ -122,6 +122,16 @@ const firebaseGet = async (path: string): Promise<any> => {
   return response.json();
 };
 
+export const fetchIncomingVersion = async (): Promise<number | null> => {
+  try {
+    const raw = await firebaseGet(INCOMING_VERSION_PATH);
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Firebase GET with server-side query filtering.
  * Uses REST API query params: orderBy, equalTo, startAt, endAt.

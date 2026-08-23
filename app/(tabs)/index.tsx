@@ -50,7 +50,9 @@ import {
   pelicanPerchX,
   rippleGeometry,
 } from '../../src/ui/tankWildlife';
-import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
+import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder, syncOnForeground } from '../../src/services/backgroundSync';
+import { startingLevelFromSnapshot } from '../../src/services/downSnapshot';
+import { downNumberTopPx } from '../../src/ui/downNumberLayout';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
 import { getWellConfig, WellConfig, loadWellConfig, fetchDriverRouteAssignment, scopedWellsForDisplay, lastWellConfigError, getBblPerFootSync } from '../../src/services/wellConfig';
@@ -126,6 +128,7 @@ const FORCE_EGG: 'fish' | 'fisherman' | 'duck' | null = null;
 const RIPPLE = rippleGeometry(INTERIOR_WIDTH);
 const RIPPLE_HUMPS = Array.from({ length: RIPPLE.humpCount }, (_, i) => i);
 const NUMBER_OFFSET = isTablet ? TANK_HEIGHT * 0.025 : SCREEN_HEIGHT * 0.015;
+const DOWN_NUMBER_TOP = downNumberTopPx(INTERIOR_HEIGHT, NUMBER_OFFSET);
 
 // Responsive font sizing - tablets get scaled down to prevent oversized text
 const scaledFont = (phoneSize: number): number => {
@@ -300,7 +303,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const [pullRecord, setPullRecord] = useState<WellPullRecord | null>(null);
   // Flow rate now stored in levelSnapshot (not separately cached) to prevent stale values
   const [levelSnapshot, setLevelSnapshot] = useState<LevelSnapshot | null>(null);
-  const [wellDown, setWellDown] = useState(false);
   const [lastPullInfo, setLastPullInfo] = useState<{dateTime: string, dateTimeUTC?: string, bbls: number, topLevel?: string, bottomLevel?: string} | null>(null);
   const [targetFraction, setTargetFraction] = useState<number | null>(null);
   const [drainCompleteSignal, setDrainCompleteSignal] = useState(0); // Triggers live update effect after drain finishes
@@ -329,6 +331,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   
   // Pending pull / waiting state
   const [pendingPull, setPendingPull] = useState<PendingPull | null>(null);
+  const wellDown = !!(pendingPull?.wellDown || levelSnapshot?.isDown);
   // Removed: const [isWaiting, setIsWaiting] = useState(false);
   // "Waiting for WellBuilt..." spinner removed - Cloud Functions handle everything now
   const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -449,7 +452,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     if (isActive && !prevIsActive.current && levelSnapshot) {
       // Calculate current level with flow estimate
       // Formula: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
-      const startingLevel = levelSnapshot.lastPullBottomLevelFeet ?? levelSnapshot.levelFeet;
+      const startingLevel = startingLevelFromSnapshot(levelSnapshot);
       let currentLevel = startingLevel;
       const flowMins = levelSnapshot.flowRateMinutes ?? wellConfig?.avgFlowRateMinutes ?? 0;
       if (flowMins > 0 && !levelSnapshot.isDown) {
@@ -534,9 +537,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       }
 
       setLevelSnapshot(snapshot);
-
-      // Update well down status from snapshot
-      setWellDown(snapshot?.isDown ?? false);
       if (snapshot?.unavailable) {
         setIsLoadingInitial(false);
         return;
@@ -657,8 +657,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         }, remaining + 100); // Wait for drain to finish + small buffer
 
         // Update targetFraction so live update knows the correct level when it starts
-        if (snapshot && snapshot.levelFeet > 0) {
-          const startingLevel = snapshot.lastPullBottomLevelFeet ?? snapshot.levelFeet;
+        if (snapshot) {
+          const startingLevel = startingLevelFromSnapshot(snapshot);
           let currentLevel = startingLevel;
           const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
           if (flowMins > 0 && !snapshot.isDown) {
@@ -675,8 +675,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         // Calculate estimated current level from snapshot
         const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
 
-        if (snapshot && snapshot.levelFeet > 0) {
-          const startingLevel = snapshot.lastPullBottomLevelFeet ?? snapshot.levelFeet;
+        if (snapshot && (startingLevelFromSnapshot(snapshot) > 0 || snapshot.isDown)) {
+          const startingLevel = startingLevelFromSnapshot(snapshot);
           let currentLevel = startingLevel;
 
           if (flowMins > 0 && !snapshot.isDown) {
@@ -688,23 +688,23 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
           const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
 
-          // On initial load (first time mounting), set level directly
-          // Animation on swipe is handled by the isActive transition effect
-          if (!hasAnimated.current) {
-            if (isActive) {
-              // Active on first mount - animate from previous well's level
-              const prevLevel = getPreviousLevel();
-              waterFraction.value = prevLevel;
-              waterFraction.value = withTiming(fraction, {
-                duration: 800,
-                easing: Easing.inOut(Easing.ease),
-              });
-            } else {
-              // Not active yet - just set the value
-              waterFraction.value = fraction;
-            }
-            hasAnimated.current = true;
+          // Always apply the accepted snapshot — including after a foreground
+          // sync on an already-mounted well. Do not wait for a later swipe.
+          if (!hasAnimated.current && isActive) {
+            const prevLevel = getPreviousLevel();
+            waterFraction.value = prevLevel;
+            waterFraction.value = withTiming(fraction, {
+              duration: 800,
+              easing: Easing.inOut(Easing.ease),
+            });
+          } else if (isActive) {
+            waterFraction.value = snapshot.isDown
+              ? fraction
+              : withTiming(fraction, { duration: 400, easing: Easing.out(Easing.ease) });
+          } else {
+            waterFraction.value = fraction;
           }
+          hasAnimated.current = true;
 
           setTargetFraction(fraction);
         }
@@ -736,7 +736,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     const updateEstimate = () => {
       // Skip if drain animation started since this effect was set up
       if (drainAnimationActive.current) return;
-      const startingLevel = levelSnapshot.lastPullBottomLevelFeet ?? levelSnapshot.levelFeet;
+      const startingLevel = startingLevelFromSnapshot(levelSnapshot);
       const minutesSincePull = (Date.now() - levelSnapshot.timestamp) / (1000 * 60);
       const feetGained = minutesSincePull / flowMins;
       const currentLevel = Math.min(startingLevel + feetGained, FULL_TANK_FEET);
@@ -1145,6 +1145,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   
   // Number floats half in/half out of water - positioned from TOP of interior
   const numberStyle = useAnimatedStyle(() => {
+    if (wellDown) {
+      return { top: DOWN_NUMBER_TOP };
+    }
     // Water surface is at this distance from TOP of interior
     const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
     // Clamp so number stays visible even at very low/high levels
@@ -1733,6 +1736,7 @@ export default function MainScreen() {
       console.log('[Main] AppState changed to:', nextAppState);
       if (nextAppState === 'active') {
         startBackgroundSync();
+        void syncOnForeground();
         // Re-trigger well load — covers returning from dead zone while backgrounded
         setAppForegroundCount(prev => prev + 1);
       } else {

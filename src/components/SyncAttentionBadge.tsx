@@ -8,7 +8,7 @@ import { usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { badgeOpenFilter, DeliveryCounts, getDeliveryCounts, onReconcileResult } from '../services/deliveryStatus';
+import { badgeOpenFilter, DeliveryCounts, getDeliveryCounts, onReconcileResult, reconcileSubmittedPulls } from '../services/deliveryStatus';
 import { onFlushComplete } from '../services/packetQueue';
 import { badgeLeftOffset, badgePlacementForRoute, badgeRightOffset, badgeTopOffset } from '../ui/safeAreaBadge';
 
@@ -25,6 +25,11 @@ export function SyncAttentionBadge() {
   const [counts, setCounts] = useState<DeliveryCounts | null>(null);
 
   const refresh = useCallback(async () => {
+    try {
+      await reconcileSubmittedPulls();
+    } catch {
+      // offline / auth — still show local truth
+    }
     try {
       setCounts(await getDeliveryCounts());
     } catch {

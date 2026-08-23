@@ -57,16 +57,8 @@ export function SyncToastHost() {
         });
       }
     });
-    // "Delivered" ONLY when packets/processed confirmed the packet(s).
-    const unsubReconcile = onReconcileResult((r) => {
-      if (r.confirmedSent > 0) {
-        showSyncToast({
-          title: 'Delivered',
-          body: `${r.confirmedSent} pull${r.confirmedSent === 1 ? '' : 's'} confirmed.`,
-          tone: 'teal',
-        });
-      }
-    });
+    // Successful delivery is normal operation — no delivered-success badge/toast.
+    const unsubReconcile = onReconcileResult(() => {});
     return () => {
       _listener = null;
       unsubFlush();

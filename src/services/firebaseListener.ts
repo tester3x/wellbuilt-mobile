@@ -20,6 +20,7 @@ import {
 import { getFirebaseDatabase, waitForAuthUser } from './firebaseAuthSession';
 import * as SecureStore from 'expo-secure-store';
 import { runCancellableAttach } from './listenerAttach';
+import { decideIncomingVersionEvent, loadAppliedIncomingVersion, peekAppliedIncomingVersion } from './incomingVersion';
 
 void waitForAuthUser();
 
@@ -353,11 +354,14 @@ export function cancelWaitForWellResponseChange(wellName: string): void {
  * Watch incoming_version for changes - just like Excel does
  * When it changes, the callback is fired so app can fetch updated responses
  */
-export function watchIncomingVersion(onChange: () => void): () => void {
+export function watchIncomingVersion(
+  onChange: (version: number) => void,
+  getApplied: () => number | null = peekAppliedIncomingVersion,
+): () => void {
   const db = getFirebaseDatabase();
   const versionRef = ref(db, 'packets/incoming_version');
 
-  let lastVersion: number | null = null;
+  let seenThisAttach = false;
   // Use unique ID to allow multiple watchers without conflicts
   const listenerId = `incoming_version_${Date.now()}`;
 
@@ -365,14 +369,25 @@ export function watchIncomingVersion(onChange: () => void): () => void {
 
   const unsubscribe = onValue(versionRef, (snapshot) => {
     const currentVersion = snapshot.val();
-    console.log('[FirebaseListener] onValue fired - current:', currentVersion, 'last:', lastVersion);
-
-    if (lastVersion !== null && currentVersion !== lastVersion) {
-      console.log('[FirebaseListener] incoming_version changed:', lastVersion, '->', currentVersion);
-      onChange();
-    }
-
-    lastVersion = currentVersion;
+    const isFirst = !seenThisAttach;
+    seenThisAttach = true;
+    const handle = async () => {
+      if (isFirst) {
+        await loadAppliedIncomingVersion();
+      }
+      const applied = getApplied();
+      const decision = decideIncomingVersionEvent({
+        appliedVersion: applied,
+        incomingVersion: currentVersion,
+        seenThisAttach: !isFirst,
+      });
+      console.log('[FirebaseListener] onValue fired - current:', currentVersion, 'applied:', applied, 'first:', isFirst, 'decision:', decision);
+      if (decision === 'sync') {
+        console.log('[FirebaseListener] incoming_version requires sync:', applied, '->', currentVersion);
+        onChange(Number(currentVersion));
+      }
+    };
+    void handle();
   }, (error) => {
     console.error('[FirebaseListener] Error watching incoming_version:', error);
   });

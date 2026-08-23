@@ -174,9 +174,10 @@ describe('SyncToast — branded, truthful, nonblocking', () => {
     expect(toastSrc).toContain('pointerEvents="none"');
   });
 
-  test('wording is truthful: submitted until processed confirms; Delivered only on confirmation', () => {
+  test('wording is truthful: submitted until processed confirms; no delivered-success badge', () => {
     expect(toastSrc).toContain('submitted. Waiting for confirmation.');
-    expect(toastSrc).toMatch(/confirmedSent > 0[\s\S]{0,200}Delivered/);
+    expect(toastSrc).toMatch(/Successful delivery is normal operation/);
+    expect(toastSrc).not.toMatch(/title: 'Delivered'/);
     expect(toastSrc).not.toMatch(/pulls? uploaded/i);
     expect(toastSrc).not.toMatch(/title: 'Sent'/);
   });

@@ -7,6 +7,17 @@
 
 import { subscribeToOutgoing, unsubscribeAll, isListening, watchIncomingVersion } from "./firebaseListener";
 import { saveLevelSnapshot, getLevelSnapshotSync, clearPendingPull } from "./wellHistory";
+import {
+  isDownLevelToken,
+  parseLevelToFeet,
+  resolveSnapshotLevelFeet,
+} from "./downSnapshot";
+import { createCoalescedRunner, VERSION_COMPLETION_RETRY_MS } from "./syncCoalesce";
+import {
+  loadAppliedIncomingVersion,
+  markIncomingVersionApplied,
+  peekAppliedIncomingVersion,
+} from "./incomingVersion";
 
 // Lazy import to avoid expo-notifications warning in Expo Go
 // Notifications only work in development builds anyway
@@ -31,6 +42,7 @@ let isSyncing = false;
 let listenerUnsubscribe: (() => void) | null = null;
 let versionUnsubscribe: (() => void) | null = null; // For incoming_version watcher
 let justDidSync = false; // Skip initial load if we just synced via REST
+let versionRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Sync status listeners - UI can subscribe to know when sync is happening
 type SyncStatusListener = (syncing: boolean) => void;
@@ -83,21 +95,11 @@ interface ResponsePacket {
   lastPullPacketId?: string; // PacketId of the last pull (for pull history dedup)
 }
 
-// Parse feet/inches string to decimal feet
-const parseFeet = (raw: string): number => {
-  if (!raw || raw.toLowerCase() === "down" || raw === "N/A") return 0;
-  const match = raw.match(/^(\d+)\s*'\s*(\d+)"?$/);
-  if (match) {
-    return Number(match[1]) + Number(match[2]) / 12;
-  }
-  return 0;
-};
+// Parse feet/inches string to decimal feet (6' and 6'0" both valid; Down → 0)
+const parseFeet = (raw: string): number => parseLevelToFeet(raw) ?? 0;
 
 // Check if well is down
-const isWellDown = (raw: string): boolean => {
-  const str = (raw ?? "").trim().toLowerCase();
-  return str === "down" || str === "offline" || str === "shut in";
-};
+const isWellDown = (raw: string): boolean => isDownLevelToken(raw);
 
 // Parse flow rate string (H:MM:SS) to minutes
 const parseFlowRateToMinutes = (flowRate: string): number => {
@@ -137,8 +139,14 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
   // Parse lastPullBbls
   const lastPullBbls = packet.lastPullBbls ? parseFloat(packet.lastPullBbls) : undefined;
 
-  // Parse level
-  const levelFeet = parseFeet(packet.currentLevel);
+  const existing = getLevelSnapshotSync(packet.wellName);
+  const levelFeet = resolveSnapshotLevelFeet({
+    isDown: wellIsDown,
+    currentLevel: packet.currentLevel,
+    lastPullBottomLevel: packet.lastPullBottomLevel,
+    previousLevelFeet: existing?.levelFeet,
+    previousBottomFeet: existing?.lastPullBottomLevelFeet,
+  });
 
   // Parse flow rate - stored with snapshot so they stay in sync
   let flowRate: string | undefined;
@@ -156,14 +164,12 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
   // (edits may have older timestamps but we still want to show the corrected data)
   const forceUpdate = packet.isEdit === true;
 
-  if (wellIsDown) {
-    await saveLevelSnapshot(packet.wellName, levelFeet, timestampForCalc, true, packet.lastPullDateTime, lastPullBbls, packet.lastPullTopLevel, packet.lastPullBottomLevel, flowRate, flowRateMinutes, packet.lastPullDateTimeUTC, forceUpdate, windowBblsDay, overnightBblsDay);
-  } else if (levelFeet > 0) {
-    await saveLevelSnapshot(packet.wellName, levelFeet, timestampForCalc, false, packet.lastPullDateTime, lastPullBbls, packet.lastPullTopLevel, packet.lastPullBottomLevel, flowRate, flowRateMinutes, packet.lastPullDateTimeUTC, forceUpdate, windowBblsDay, overnightBblsDay);
+  if (wellIsDown || levelFeet > 0) {
+    await saveLevelSnapshot(packet.wellName, levelFeet, timestampForCalc, wellIsDown, packet.lastPullDateTime, lastPullBbls, packet.lastPullTopLevel, packet.lastPullBottomLevel, flowRate, flowRateMinutes, packet.lastPullDateTimeUTC, forceUpdate, windowBblsDay, overnightBblsDay);
 
-    // Schedule alert based on flow rate from snapshot
+    // Schedule alert based on flow rate from snapshot (active wells only)
     const snapshot = getLevelSnapshotSync(packet.wellName);
-    if (snapshot && snapshot.flowRateMinutes && snapshot.flowRateMinutes > 0) {
+    if (!wellIsDown && snapshot && snapshot.flowRateMinutes && snapshot.flowRateMinutes > 0) {
       let snapshotTimestamp = Date.now();
       // Prefer timestampUTC (ISO 8601) for accurate parsing
       const tsParse = packet.timestampUTC || packet.timestamp;
@@ -245,29 +251,13 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
  * Main sync function - fetches all outgoing responses from Firebase
  * and updates local cache for each well
  */
-export async function syncFromProcessedFolder(retryCount: number = 0): Promise<number> {
-  if (isSyncing) {
-    // A sync is already running - retry after it finishes instead of silently dropping
-    // This prevents missed updates when version watcher fires during an active sync
-    // Cap retries to prevent infinite recursion
-    if (retryCount >= 3) {
-      console.log('[BackgroundSync] Max retries reached, skipping sync');
-      return 0;
-    }
-    console.log('[BackgroundSync] Sync already in progress, will retry in 2s (attempt', retryCount + 1, ')');
-    return new Promise((resolve) => {
-      setTimeout(async () => {
-        resolve(await syncFromProcessedFolder(retryCount + 1));
-      }, 2000);
-    });
-  }
-
+const runOutgoingStatusSync = createCoalescedRunner(async (): Promise<number> => {
   isSyncing = true;
   notifyListeners(true);
 
   let count = 0;
   try {
-    const { fetchDriverOutgoingStatus } = await import('./firebase');
+    const { fetchDriverOutgoingStatus, fetchIncomingVersion } = await import('./firebase');
     const { markLevelUnavailable } = await import('./wellHistory');
     const result = await fetchDriverOutgoingStatus();
     if (!result) {
@@ -280,6 +270,10 @@ export async function syncFromProcessedFolder(retryCount: number = 0): Promise<n
       for (const wellName of result.unavailableWells) {
         await markLevelUnavailable(wellName);
       }
+      const version = await fetchIncomingVersion();
+      if (version != null) {
+        await markIncomingVersionApplied(version);
+      }
     }
   } catch (error) {
     console.error("[BackgroundSync] Sync error:", error);
@@ -287,11 +281,18 @@ export async function syncFromProcessedFolder(retryCount: number = 0): Promise<n
 
   isSyncing = false;
   notifyListeners(false);
-
-  // Mark that we just synced - listener's initial load can skip re-processing
   justDidSync = true;
-
   return count;
+});
+
+export async function syncFromProcessedFolder(_retryCount: number = 0): Promise<number> {
+  return runOutgoingStatusSync();
+}
+
+/** Foreground wake: one coalesced authenticated status fetch. */
+export async function syncOnForeground(): Promise<number> {
+  await loadAppliedIncomingVersion();
+  return runOutgoingStatusSync();
 }
 
 /**
@@ -303,14 +304,28 @@ export async function syncFromProcessedFolder(retryCount: number = 0): Promise<n
  *
  * The version watcher is more reliable on mobile where WebSocket connections can drop.
  */
+function scheduleVersionCompletionRetry(): void {
+  if (versionRetryTimer) return;
+  const delay = VERSION_COMPLETION_RETRY_MS[0];
+  versionRetryTimer = setTimeout(() => {
+    versionRetryTimer = null;
+    void runOutgoingStatusSync();
+  }, delay);
+  if (typeof (versionRetryTimer as NodeJS.Timeout).unref === 'function') {
+    (versionRetryTimer as NodeJS.Timeout).unref();
+  }
+}
+
 export function startBackgroundSync(): void {
-  // Already listening? Don't create duplicate listeners
+  // Already listening? Don't create duplicate listeners. Foreground fetch
+  // is a separate coalesced call — attaching must not skip that fetch.
   if (listenerUnsubscribe || isListening()) {
-    console.log('[BackgroundSync] Already listening, skipping');
+    console.log('[BackgroundSync] Already listening, skipping re-attach');
     return;
   }
 
   console.log('[BackgroundSync] Starting Firebase listeners');
+  void loadAppliedIncomingVersion();
 
   // METHOD 1: Subscribe to outgoing responses directly
   // Firebase will call our callback whenever data changes (if WebSocket is connected)
@@ -346,13 +361,14 @@ export function startBackgroundSync(): void {
     }
   );
 
-  // METHOD 2: Watch incoming_version (like Excel does)
-  // This is more reliable - when Cloud Functions process a packet, they increment this version
-  // When it changes, we do a fresh REST fetch of all responses
-  versionUnsubscribe = watchIncomingVersion(async () => {
-    console.log('[BackgroundSync] incoming_version changed - fetching updated responses');
-    await syncFromProcessedFolder();
-  });
+  // METHOD 2: Watch incoming_version. First snapshot after reattach compares
+  // against the last successfully applied version — a missed increment syncs.
+  versionUnsubscribe = watchIncomingVersion((version) => {
+    console.log('[BackgroundSync] incoming_version changed - fetching updated responses', version);
+    void runOutgoingStatusSync().then(() => {
+      scheduleVersionCompletionRetry();
+    });
+  }, peekAppliedIncomingVersion);
 }
 
 /**
@@ -378,6 +394,11 @@ export function stopBackgroundSync(): void {
     versionUnsubscribe();
     versionUnsubscribe = null;
     console.log('[BackgroundSync] Stopped version watcher');
+  }
+
+  if (versionRetryTimer) {
+    clearTimeout(versionRetryTimer);
+    versionRetryTimer = null;
   }
 
   // Also call unsubscribeAll to clean up any other listeners

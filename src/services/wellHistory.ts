@@ -4,6 +4,7 @@
 // Also stores slider position and cached flow rates per well
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { parseLevelToFeet, resolveSnapshotLevelFeet } from './downSnapshot';
 
 const STORAGE_KEY = "@wellbuilt_well_history";
 const SLIDER_KEY = "@wellbuilt_slider_positions";
@@ -263,14 +264,9 @@ export async function loadLevelSnapshots(): Promise<LevelSnapshotMap> {
   }
 }
 
-// Helper: Parse feet'inches" string to decimal feet
+// Helper: Parse feet'inches" string to decimal feet (accepts 6' and 6'0")
 function parseFeetInchesToFeet(str: string | undefined): number | undefined {
-  if (!str || str === 'Unknown' || str === 'N/A') return undefined;
-  const match = str.match(/^(\d+)\s*'\s*(\d+)"?$/);
-  if (match) {
-    return Number(match[1]) + Number(match[2]) / 12;
-  }
-  return undefined;
+  return parseLevelToFeet(str);
 }
 
 export async function saveLevelSnapshot(
@@ -340,11 +336,22 @@ export async function saveLevelSnapshot(
       return; // Don't overwrite newer data with older data!
     }
 
-    // If levelFeet is -1, keep the existing level but update isDown
-    const finalLevel = levelFeet === -1 ? (existingSnapshot?.levelFeet ?? 0) : levelFeet;
+    // If levelFeet is -1, keep the existing level but update isDown.
+    // DOWN: never store 0' when lastPullBottomLevel or a previous proven level exists.
+    const fromArg = levelFeet === -1 ? (existingSnapshot?.levelFeet ?? 0) : levelFeet;
+    const finalLevel = isDown
+      ? resolveSnapshotLevelFeet({
+          isDown: true,
+          currentLevel: fromArg > 0 ? `${Math.floor(fromArg)}'${Math.floor((fromArg % 1) * 12)}"` : 'Down',
+          lastPullBottomLevel,
+          previousLevelFeet: existingSnapshot?.levelFeet,
+          previousBottomFeet: existingSnapshot?.lastPullBottomLevelFeet,
+        })
+      : fromArg;
 
     // Parse lastPullBottomLevel to feet for accurate estimation
-    const lastPullBottomLevelFeet = parseFeetInchesToFeet(lastPullBottomLevel);
+    const lastPullBottomLevelFeet = parseFeetInchesToFeet(lastPullBottomLevel)
+      ?? (isDown && finalLevel > 0 ? finalLevel : undefined);
 
     cachedSnapshots[wellName] = {
       levelFeet: finalLevel,

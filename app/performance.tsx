@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import {
   getWellNameList,
-  PERFORMANCE_READS_AVAILABLE,
 } from "../src/services/firebase";
 import { isCurrentUserAdmin } from "../src/services/driverAuth";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -137,26 +136,6 @@ export default function PerformanceScreen() {
       </TouchableOpacity>
     );
   };
-
-  if (!PERFORMANCE_READS_AVAILABLE) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backText}>{"<"}</Text>
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>{t('performance.title')}</Text>
-            <Text style={styles.headerSubtitle}>{t('common.updateRequired')}</Text>
-          </View>
-          <View style={styles.settingsButton} />
-        </View>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{t('common.updateRequiredBody')}</Text>
-        </View>
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>

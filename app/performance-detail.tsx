@@ -22,7 +22,6 @@ import {
   getWellNameList,
   getWellPerformance,
   WellPerformance,
-  PERFORMANCE_READS_AVAILABLE,
 } from "../src/services/firebase";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -201,10 +200,6 @@ export default function PerformanceDetailScreen() {
   }, [showMyRoutesOnly, selectedWells, selectedWellsLoaded]);
 
   const fetchData = useCallback(async () => {
-    if (!PERFORMANCE_READS_AVAILABLE) {
-      setError(null);
-      return;
-    }
     setError(null);
     try {
       // Determine date range
@@ -220,18 +215,13 @@ export default function PerformanceDetailScreen() {
 
       console.log("[PerformanceDetail] Reading:", currentWellName, { fromDate, toDate });
       const data = await getWellPerformance(currentWellName, fromDate, toDate);
-
-      if (!data) {
-        setError(t('performance.noDataForWell', { wellName: currentWellName }));
-        return;
-      }
-
       setWellData(data);
     } catch (err) {
       console.error("[PerformanceDetail] Error:", err);
+      setWellData(null);
       setError(userFacingErrorMessage(err, t));
     }
-  }, [currentWellName, dateRangeOption, customFromDate, customToDate]);
+  }, [currentWellName, dateRangeOption, customFromDate, customToDate, t]);
 
   // Initial load of selected wells
   useEffect(() => {
@@ -362,25 +352,6 @@ export default function PerformanceDetailScreen() {
   };
 
   const trendDisplay = stats ? getTrendDisplay(stats.trend) : null;
-
-  if (!PERFORMANCE_READS_AVAILABLE) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backText}>{"←"}</Text>
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>{t('performance.title')}</Text>
-            <Text style={styles.headerSubtitle}>{t('common.updateRequired')}</Text>
-          </View>
-        </View>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{t('common.updateRequiredBody')}</Text>
-        </View>
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>

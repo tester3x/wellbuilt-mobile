@@ -6,7 +6,8 @@
 // and Firebase pushes only CHANGES to us. ~99% bandwidth reduction.
 
 import { subscribeToOutgoing, unsubscribeAll, isListening, watchIncomingVersion } from "./firebaseListener";
-import { saveLevelSnapshot, getLevelSnapshotSync, clearPendingPull } from "./wellHistory";
+import { saveLevelSnapshot, getLevelSnapshotSync, clearPendingPull, getPendingPull } from "./wellHistory";
+import { shouldApplyOutgoingResponse } from "./outgoingPendingGuard";
 
 // Lazy import to avoid expo-notifications warning in Expo Go
 // Notifications only work in development builds anyway
@@ -129,6 +130,19 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
       console.log(`[BackgroundSync] Rejecting corrupt packet for ${packet.wellName}: timestamp ${timestampForCalc} is before 2020`);
       return; // Don't process corrupt data
     }
+  }
+
+  const pending = await getPendingPull(packet.wellName);
+  if (!shouldApplyOutgoingResponse(pending, packet)) {
+    console.log(
+      '[BackgroundSync] stale outgoing ignored for pending pull',
+      packet.wellName,
+      'pending=',
+      pending?.packetId,
+      'response=',
+      packet.lastPullPacketId,
+    );
+    return;
   }
 
   // Check if well is down

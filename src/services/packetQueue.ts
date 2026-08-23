@@ -305,6 +305,24 @@ async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
         // Retain the exact payload for safe same-ID recovery if the
         // packet later vanishes without a server verdict.
         try { await rememberSubmittedPayload(packet.packetId, packet.data); } catch {}
+        try {
+          const wellName = typeof packet.data?.wellName === 'string' ? packet.data.wellName : '';
+          if (wellName) {
+            const { savePendingPull } = await import('./wellHistory');
+            const { startOutgoingConfirmation } = await import('./outgoingConfirmation');
+            await savePendingPull(wellName, {
+              topLevel: Number(packet.data?.tankLevelFeet) || 0,
+              bblsTaken: Number(packet.data?.bblsTaken) || 0,
+              packetTimestamp: packet.packetId.slice(0, 15),
+              packetId: packet.packetId,
+              timestamp: Date.now(),
+              wellDown: !!packet.data?.wellDown,
+            });
+            startOutgoingConfirmation(wellName, packet.packetId);
+          }
+        } catch (err) {
+          console.log('[PacketQueue] confirmation start failed', err);
+        }
       }
       console.log("[PacketQueue] Submitted:", packet.id, packet.packetId ?? "");
     } else {

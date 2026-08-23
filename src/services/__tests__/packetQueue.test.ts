@@ -40,6 +40,14 @@ jest.mock('../driverAuth', () => ({
   getDriverName: jest.fn(async () => null),
 }));
 
+jest.mock('../outgoingConfirmation', () => ({
+  startOutgoingConfirmation: jest.fn(),
+}));
+
+jest.mock('../wellHistory', () => ({
+  savePendingPull: jest.fn(async () => undefined),
+}));
+
 import { uploadTankPacket, uploadEditPacket } from '../firebase';
 import {
   SYNC_FAILED_THRESHOLD,

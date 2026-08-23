@@ -18,7 +18,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppAlert } from '../components/AppAlert';
 import { useDispatch } from '../src/contexts/DispatchContext';
+import {
+  MeasurementKeypadDismissOverlay,
+  MeasurementKeypadProvider,
+  MeasurementKeypadSlot,
+  useMeasurementKeypad,
+} from '../src/contexts/MeasurementKeypadContext';
+import LevelFieldInput, { type LevelFieldInputHandle } from '../src/components/LevelFieldInput';
 import { isCurrentUserViewer } from '../src/services/driverAuth';
+import { startOutgoingConfirmation } from '../src/services/outgoingConfirmation';
 import { smartUploadTankPacket } from '../src/services/packetQueue';
 import { showSyncToast } from '../src/components/SyncToast';
 import { submitPullEdit } from '../src/services/editDelivery';
@@ -28,6 +36,9 @@ import { addPullToHistory, updatePullHistoryEntry } from '../src/services/pullHi
 import { getBblPerFoot, getWellConfig, loadWellConfig } from '../src/services/wellConfig';
 import { getLevelSnapshot, savePendingPull, saveWellPull, saveLevelSnapshot } from '../src/services/wellHistory';
 import { hp, spacing, wp } from '../src/ui/layout';
+
+const LEVEL_FIELD_KEY = 'record-tank-level';
+const BBLS_FIELD_KEY = 'record-bbls-taken';
 
 // Key prefix for persisting draft form data (per-well)
 const DRAFT_STORAGE_PREFIX = 'wellbuilt_draft_';
@@ -173,10 +184,11 @@ interface DraftData {
   savedAt: number; // timestamp
 }
 
-export default function RecordScreen() {
+function RecordScreenInner() {
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const keypad = useMeasurementKeypad();
   const params = useLocalSearchParams();
   const wellName = String(params.wellName || "");
   const { initiateSendQueue } = useDispatch();
@@ -226,6 +238,10 @@ export default function RecordScreen() {
 
   const levelRef = useRef<TextInput>(null);
   const barrelsRef = useRef<TextInput>(null);
+  const levelFieldRef = useRef<LevelFieldInputHandle>(null);
+  const barrelsFieldRef = useRef<LevelFieldInputHandle>(null);
+  const committedLevelRef = useRef('');
+  const committedBarrelsRef = useRef('');
   const scrollViewRef = useRef<ScrollView>(null);
   const barrelsInputY = useRef<number>(0);
   const isBarrelsFocused = useRef<boolean>(false);
@@ -582,24 +598,30 @@ export default function RecordScreen() {
   const resetFormAfterDurableSave = () => {
     setLevel('');
     setBarrels('');
+    committedLevelRef.current = '';
+    committedBarrelsRef.current = '';
+    keypad.closeKeypad();
     setWellDown(false);
     const now = new Date();
     setDateTime(now);
     setTempDateTime(now);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (committed?: { level?: string; barrels?: string }) => {
     if (!wellName) {
       alert.show("Error", "No well selected");
       return;
     }
 
-    const tankLevelFeet = parseLevel(level);
+    const levelValue = committed?.level ?? committedLevelRef.current;
+    const barrelsValue = committed?.barrels ?? committedBarrelsRef.current;
+
+    const tankLevelFeet = parseLevel(levelValue);
     if (tankLevelFeet === null && !wellDown) {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingLevel'));
       return;
     }
-    if (!barrels && !wellDown) {
+    if (!barrelsValue && !wellDown) {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingBarrels'));
       return;
     }
@@ -607,7 +629,7 @@ export default function RecordScreen() {
     try {
       setIsSending(true);
 
-      const bblsTakenNum = parseFloat(barrels) || 0;
+      const bblsTakenNum = parseFloat(barrelsValue) || 0;
       const rawLevelFeet = tankLevelFeet ?? 0;
 
       // Floor the level to whole inches for VBA
@@ -854,6 +876,7 @@ export default function RecordScreen() {
             timestamp: Date.now(),
             wellDown,
           });
+          startOutgoingConfirmation(wellName, uploadResult.packetId);
         }
 
         // Create dispatch send queue (if enabled and configured)
@@ -920,13 +943,26 @@ export default function RecordScreen() {
     ? (isSending ? t('recordExtra.sendingEdit') : t('recordExtra.saveEdit'))
     : (isSending ? t('record.buttonSubmitSending') : t('record.buttonSubmit'));
 
+  useEffect(() => {
+    committedLevelRef.current = level;
+  }, [level]);
+  useEffect(() => {
+    committedBarrelsRef.current = barrels;
+  }, [barrels]);
+
+  const dismissAndBack = () => {
+    keypad.closeKeypad();
+    router.back();
+  };
+
   return (
+    <MeasurementKeypadDismissOverlay>
     <View style={{ flex: 1, backgroundColor: '#05060B' }}>
       {/* Fixed Header with back button */}
       <View style={[styles.fixedHeader, { paddingTop: insets.top + spacing.sm }]}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={dismissAndBack}
           activeOpacity={0.7}
         >
           <Text style={styles.backText}>{"←"}</Text>
@@ -1017,6 +1053,7 @@ export default function RecordScreen() {
           <View style={[styles.section, { flex: 1, marginRight: wp('2%') }]}>
             <Text style={styles.label}>{t('record.dateLabel')}</Text>
             <TouchableOpacity style={styles.input} onPress={() => {
+              keypad.requestInputOwnership({ type: 'picker' });
               setTempDateTime(dateTime);
               setShowDatePicker(true);
             }}>
@@ -1026,6 +1063,7 @@ export default function RecordScreen() {
           <View style={[styles.section, { flex: 1 }]}>
             <Text style={styles.label}>{t('record.timeLabel')}</Text>
             <TouchableOpacity style={styles.input} onPress={() => {
+              keypad.requestInputOwnership({ type: 'picker' });
               setTempDateTime(dateTime);
               setShowTimePicker(true);
             }}>
@@ -1034,29 +1072,29 @@ export default function RecordScreen() {
           </View>
         </View>
 
-        {/* Tank Level - Single Input with DEFAULT keyboard for space support */}
+        {/* Tank Level — WB-T measurement keypad (variant=level) */}
         <View style={styles.section}>
           <Text style={styles.label}>{t('record.tankLevelSection')}</Text>
-          <TextInput
-            ref={levelRef}
-            style={styles.input}
+          <LevelFieldInput
+            ref={levelFieldRef}
+            fieldKey={LEVEL_FIELD_KEY}
             value={level}
-            onChangeText={setLevel}
-            keyboardType="default"
+            onChange={setLevel}
+            variant="level"
             placeholder={t('record.tankLevelPlaceholder') || "10 8 or 10.5"}
-            placeholderTextColor="#6B7280"
-            returnKeyType="next"
-            blurOnSubmit={false}
-            onSubmitEditing={() => barrelsRef.current?.focus()}
-            onFocus={handleLevelFocus}
-            autoCapitalize="none"
-            autoCorrect={false}
-            selectTextOnFocus={isEditMode}
+            hint={levelHint}
+            style={styles.input}
+            onNextComplete={(formatted) => {
+              committedLevelRef.current = formatted;
+              setLevel(formatted);
+              barrelsFieldRef.current?.activateAsHandoffTarget({
+                initialValue: committedBarrelsRef.current || barrels,
+              });
+            }}
           />
-          <Text style={styles.levelHint}>{levelHint}</Text>
         </View>
 
-        {/* Barrels */}
+        {/* Barrels — same keypad, numeric variant (no Android number-pad) */}
         <View
           style={styles.section}
           onLayout={(e) => {
@@ -1064,19 +1102,24 @@ export default function RecordScreen() {
           }}
         >
           <Text style={styles.label}>{t('record.barrelsTakenLabel')}</Text>
-          <TextInput
-            ref={barrelsRef}
-            style={styles.input}
+          <LevelFieldInput
+            ref={barrelsFieldRef}
+            fieldKey={BBLS_FIELD_KEY}
             value={barrels}
-            onChangeText={setBarrels}
-            keyboardType="number-pad"
+            onChange={setBarrels}
+            variant="numeric"
             placeholder="140"
-            placeholderTextColor="#6B7280"
-            returnKeyType="go"
-            onSubmitEditing={handleSubmit}
-            onFocus={handleBarrelsFocus}
-            onBlur={handleBarrelsBlur}
-            selectTextOnFocus={isEditMode}
+            style={styles.input}
+            onDoneComplete={(formatted) => {
+              committedBarrelsRef.current = formatted;
+              setBarrels(formatted);
+              if (!isEditMode) {
+                void handleSubmit({
+                  level: committedLevelRef.current,
+                  barrels: formatted,
+                });
+              }
+            }}
           />
           <Text style={styles.bottomLevelHint}>
             {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : ' '}
@@ -1095,7 +1138,13 @@ export default function RecordScreen() {
               styles.buttonEdit,
               isSending && styles.buttonDisabled
             ]}
-            onPress={handleSubmit}
+            onPress={() => {
+              const flushed = keypad.flushActiveDraft();
+              void handleSubmit({
+                level: flushed?.fieldKey === LEVEL_FIELD_KEY ? flushed.committed : committedLevelRef.current,
+                barrels: flushed?.fieldKey === BBLS_FIELD_KEY ? flushed.committed : committedBarrelsRef.current,
+              });
+            }}
             disabled={isSending}
           >
             <Text style={styles.buttonText}>{submitButtonText}</Text>
@@ -1103,7 +1152,7 @@ export default function RecordScreen() {
 
           <TouchableOpacity
             style={styles.cancelButton}
-            onPress={() => router.back()}
+            onPress={dismissAndBack}
           >
             <Text style={styles.cancelButtonText}>{t('recordExtra.cancel')}</Text>
           </TouchableOpacity>
@@ -1168,7 +1217,17 @@ export default function RecordScreen() {
 
       {/* Custom Alert Modal */}
       <alert.AlertComponent />
+      <MeasurementKeypadSlot />
     </View>
+    </MeasurementKeypadDismissOverlay>
+  );
+}
+
+export default function RecordScreen() {
+  return (
+    <MeasurementKeypadProvider>
+      <RecordScreenInner />
+    </MeasurementKeypadProvider>
   );
 }
 

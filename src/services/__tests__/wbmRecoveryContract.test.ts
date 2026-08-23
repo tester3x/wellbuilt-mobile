@@ -89,6 +89,8 @@ describe('pull ingest uses deployed ingestDriverPacket envelope', () => {
     expect(api).not.toMatch(/authorizedCallable\([^)]*'getFieldCommandStatus'/);
     expect(firebase).toMatch(/secureIngestPacket/);
     expect(firebase).toMatch(/not writing public incoming/);
+    expect(firebase).toMatch(/getDriverOutgoingStatus/);
+    expect(firebase).not.toMatch(/fetchAllOutgoingResponses[\s\S]{0,400}orderBy.*companyId/);
   });
 });
 

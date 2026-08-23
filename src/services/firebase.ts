@@ -616,26 +616,39 @@ export const subscribeToWellResponses = (
  * Fetch all response packets from Firebase outgoing folder
  * Used by manual refresh to get latest data for all wells
  */
-export const fetchAllOutgoingResponses = async (): Promise<TankResponse[]> => {
+export type DriverOutgoingStatusFetch = {
+  ok: true;
+  driverId: string;
+  companyId: string;
+  authorizedWells: string[];
+  wellCount: number;
+  responses: TankResponse[];
+  unavailableWells: string[];
+};
+
+export const fetchDriverOutgoingStatus = async (): Promise<DriverOutgoingStatusFetch | null> => {
   try {
-    const { getDriverSession } = await import('./driverAuth');
-    const session = await getDriverSession();
-    if (!session?.companyId) return [];
-    const data = await firebaseQuery(COLL_OUTGOING, 'companyId', session.companyId);
-    if (!data) return [];
-
-    const responses: TankResponse[] = [];
-    for (const key of Object.keys(data)) {
-      if (key.startsWith("response_")) {
-        responses.push(data[key] as TankResponse);
-      }
+    const { authorizedCallable } = await import('./firebaseAuthSession');
+    const result = await authorizedCallable<DriverOutgoingStatusFetch>('getDriverOutgoingStatus', {});
+    if (!result || result.ok !== true || !Array.isArray(result.responses)) {
+      return null;
     }
-
-    return responses;
+    return {
+      ...result,
+      responses: result.responses.filter((r) => r && typeof r.wellName === 'string'),
+      unavailableWells: Array.isArray(result.unavailableWells) ? result.unavailableWells : [],
+      authorizedWells: Array.isArray(result.authorizedWells) ? result.authorizedWells : [],
+    };
   } catch (error) {
-    console.error("[Firebase] fetchAllOutgoingResponses error:", error);
-    return [];
+    console.error('[Firebase] fetchDriverOutgoingStatus error:', error);
+    return null;
   }
+};
+
+/** @deprecated Use fetchDriverOutgoingStatus. Kept as a thin wrapper for tests. */
+export const fetchAllOutgoingResponses = async (): Promise<TankResponse[]> => {
+  const result = await fetchDriverOutgoingStatus();
+  return result?.responses || [];
 };
 
 // --- WELL HISTORY: Request historical data from Excel -------------

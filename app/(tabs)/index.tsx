@@ -537,6 +537,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
       // Update well down status from snapshot
       setWellDown(snapshot?.isDown ?? false);
+      if (snapshot?.unavailable) {
+        setIsLoadingInitial(false);
+        return;
+      }
 
       // Load last pull record
       const pull = await getWellPull(wellName);
@@ -717,7 +721,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // - timestamp = time of last pull (from lastPullDateTimeUTC)
   // - flowRateMinutes = minutes per foot of rise (AFR)
   useEffect(() => {
-    if (!levelSnapshot || wellDown) {
+    if (!levelSnapshot || wellDown || levelSnapshot.unavailable) {
       return;
     }
 
@@ -888,7 +892,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
   // Calculate display values
   const numTanks = wellConfig?.numTanks ?? 1;
-  const currentLevelDisplay = formatFeetInches(displayFeet);
+  const currentLevelDisplay = levelSnapshot?.unavailable
+    ? 'Unavailable'
+    : formatFeetInches(displayFeet);
   
   // BBLs per foot — Dashboard-saved effective bbl/ft (override or derived from
   // capacity/height/activeTanks), same source of truth as Record Load.

@@ -5,7 +5,6 @@
 // Instead of downloading ALL data every 5 seconds, we subscribe once
 // and Firebase pushes only CHANGES to us. ~99% bandwidth reduction.
 
-import { fetchAllOutgoingResponses } from "./firebase";
 import { subscribeToOutgoing, unsubscribeAll, isListening, watchIncomingVersion } from "./firebaseListener";
 import { saveLevelSnapshot, getLevelSnapshotSync, clearPendingPull } from "./wellHistory";
 
@@ -268,11 +267,19 @@ export async function syncFromProcessedFolder(retryCount: number = 0): Promise<n
 
   let count = 0;
   try {
-    const responses = await fetchAllOutgoingResponses();
-
-    for (const response of responses) {
-      await processResponsePacket(response);
-      count++;
+    const { fetchDriverOutgoingStatus } = await import('./firebase');
+    const { markLevelUnavailable } = await import('./wellHistory');
+    const result = await fetchDriverOutgoingStatus();
+    if (!result) {
+      console.log('[BackgroundSync] Outgoing status unavailable — keeping local cache');
+    } else {
+      for (const response of result.responses) {
+        await processResponsePacket(response);
+        count++;
+      }
+      for (const wellName of result.unavailableWells) {
+        await markLevelUnavailable(wellName);
+      }
     }
   } catch (error) {
     console.error("[BackgroundSync] Sync error:", error);

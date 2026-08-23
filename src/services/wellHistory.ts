@@ -240,6 +240,7 @@ export interface LevelSnapshot {
   flowRateMinutes?: number;      // Parsed flow rate in minutes (e.g., 7.417)
   windowBblsDay?: number;        // Window-averaged bbls/day (from Cloud Function or history screen)
   overnightBblsDay?: number;     // Longest-gap (overnight) bbls/day from Cloud Function
+  unavailable?: boolean;         // Server had no outgoing status — not 0' or 20'
 }
 
 export interface LevelSnapshotMap {
@@ -350,6 +351,7 @@ export async function saveLevelSnapshot(
       timestamp,
       responseTimestamp,
       isDown,
+      unavailable: false,
       lastPullDateTime: lastPullDateTime || existingSnapshot?.lastPullDateTime,
       lastPullDateTimeUTC: lastPullDateTimeUTC || existingSnapshot?.lastPullDateTimeUTC,
       lastPullBbls: lastPullBbls ?? existingSnapshot?.lastPullBbls,
@@ -375,6 +377,36 @@ export async function getLevelSnapshot(wellName: string): Promise<LevelSnapshot 
 
 export function getLevelSnapshotSync(wellName: string): LevelSnapshot | null {
   return cachedSnapshots[wellName] || null;
+}
+
+/**
+ * Authorized well with no outgoing packet. Do not invent 0' or 20'.
+ */
+export async function markLevelUnavailable(wellName: string): Promise<void> {
+  try {
+    if (Object.keys(cachedSnapshots).length === 0) await loadLevelSnapshots();
+    const existing = cachedSnapshots[wellName];
+    cachedSnapshots[wellName] = {
+      levelFeet: existing?.levelFeet ?? 0,
+      timestamp: existing?.timestamp ?? Date.now(),
+      responseTimestamp: existing?.responseTimestamp ?? '',
+      isDown: false,
+      unavailable: true,
+      lastPullDateTime: existing?.lastPullDateTime,
+      lastPullDateTimeUTC: existing?.lastPullDateTimeUTC,
+      lastPullBbls: existing?.lastPullBbls,
+      lastPullTopLevel: existing?.lastPullTopLevel,
+      lastPullBottomLevel: existing?.lastPullBottomLevel,
+      lastPullBottomLevelFeet: existing?.lastPullBottomLevelFeet,
+      flowRate: existing?.flowRate,
+      flowRateMinutes: existing?.flowRateMinutes,
+      windowBblsDay: existing?.windowBblsDay,
+      overnightBblsDay: existing?.overnightBblsDay,
+    };
+    await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(cachedSnapshots));
+  } catch (error) {
+    console.error('[WellHistory] Error marking unavailable:', error);
+  }
 }
 
 // ========== PENDING PULL STORAGE ==========

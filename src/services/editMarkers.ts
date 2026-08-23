@@ -38,6 +38,31 @@ export function confirmNewSecureEdit(p: NewSecureEditProof): boolean {
   return false;
 }
 
+/** Server applied the edit. Queued-only responses must not confirm. */
+export function confirmAppliedEdit(
+  processed: Record<string, unknown> | null | undefined,
+  op: { payload: { tankLevelFeet: number; bblsTaken: number; wellDown: boolean }; createdAt: number },
+): boolean {
+  if (confirmNewSecureEdit(processed)) return true;
+  if (!processed) return false;
+  const bbls = Number(processed.bblsTaken);
+  const level = typeof processed.tankLevelFeet === 'number'
+    ? processed.tankLevelFeet
+    : typeof processed.tankTopInches === 'number'
+      ? Number(processed.tankTopInches) / 12
+      : NaN;
+  if (!Number.isFinite(bbls) || bbls !== op.payload.bblsTaken) return false;
+  if (!Number.isFinite(level) || Math.abs(level - op.payload.tankLevelFeet) > 1e-4) return false;
+  const editedAtRaw = processed.editedAt;
+  const editedAt = typeof editedAtRaw === 'number'
+    ? editedAtRaw
+    : typeof editedAtRaw === 'string'
+      ? Date.parse(editedAtRaw)
+      : NaN;
+  if (!Number.isFinite(editedAt) || editedAt + 1000 < op.createdAt) return false;
+  return true;
+}
+
 /** Shared badge predicate for processed / history row shapes. */
 export function packetShowsEditBadge(p: {
   editCount?: number;

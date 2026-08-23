@@ -79,6 +79,18 @@ export function diagnoseThrown(err: unknown): ConnectionDiagnosis {
   if (/unreachable|cannot reach|enotfound|dns/i.test(msg)) {
     return { kind: 'unreachable', code: 'unreachable', retryable: true };
   }
+  if (/unsupported_field_command:edit/i.test(msg)) {
+    return { kind: 'retryable', code: 'edit_capability_upgraded', retryable: true };
+  }
+  if (/unsupported_field_command/i.test(msg)) {
+    return { kind: 'malformed', code: 'unsupported_field_command', retryable: false };
+  }
+  if (/functions\/invalid-argument|invalid-argument|missing_original|forged_well|idempotency_key_mismatch|invalid_bblsTaken|invalid_tankLevelFeet/i.test(msg)) {
+    return { kind: 'malformed', code: 'invalid_edit', retryable: false };
+  }
+  if (/functions\/permission-denied|cross_driver|cross_company|well_out_of_scope|forged_well/i.test(msg)) {
+    return { kind: 'permission', code: 'edit_unauthorized', retryable: false };
+  }
   if (/rejected by server|quarantine/i.test(msg)) {
     return { kind: 'server_rejection', code: 'server_rejection', retryable: false };
   }

@@ -23,7 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { readJsonPath } from './backendAccess';
 import { diagnoseThrown, formatDiagnosis } from './connectionDiagnosis';
 import { uploadEditPacket } from './firebase';
-import { confirmNewSecureEdit } from './editMarkers';
+import { confirmAppliedEdit, confirmNewSecureEdit } from './editMarkers';
 import {
   isOnline,
   mutateQueuedPullInPlace,
@@ -71,6 +71,7 @@ export interface EditOperation {
   createdAt: number;
   updatedAt: number;
   attempts: number;
+  lastAttemptAt?: number | null;
   lastError: string | null;
 }
 
@@ -117,8 +118,25 @@ function newOp(payload: EditPacketParams, state: EditOpState, blockedReason?: st
     createdAt: now,
     updatedAt: now,
     attempts: 0,
+    lastAttemptAt: null,
     lastError: null,
   };
+}
+
+export const EDIT_AUTO_BACKOFF_MS = [0, 2000, 8000, 20000, 60000] as const;
+
+export function isPermanentEditFailure(lastError: string | null): boolean {
+  if (!lastError) return false;
+  if (/unsupported_field_command:edit/i.test(lastError)) return false;
+  return /permission|malformed|invalid-argument|missing_original|cross_driver|cross_company|forged_well|idempotency_key_mismatch|unsupported_field_command/i.test(lastError);
+}
+
+export function shouldAutoAttemptEdit(op: EditOperation, nowMs: number): boolean {
+  if (op.state === 'edit_blocked' || op.state === 'edit_rejected' || op.state === 'edited') return false;
+  if (isPermanentEditFailure(op.lastError)) return false;
+  if (!op.lastAttemptAt && op.attempts === 0) return true;
+  const wait = EDIT_AUTO_BACKOFF_MS[Math.min(op.attempts, EDIT_AUTO_BACKOFF_MS.length - 1)];
+  return nowMs - (op.lastAttemptAt ?? op.updatedAt) >= wait;
 }
 
 /**
@@ -207,45 +225,57 @@ async function markConfirmed(op: EditOperation): Promise<void> {
   await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
 }
 
-let _processing = false;
+let _inFlight: Promise<{ submitted: number; confirmed: number; rejected: number; held: number; attemptedOpIds: string[] }> | null = null;
+
+export type ProcessEditOptions = { forceOpId?: string; nowMs?: number };
 
 /**
- * Drive every stored operation toward resolution. Order-safe by
- * construction: an edit_pending op only uploads once its original's stable
- * id EXISTS in packets/processed (checked server-side right now, so a
- * concurrent create-flush can never be overtaken — the edit waits for the
- * created pull to be processed, not merely uploaded). Confirmation flips
- * '(edited)'; rejection preserves the reason. Nothing is ever deleted
- * except fully confirmed ops.
+ * Drive stored operations toward resolution. Concurrent callers join one
+ * in-flight pass. Sequential auto-retries honor backoff. forceOpId bypasses
+ * backoff for that operation only and still counts as one attempt.
  */
 export async function processEditOperations(
   fetchFn: typeof fetch = fetch,
-): Promise<{ submitted: number; confirmed: number; rejected: number; held: number }> {
-  if (_processing) return { submitted: 0, confirmed: 0, rejected: 0, held: 0 };
-  _processing = true;
-  try {
-    const result = await processEditOperationsInner(fetchFn);
+  opts: ProcessEditOptions = {},
+): Promise<{ submitted: number; confirmed: number; rejected: number; held: number; attemptedOpIds: string[] }> {
+  if (_inFlight && !opts.forceOpId) return _inFlight;
+  if (_inFlight && opts.forceOpId) {
+    const joined = await _inFlight;
+    if (joined.attemptedOpIds.includes(`editop_${opts.forceOpId}`) || joined.attemptedOpIds.includes(opts.forceOpId)) {
+      return joined;
+    }
+  }
+  const run = (async () => {
+    const result = await processEditOperationsInner(fetchFn, opts);
     for (const l of _editListeners) {
       try { l(result); } catch {}
     }
     return result;
-  } finally {
-    _processing = false;
+  })();
+  if (!opts.forceOpId) {
+    _inFlight = run.finally(() => { _inFlight = null; });
+    return _inFlight;
   }
+  return run;
 }
 
 async function processEditOperationsInner(
   fetchFn: typeof fetch,
-): Promise<{ submitted: number; confirmed: number; rejected: number; held: number }> {
+  opts: ProcessEditOptions = {},
+): Promise<{ submitted: number; confirmed: number; rejected: number; held: number; attemptedOpIds: string[] }> {
   const ops = await loadOps();
   let submitted = 0;
   let confirmed = 0;
   let rejected = 0;
   let held = 0;
-  if (ops.length === 0) return { submitted, confirmed, rejected, held };
+  const attemptedOpIds: string[] = [];
+  if (ops.length === 0) return { submitted, confirmed, rejected, held, attemptedOpIds };
   const online = await isOnline();
+  const nowMs = opts.nowMs ?? Date.now();
+  const forceOpId = opts.forceOpId;
 
   for (const op of ops) {
+    if (forceOpId && op.opId !== forceOpId && op.originalPacketId !== forceOpId) continue;
     if (op.state === 'edit_blocked' || op.state === 'edit_rejected' || op.state === 'edited') {
       if (op.state === 'edit_blocked') held++;
       continue;
@@ -281,8 +311,16 @@ async function processEditOperationsInner(
         held++; // original not resolved yet — keep waiting, keep the edit
         continue;
       }
+      if (!forceOpId && !shouldAutoAttemptEdit(op, nowMs)) {
+        held++;
+        continue;
+      }
       // Original is processed → release the dependent edit.
       // Idempotent: the server incoming key is deterministic per original.
+      attemptedOpIds.push(op.opId);
+      op.attempts += 1;
+      op.lastAttemptAt = nowMs;
+      op.updatedAt = nowMs;
       try {
         const uploadResult = await uploadEditPacket(op.payload);
         if (confirmNewSecureEdit(uploadResult)) {
@@ -290,18 +328,16 @@ async function processEditOperationsInner(
           confirmed++;
         } else {
           op.state = 'edit_submitted';
-          op.updatedAt = Date.now();
           op.lastError = null;
           await upsertOp(op);
           await setPullEditStatus(op.originalPacketId, 'edit_submitted');
           submitted++;
         }
       } catch (err: any) {
-        op.attempts += 1;
-        op.lastError = formatDiagnosis(diagnoseThrown(err), String(err?.message || err || 'unknown'));
-        op.updatedAt = Date.now();
+        const diagnosis = diagnoseThrown(err);
+        op.lastError = formatDiagnosis(diagnosis, diagnosis.retryable ? undefined : String(err?.message || err || ''));
         await upsertOp(op);
-        if (op.attempts >= EDIT_FAILED_THRESHOLD) {
+        if (!diagnosis.retryable || op.attempts >= EDIT_FAILED_THRESHOLD) {
           await setPullEditStatus(op.originalPacketId, 'edit_failed', op.lastError);
         }
       }
@@ -315,7 +351,7 @@ async function processEditOperationsInner(
       const processedOrig = await readPath(`packets/processed/${op.originalPacketId}`, fetchFn);
       // New secure edits confirm ONLY via confirmNewSecureEdit proofs.
       // Legacy editedAt / wasEdited / editedByPacketId / isEdit do not confirm.
-      if (confirmNewSecureEdit(processedOrig.data)) {
+      if (confirmAppliedEdit(processedOrig.data, op) || confirmNewSecureEdit(processedOrig.data)) {
         await markConfirmed(op);
         confirmed++;
         continue;
@@ -374,7 +410,7 @@ async function processEditOperationsInner(
       held++; // still awaiting the server — no duplicate upload
     }
   }
-  return { submitted, confirmed, rejected, held };
+  return { submitted, confirmed, rejected, held, attemptedOpIds };
 }
 
 /** Pending-edit metadata for a well — the snapshot may already display the

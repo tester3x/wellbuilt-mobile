@@ -245,7 +245,7 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
     mockedUploadEdit.mockResolvedValueOnce({ wellName: 'Gunslinger 3' });
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID },
-    }));
+    }), { nowMs: Date.now() + 60_000 });
     expect(rawOps()[0].opId).toBe(opIdAfterFail);     // same operation id
     expect(mockedUploadEdit).toHaveBeenCalledTimes(2);
     // Both attempts carry the SAME originalPacketTimestamp → the server

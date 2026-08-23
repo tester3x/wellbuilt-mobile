@@ -54,10 +54,12 @@ export default function SyncStatusScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  const load = useCallback(async (reconcile: boolean) => {
+  const load = useCallback(async (reconcile: boolean, processEdits = reconcile) => {
     try {
       if (reconcile) {
         await reconcileSubmittedPulls();
+      }
+      if (processEdits) {
         await processEditOperations();
       }
     } catch {
@@ -120,7 +122,9 @@ export default function SyncStatusScreen() {
         // before any resubmission; never duplicates an in-flight packet.
         await recoverStuckSubmission(item.packetId);
       } else if (item.action === 'retryEdit') {
-        await processEditOperations();
+        await processEditOperations(fetch, { forceOpId: item.opId || item.packetId || undefined });
+        await load(false, false);
+        return;
       }
       await load(true);
     } finally {
@@ -164,7 +168,7 @@ export default function SyncStatusScreen() {
                   ? 'syncStatus.retryEdit'
                   : null;
           return (
-            <View key={`${item.type}_${item.queueId ?? item.packetId ?? item.dateTime}`} style={styles.card}>
+            <View key={`${item.type}_${item.opId ?? item.queueId ?? item.packetId ?? item.dateTime}`} style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.well} numberOfLines={2}>
                   {item.wellName}
@@ -178,16 +182,24 @@ export default function SyncStatusScreen() {
                 <Text style={styles.attentionTag}>⚠ {t('syncStatus.needsAttention')}</Text>
               )}
               <Text style={styles.line}>
-                {item.dateTime || '—'}
+                {t('syncStatus.pullTime')}: {item.dateTime || '—'}
                 {item.bblsTaken !== null ? `  ·  ${item.bblsTaken} ${t('units.bbl').toUpperCase()}` : ''}
               </Text>
               {item.attempts > 0 && (
                 <Text style={styles.line}>
-                  {item.attempts}
-                  {item.lastAttemptAt ? `  ·  ${formatAppDateTime(item.lastAttemptAt)}` : ''}
+                  {t('syncStatus.lastRetry')}: {item.lastAttemptAt ? formatAppDateTime(item.lastAttemptAt) : '—'}
+                  {`  ·  ${item.attempts}`}
                 </Text>
               )}
-              {item.lastError && <Text style={styles.error}>{item.lastError}</Text>}
+              {item.lastError && (
+                <Text style={styles.error}>
+                  {item.errorKind === 'malformed' || item.errorKind === 'permission' || item.errorKind === 'server_rejection'
+                    ? t(`errors.${item.errorKind === 'server_rejection' ? 'serverRejection' : item.errorKind === 'permission' ? 'permission' : 'malformed'}`)
+                    : item.type === 'edit'
+                      ? t('syncStatus.editSendFailed')
+                      : t('syncStatus.sendFailed')}
+                </Text>
+              )}
               {item.packetId && <Text style={styles.packetId}>{item.packetId}</Text>}
               {item.action && actionKey && (
                 <TouchableOpacity

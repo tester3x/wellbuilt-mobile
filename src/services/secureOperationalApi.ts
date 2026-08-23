@@ -24,22 +24,43 @@ export async function secureIngestPacket(packet: Record<string, unknown>) {
   );
 }
 
+export async function secureIngestEdit(packet: Record<string, unknown>) {
+  const requestType = typeof packet.requestType === 'string' ? packet.requestType : '';
+  if (requestType !== 'edit') {
+    unsupportedFieldCommand(requestType || 'unknown');
+  }
+  return authorizedCallable<{
+    ok: boolean;
+    key?: string;
+    packetId?: string;
+    idempotencyKey?: string;
+    duplicate?: boolean;
+    queued?: boolean;
+    committed?: boolean;
+  }>('ingestWbmEdit', { packet });
+}
+
 /**
- * Only actual pull packets may be redirected to ingestDriverPacket.
- * Edit/history/control commands stay explicitly unavailable.
+ * Pulls go to ingestWbmPull. Edits go to ingestWbmEdit.
+ * History/control commands stay explicitly unavailable.
  */
 export async function secureSubmitFieldCommand(packet: Record<string, unknown>): Promise<{
   ok: boolean;
   key?: string;
   packetId?: string;
   duplicate?: boolean;
+  queued?: boolean;
   committed?: boolean;
   receiptKey?: string;
   status?: string;
+  idempotencyKey?: string;
 }> {
   const requestType = typeof packet.requestType === 'string' ? packet.requestType : '';
   if (requestType === 'pull') {
     return secureIngestPacket(packet);
+  }
+  if (requestType === 'edit') {
+    return secureIngestEdit(packet);
   }
   unsupportedFieldCommand(requestType || 'unknown');
 }

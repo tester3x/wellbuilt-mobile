@@ -532,44 +532,22 @@ export const uploadEditPacket = async (params: {
 
   // Get device timezone (IANA format like "America/Chicago")
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  // Get current driver info for tracking who made the edit
-  const driverId = await getDriverId();
-  const driverName = await getDriverName();
-
-  const packet: EditPacket = {
-    packetId: originalPacketId,
-    originalPacketId,              // Cloud function reads this field name
-    requestType: "edit",
+  const { buildWbmEditCommand, wbmEditIdempotencyKey } = await import('./wbmEditCommand');
+  const packet = buildWbmEditCommand({
+    originalPacketTimestamp,
+    originalPacketId,
     wellName,
-    dateTimeUTC,              // ISO 8601 UTC - use for ALL calculations
-    dateTime,                 // Local display string - for legacy/display only
-    timezone,                 // Where the driver was when recording
+    dateTime,
+    dateTimeUTC,
     tankLevelFeet,
     bblsTaken,
     wellDown,
-    driverId: driverId || undefined,
-    driverName: driverName || undefined,
-  };
-
-  // Edit packets use a different ID format
-  const wellNameClean = wellName.replace(/\s+/g, "");
-  const editId = `edit_${originalPacketTimestamp}_${wellNameClean}`;
+    timezone,
+  });
+  const editId = wbmEditIdempotencyKey(originalPacketTimestamp, wellName);
 
   const { secureSubmitFieldCommand } = await import('./secureOperationalApi');
-  const commandResult = await secureSubmitFieldCommand({
-    requestType: 'edit',
-    packetId: originalPacketId,
-    originalPacketId,
-    wellName,
-    dateTimeUTC,
-    dateTime,
-    timezone,
-    tankLevelFeet,
-    bblsTaken,
-    wellDown: wellDown === true,
-    idempotencyKey: editId,
-  });
+  const commandResult = await secureSubmitFieldCommand(packet);
 
   // NOTE: Do NOT increment incoming_version here for edits.
   // The Cloud Function (processPacket) increments it AFTER writing the response.
@@ -581,8 +559,10 @@ export const uploadEditPacket = async (params: {
     fileName: `${editId}.json`,
     packet,
     packetTimestamp: originalPacketTimestamp,
-    wellName: packet.wellName,
+    wellName,
     committed: commandResult?.committed === true,
+    queued: commandResult?.queued === true,
+    duplicate: commandResult?.duplicate === true,
     status: commandResult?.status,
     editCommitted: commandResult?.committed === true ? true : undefined,
     editCommittedReceiptKey: typeof commandResult?.receiptKey === 'string'

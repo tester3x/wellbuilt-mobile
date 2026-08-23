@@ -11,7 +11,7 @@
 // evidence: their reason is preserved and they are never auto-retried.
 
 import { displayTimeFromPacketId, readJsonPath } from './backendAccess';
-import { ConnectionDiagnosis, ConnectionKind, formatDiagnosis } from './connectionDiagnosis';
+import { ConnectionDiagnosis, ConnectionKind, diagnoseThrown, formatDiagnosis } from './connectionDiagnosis';
 import { EDIT_FAILED_THRESHOLD, EditOperation, getEditOperations, processEditOperations } from './editDelivery';
 import {
   QueuedPacket,
@@ -257,6 +257,7 @@ export function notifyAuthenticated(): void {
 export interface DeliveryItem {
   packetId: string | null;
   queueId: string | null;       // present only while locally queued
+  opId?: string | null;
   wellName: string;
   dateTime: string;             // driver-entered pull time (display)
   bblsTaken: number | null;
@@ -409,9 +410,11 @@ export function buildDeliveryItems(
       ?? (malformed ? formatDiagnosis({ kind: 'malformed', code: 'malformed_edit', retryable: false }) : null)
       ?? (stuckSubmitted ? 'No server confirmation yet — needs attention' : null)
       ?? (classified ? formatDiagnosis(classified) : null);
+    const thrown = op.lastError ? diagnoseThrown(new Error(op.lastError)) : null;
     items.push({
       packetId: op.originalPacketId,
       queueId: null,
+      opId: op.opId,
       wellName: op.wellName,
       dateTime: displayTime,
       bblsTaken,
@@ -419,18 +422,21 @@ export function buildDeliveryItems(
       status,
       attempts: op.attempts,
       lastError,
-      lastAttemptAt: op.updatedAt,
-      action: (op.state === 'edit_pending' && op.attempts > 0) || status === 'edit_submitted'
-        ? 'retryEdit'
-        : null,
+      lastAttemptAt: op.lastAttemptAt ?? (op.attempts > 0 ? op.updatedAt : null),
+      action: (status === 'edit_blocked' || status === 'edit_rejected')
+        ? null
+        : (thrown && thrown.retryable === false && status === 'edit_failed')
+          ? null
+          : (op.attempts > 0 || status === 'edit_submitted' ? 'retryEdit' : null),
       needsAttention:
         status === 'edit_blocked' || status === 'edit_rejected' || status === 'edit_failed'
         || stuckSubmitted || malformed
         || (classified != null && classified.kind === 'auth_session')
         || (classified != null && classified.kind === 'permission')
-        || (classified != null && classified.kind === 'malformed'),
-      errorKind: classified?.kind ?? (malformed ? 'malformed' : null),
-      errorCode: classified?.code ?? (malformed ? 'malformed_edit' : null),
+        || (classified != null && classified.kind === 'malformed')
+        || (thrown != null && thrown.retryable === false && op.attempts > 0),
+      errorKind: thrown?.kind ?? classified?.kind ?? (malformed ? 'malformed' : null),
+      errorCode: thrown?.code ?? classified?.code ?? (malformed ? 'malformed_edit' : null),
     });
   }
 

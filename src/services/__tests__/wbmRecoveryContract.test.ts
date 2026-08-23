@@ -73,9 +73,12 @@ describe('pull ingest uses deployed ingestDriverPacket envelope', () => {
     expect(mockCallable).toHaveBeenCalledWith('ingestWbmPull', { packet });
   });
 
-  it('edit/history/control commands fail explicitly', async () => {
-    await expect(secureSubmitFieldCommand({ requestType: 'edit' }))
-      .rejects.toThrow('unsupported_field_command:edit');
+  it('edit commands use ingestWbmEdit; history/control stay unavailable', async () => {
+    await secureSubmitFieldCommand({ requestType: 'edit', wellName: 'Gabriel 1' });
+    expect(mockCallable).toHaveBeenCalledWith('ingestWbmEdit', {
+      packet: { requestType: 'edit', wellName: 'Gabriel 1' },
+    });
+    mockCallable.mockClear();
     await expect(getFieldCommandStatus({ packetId: 'x' }))
       .rejects.toThrow('unsupported_field_command:getFieldCommandStatus');
     expect(mockCallable).not.toHaveBeenCalled();
@@ -85,6 +88,7 @@ describe('pull ingest uses deployed ingestDriverPacket envelope', () => {
     const api = src('secureOperationalApi.ts');
     const firebase = src('firebase.ts');
     expect(api).toMatch(/'ingestWbmPull'/);
+    expect(api).toMatch(/'ingestWbmEdit'/);
     expect(api).not.toMatch(/authorizedCallable\([^)]*'submitFieldCommand'/);
     expect(api).not.toMatch(/authorizedCallable\([^)]*'getFieldCommandStatus'/);
     expect(firebase).toMatch(/secureIngestPacket/);

@@ -145,8 +145,8 @@ export async function markIncomingVersionApplied(
     }
     const current = verifiedDriverId(rawId);
     if (!current || current !== expected) return false;
-    memoryApplied = { driverId: current, version };
     await io.setItem(appliedVersionStorageKey(current), String(version));
+    memoryApplied = { driverId: current, version };
     return true;
   } catch {
     return false;
@@ -164,7 +164,7 @@ export type OutgoingStatusSyncIo<T = unknown> = {
   fetchOutgoingStatus: () => Promise<OutgoingStatusCapture<T> | null>;
   saveResponses: (responses: T[]) => Promise<void>;
   saveUnavailable: (wells: string[]) => Promise<void>;
-  markApplied: (version: number, expectedDriverId: string) => Promise<unknown>;
+  markApplied: (version: number, expectedDriverId: string) => Promise<boolean>;
 };
 
 export async function captureAndApplyOutgoingStatus<T>(
@@ -205,10 +205,15 @@ export async function captureAndApplyOutgoingStatus<T>(
     return { count: responses.length, markedVersion: null, fetched: true };
   }
 
-  const appliedOk = await io.markApplied(versionBeforeFetch, expected);
+  let appliedOk: boolean | null | undefined;
+  try {
+    appliedOk = await io.markApplied(versionBeforeFetch, expected);
+  } catch {
+    return { count: responses.length, markedVersion: null, fetched: true };
+  }
   return {
     count: responses.length,
-    markedVersion: appliedOk === false ? null : versionBeforeFetch,
+    markedVersion: appliedOk === true ? versionBeforeFetch : null,
     fetched: true,
   };
 }

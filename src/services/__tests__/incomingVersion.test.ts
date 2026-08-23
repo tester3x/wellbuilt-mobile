@@ -316,4 +316,125 @@ describe('incoming_version snapshot capture race', () => {
     expect(harness.marked).toEqual([]);
     expect(peekAppliedIncomingVersion()).toBeNull();
   });
+
+  it('prior applied N-1; attempt N; setItem throws leaves N-1 retryable', async () => {
+    const { store, readers } = memoryStore();
+    await markIncomingVersionApplied(10, 'driver-a', readers('driver-a'));
+    expect(store[appliedVersionStorageKey('driver-a')]).toBe('10');
+    expect(peekAppliedIncomingVersion()).toBe(10);
+
+    const throwing: AppliedVersionReaders = {
+      getDriverId: async () => 'driver-a',
+      getItem: async (key) => store[key] ?? null,
+      setItem: async () => {
+        throw new Error('persist_failed');
+      },
+    };
+    const out = await captureAndApplyOutgoingStatus({
+      fetchIncomingVersion: async () => 11,
+      fetchOutgoingStatus: async () => ({
+        driverId: 'driver-a',
+        responses: [{ wellName: 'Gabriel 1' }],
+        unavailableWells: [],
+      }),
+      saveResponses: async () => undefined,
+      saveUnavailable: async () => undefined,
+      markApplied: (version, expectedDriverId) =>
+        markIncomingVersionApplied(version, expectedDriverId, throwing),
+    });
+    expect(out.markedVersion).toBeNull();
+    expect(store[appliedVersionStorageKey('driver-a')]).toBe('10');
+    expect(peekAppliedIncomingVersion()).toBe(10);
+    expect(peekAppliedIncomingVersionOwner()).toBe('driver-a');
+    expect(decideIncomingVersionEvent({
+      appliedVersion: peekAppliedIncomingVersion(),
+      incomingVersion: 11,
+      seenThisAttach: true,
+    })).toBe('sync');
+  });
+
+  it('no prior value; attempt N; setItem throws marks nothing', async () => {
+    const store: Record<string, string> = {};
+    const throwing: AppliedVersionReaders = {
+      getDriverId: async () => 'driver-a',
+      getItem: async (key) => store[key] ?? null,
+      setItem: async () => {
+        throw new Error('persist_failed');
+      },
+    };
+    const out = await captureAndApplyOutgoingStatus({
+      fetchIncomingVersion: async () => 11,
+      fetchOutgoingStatus: async () => ({
+        driverId: 'driver-a',
+        responses: [{ wellName: 'Gabriel 1' }],
+        unavailableWells: [],
+      }),
+      saveResponses: async () => undefined,
+      saveUnavailable: async () => undefined,
+      markApplied: (version, expectedDriverId) =>
+        markIncomingVersionApplied(version, expectedDriverId, throwing),
+    });
+    expect(out.markedVersion).toBeNull();
+    expect(store).toEqual({});
+    expect(peekAppliedIncomingVersion()).toBeNull();
+    expect(peekAppliedIncomingVersionOwner()).toBeNull();
+  });
+
+  it('markApplied resolves undefined → markedVersion null', async () => {
+    const out = await captureAndApplyOutgoingStatus({
+      fetchIncomingVersion: async () => 11,
+      fetchOutgoingStatus: async () => ({
+        driverId: 'driver-a',
+        responses: [{ wellName: 'Gabriel 1' }],
+        unavailableWells: [],
+      }),
+      saveResponses: async () => undefined,
+      saveUnavailable: async () => undefined,
+      markApplied: async () => undefined as unknown as boolean,
+    });
+    expect(out.markedVersion).toBeNull();
+    expect(peekAppliedIncomingVersion()).toBeNull();
+  });
+
+  it('markApplied resolves null → markedVersion null', async () => {
+    const out = await captureAndApplyOutgoingStatus({
+      fetchIncomingVersion: async () => 11,
+      fetchOutgoingStatus: async () => ({
+        driverId: 'driver-a',
+        responses: [{ wellName: 'Gabriel 1' }],
+        unavailableWells: [],
+      }),
+      saveResponses: async () => undefined,
+      saveUnavailable: async () => undefined,
+      markApplied: async () => null as unknown as boolean,
+    });
+    expect(out.markedVersion).toBeNull();
+    expect(peekAppliedIncomingVersion()).toBeNull();
+  });
+
+  it('markApplied rejection leaves the captured version unmarked', async () => {
+    const out = await captureAndApplyOutgoingStatus({
+      fetchIncomingVersion: async () => 11,
+      fetchOutgoingStatus: async () => ({
+        driverId: 'driver-a',
+        responses: [{ wellName: 'Gabriel 1' }],
+        unavailableWells: [],
+      }),
+      saveResponses: async () => undefined,
+      saveUnavailable: async () => undefined,
+      markApplied: async () => {
+        throw new Error('mark_rejected');
+      },
+    });
+    expect(out.markedVersion).toBeNull();
+    expect(peekAppliedIncomingVersion()).toBeNull();
+  });
+
+  it('markApplied returns true publishes only captured N', async () => {
+    const harness = captureIo({ versionBefore: 10, versionDuringFetch: 11 });
+    const out = await captureAndApplyOutgoingStatus(harness.io);
+    expect(out.markedVersion).toBe(10);
+    expect(harness.marked).toEqual([{ version: 10, driverId: 'driver-a' }]);
+    expect(peekAppliedIncomingVersion()).toBe(10);
+  });
 });

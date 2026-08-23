@@ -179,19 +179,21 @@ describe('wiring — index.tsx integration facts', () => {
   });
 
   test('duck uses the clamped surface offset, band math, velocity flip, and bob', () => {
-    expect(src).toContain('duckTopOffset(waterTop)');
+    expect(src).toContain('DUCK_LIFT_PX');
     expect(src).toContain('computeDuckBand(INTERIOR_WIDTH');
     expect(src).toMatch(/duckFaceStyle[\s\S]{0,200}Math\.cos/);
     expect(src).toContain('duckMoveStyle');
     expect(src).not.toMatch(/aliveFloat[\s\S]{0,60}🦆/); // old drowning float gone
+    expect(src).not.toContain('duckTopOffset(waterTop)');
   });
 
-  test('fisherman scene is rim-anchored with pole-tip line and hooked fish helpers', () => {
-    expect(src).toContain('computeFishermanLayout(INTERIOR_WIDTH');
-    expect(src).toContain('fishingLineHeight(waterTop, tipY, tug)'); // tip rides the sway
-    expect(src).toContain('fishHookedCenterY(waterTop, tug)');
-    expect(src).toContain('styles.fishermanSeat');
-    expect(src).not.toMatch(/aliveFloat[\s\S]{0,60}🎣/); // old floating pole gone
+  test('fisherman/hooked-fish decoration is disabled so WellView cannot UI-crash', () => {
+    expect(src).not.toContain('fishingLineHeight(');
+    expect(src).not.toContain('fishHookedCenterY(');
+    expect(src).not.toContain('poleTipSway(');
+    expect(src).not.toContain('TankFisherman');
+    expect(src).not.toMatch(/kind === 'fisherman'/);
+    expect(src).not.toMatch(/aliveFloat[\s\S]{0,60}🎣/);
   });
 
   test('pelican: single ref-held timer chain, cleanup on inactive/unmount, bounded schedule, perch math', () => {
@@ -353,8 +355,8 @@ describe('follow-up wiring: waterline stability, lifecycle, reduced motion', () 
     expect(rowA).toContain('translateX');
     expect(rowA).not.toContain('translateY'); // no vertical sloshing
     // Wildlife anchors to the NOMINAL line (waterFraction math), never the crests.
-    expect(src).toContain('duckTopOffset(waterTop)');
-    expect(src.split('INTERIOR_HEIGHT * (1 - waterFraction.value)').length - 1).toBeGreaterThanOrEqual(4);
+    expect(src).toContain('DUCK_LIFT_PX');
+    expect(src.split('INTERIOR_HEIGHT * (1 - waterFraction.value)').length - 1).toBeGreaterThanOrEqual(3);
     expect(src).not.toMatch(/duck[\s\S]{0,120}RIPPLE\.crest/); // duck ignores decorative relief
   });
 
@@ -373,10 +375,9 @@ describe('follow-up wiring: waterline stability, lifecycle, reduced motion', () 
   });
 
   test('line and hooked fish ride the swayed pole tip', () => {
-    expect(src.split('poleTipSway(fisher.swayRxPx, fisher.swayRyPx, angle)').length - 1).toBe(2);
-    expect(src).toContain('left: fisher.poleTipXPx + sway.dx');
-    expect(src).toContain('poleLenPx={fisher.poleLenPx}');
-    expect(src).toContain('poleAngleDeg={fisher.poleAngleDeg}');
+    // Field restore: fisherman worklets are not mounted on WellView.
+    expect(src).not.toContain('poleTipSway(');
+    expect(src).not.toContain('styles.fishermanSeat');
   });
 
   test('worklet-called helpers carry the worklet directive (UI-thread safety)', () => {

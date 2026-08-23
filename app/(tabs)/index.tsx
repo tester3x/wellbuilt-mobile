@@ -33,10 +33,10 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { TankFisherman } from '../../src/components/TankFisherman';
 import { TankPelican } from '../../src/components/TankPelican';
 import {
   DUCK_FONT_SIZE,
+  DUCK_LIFT_PX,
   DuckSpawn,
   FishermanLayout,
   PELICAN_FOOT_OVERLAP_PX,
@@ -46,12 +46,8 @@ import {
   PELICAN_VISIT_MS,
   computeDuckBand,
   computeFishermanLayout,
-  duckTopOffset,
-  fishHookedCenterY,
-  fishingLineHeight,
   nextPelicanDelayMs,
   pelicanPerchX,
-  poleTipSway,
   rippleGeometry,
 } from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder } from '../../src/services/backgroundSync';
@@ -365,10 +361,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     let kind: 'none' | 'fish' | 'fisherman' | 'duck' = 'none';
     if (r < 0.88) kind = 'none';            // 88% nothing
     else if (r < 0.96) kind = 'fish';       // 8%
-    else if (r < 0.99) kind = 'fisherman';  // 3%
-    else if (r < 0.998) kind = 'duck';      // 0.8%
-    else kind = 'none';                      // 0.2% ultra-rare → reserved (not built)
-    if (FORCE_EGG) kind = FORCE_EGG;        // dev-only override (null in commits)
+    else if (r < 0.998) kind = 'duck';      // was fisherman+duck; fisherman disabled (Reanimated UI crash)
+    else kind = 'none';
+    if (FORCE_EGG && FORCE_EGG !== 'fisherman') kind = FORCE_EGG;
     // Per-fish randomization, decided once. Depth stays in the LOWER water
     // (below the surface level number) and the horizontal base avoids the centre
     // column — so a fish never sits behind the level text. freq/phase/range vary
@@ -1054,7 +1049,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
   const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
-  const showFloat = (aliveEgg.kind === 'duck' || aliveEgg.kind === 'fisherman') && aliveWaterPct > 0.12;
+  const showFloat = aliveEgg.kind === 'duck' && aliveWaterPct > 0.12;
 
   // ── Duck (surface lane): swims its side band, flips at turnarounds,
   // bobs with the ripple, and its glyph is clamped so it stays fully
@@ -1073,39 +1068,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   }));
   const duckSurfaceStyle = useAnimatedStyle(() => {
     const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
-    return { top: duckTopOffset(waterTop) };
+    const wt = Number.isFinite(waterTop) ? Math.max(0, waterTop) : 0;
+    const lift = Math.min(DUCK_LIFT_PX, wt);
+    return { top: lift === 0 ? 0 : -lift };
   });
-
-  // ── Fisherman scene (rim lane): he sits ON the rim holding the pole;
-  // the line hangs from the pole tip THROUGH the surface to a hooked
-  // fish that tugs gently but never rises above the waterline. The line
-  // length re-derives from the live water level every frame.
-  const fisher = aliveEgg.fisher;
-  // The seated group sways by this angle; the LINE and hooked fish follow
-  // the EXACT rigid-body displacement of the pole tip (poleTipSway), so
-  // pole and line stay attached at both sway extremes, on either side.
-  const fishingLineStyle = useAnimatedStyle(() => {
-    const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
-    const angle = reducedMotion ? 0 : (wavePhase.value - 0.5) * 2;
-    const sway = poleTipSway(fisher.swayRxPx, fisher.swayRyPx, angle);
-    const tug = reducedMotion ? 0 : (wavePhase.value - 0.5) * 4; // ±2px
-    const tipY = fisher.poleTipYPx + sway.dy;
-    return {
-      left: fisher.poleTipXPx + sway.dx,
-      top: tipY,
-      height: fishingLineHeight(waterTop, tipY, tug),
-    };
-  });
-  const hookedFishStyle = useAnimatedStyle(() => {
-    const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
-    const angle = reducedMotion ? 0 : (wavePhase.value - 0.5) * 2;
-    const sway = poleTipSway(fisher.swayRxPx, fisher.swayRyPx, angle);
-    const tug = reducedMotion ? 0 : (wavePhase.value - 0.5) * 4;
-    return { left: fisher.poleTipXPx + sway.dx - 6, top: fishHookedCenterY(waterTop, tug) - 6 };
-  });
-  const poleTugStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: reducedMotion ? '0deg' : `${(wavePhase.value - 0.5) * 2}deg` }], // subtle pole response
-  }));
 
   // ── Pelican (above-the-number lane): occasional visitor on a bounded
   // random schedule; perches with its feet on the number's top edge —
@@ -1285,25 +1251,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               )}
             </Animated.View>
 
-            {/* Fisherman scene — anchored to the INTERIOR TOP (the rim),
-                never floating in the water. Line + hooked fish track the
-                live waterline; fish stays strictly below the surface. */}
-            {showFloat && aliveEgg.kind === 'fisherman' && (
-              <View pointerEvents="none" style={styles.fishermanLayer}>
-                <Animated.View style={[styles.fishermanSeat, { left: fisher.fishermanLeftPx }, poleTugStyle]}>
-                  <TankFisherman
-                    facingLeft={!fisher.onLeft}
-                    poleLenPx={fisher.poleLenPx}
-                    poleAngleDeg={fisher.poleAngleDeg}
-                  />
-                </Animated.View>
-                {/* line/fish left+top ride the swayed pole tip (animated) */}
-                <Animated.View style={[styles.fishingLine, fishingLineStyle]} />
-                <Animated.View style={[styles.hookedFishWrap, hookedFishStyle]}>
-                  <Text accessible={false} importantForAccessibility="no" style={styles.aliveFishGlyph}>🐟</Text>
-                </Animated.View>
-              </View>
-            )}
+            {/* Fisherman/hooked-fish decoration is disabled: its Reanimated
+                worklets crashed the Android release UI thread (no React
+                error screen — the app closed). Optional wildlife must never
+                block WellView. */}
 
             {/* Pelican — occasional visitor perched on the level number's
                 top edge; entirely above the digits, never covering them. */}

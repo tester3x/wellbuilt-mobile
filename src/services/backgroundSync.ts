@@ -14,10 +14,10 @@ import {
 } from "./downSnapshot";
 import { createCoalescedRunner, VERSION_COMPLETION_RETRY_MS } from "./syncCoalesce";
 import {
+  captureAndApplyOutgoingStatus,
   loadAppliedIncomingVersion,
   markIncomingVersionApplied,
   peekAppliedIncomingVersion,
-  shouldMarkIncomingVersionApplied,
 } from "./incomingVersion";
 
 // Lazy import to avoid expo-notifications warning in Expo Go
@@ -260,21 +260,24 @@ const runOutgoingStatusSync = createCoalescedRunner(async (): Promise<number> =>
   try {
     const { fetchDriverOutgoingStatus, fetchIncomingVersion } = await import('./firebase');
     const { markLevelUnavailable } = await import('./wellHistory');
-    const result = await fetchDriverOutgoingStatus();
-    if (!result) {
+    const applied = await captureAndApplyOutgoingStatus({
+      fetchIncomingVersion,
+      fetchOutgoingStatus: fetchDriverOutgoingStatus,
+      saveResponses: async (responses) => {
+        for (const response of responses as ResponsePacket[]) {
+          await processResponsePacket(response);
+        }
+      },
+      saveUnavailable: async (wells) => {
+        for (const wellName of wells) {
+          await markLevelUnavailable(wellName);
+        }
+      },
+      markApplied: markIncomingVersionApplied,
+    });
+    count = applied.count;
+    if (!applied.fetched) {
       console.log('[BackgroundSync] Outgoing status unavailable — keeping local cache');
-    } else {
-      for (const response of result.responses) {
-        await processResponsePacket(response);
-        count++;
-      }
-      for (const wellName of result.unavailableWells) {
-        await markLevelUnavailable(wellName);
-      }
-      const version = await fetchIncomingVersion();
-      if (version != null && shouldMarkIncomingVersionApplied({ fetchOk: true, snapshotsSaved: true })) {
-        await markIncomingVersionApplied(version);
-      }
     }
   } catch (error) {
     console.error("[BackgroundSync] Sync error:", error);

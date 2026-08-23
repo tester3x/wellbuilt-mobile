@@ -29,7 +29,7 @@ export function decideIncomingVersionEvent(input: {
 export function verifiedDriverId(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const id = raw.trim();
-  if (!id || id === 'unknown') return null;
+  if (!id || id.toLowerCase() === 'unknown') return null;
   return id;
 }
 
@@ -129,22 +129,86 @@ export async function loadAppliedIncomingVersion(
 
 export async function markIncomingVersionApplied(
   version: number,
+  expectedDriverId: unknown,
   readers?: AppliedVersionReaders,
-): Promise<void> {
-  if (!Number.isFinite(version)) return;
+): Promise<boolean> {
+  if (!Number.isFinite(version)) return false;
+  const expected = verifiedDriverId(expectedDriverId);
+  if (!expected) return false;
   try {
     const io = readers || await productionReaders();
     let rawId: string | null | undefined;
     try {
       rawId = await io.getDriverId();
     } catch {
-      return;
+      return false;
     }
-    const driverId = verifiedDriverId(rawId);
-    if (!driverId) return;
-    memoryApplied = { driverId, version };
-    await io.setItem(appliedVersionStorageKey(driverId), String(version));
+    const current = verifiedDriverId(rawId);
+    if (!current || current !== expected) return false;
+    memoryApplied = { driverId: current, version };
+    await io.setItem(appliedVersionStorageKey(current), String(version));
+    return true;
   } catch {
-    // unverified identity: do not persist under unknown
+    return false;
   }
+}
+
+export type OutgoingStatusCapture<T = unknown> = {
+  driverId?: unknown;
+  responses: T[];
+  unavailableWells?: string[];
+};
+
+export type OutgoingStatusSyncIo<T = unknown> = {
+  fetchIncomingVersion: () => Promise<number | null>;
+  fetchOutgoingStatus: () => Promise<OutgoingStatusCapture<T> | null>;
+  saveResponses: (responses: T[]) => Promise<void>;
+  saveUnavailable: (wells: string[]) => Promise<void>;
+  markApplied: (version: number, expectedDriverId: string) => Promise<unknown>;
+};
+
+export async function captureAndApplyOutgoingStatus<T>(
+  io: OutgoingStatusSyncIo<T>,
+): Promise<{ count: number; markedVersion: number | null; fetched: boolean }> {
+  let versionBeforeFetch: number | null = null;
+  try {
+    versionBeforeFetch = await io.fetchIncomingVersion();
+  } catch {
+    versionBeforeFetch = null;
+  }
+
+  let result: OutgoingStatusCapture<T> | null = null;
+  try {
+    result = await io.fetchOutgoingStatus();
+  } catch {
+    return { count: 0, markedVersion: null, fetched: false };
+  }
+  if (!result) {
+    return { count: 0, markedVersion: null, fetched: false };
+  }
+
+  const responses = Array.isArray(result.responses) ? result.responses : [];
+  const unavailable = Array.isArray(result.unavailableWells) ? result.unavailableWells : [];
+  try {
+    await io.saveResponses(responses);
+    await io.saveUnavailable(unavailable);
+  } catch {
+    return { count: 0, markedVersion: null, fetched: true };
+  }
+
+  const expected = verifiedDriverId(result.driverId);
+  if (
+    versionBeforeFetch == null
+    || !expected
+    || !shouldMarkIncomingVersionApplied({ fetchOk: true, snapshotsSaved: true })
+  ) {
+    return { count: responses.length, markedVersion: null, fetched: true };
+  }
+
+  const appliedOk = await io.markApplied(versionBeforeFetch, expected);
+  return {
+    count: responses.length,
+    markedVersion: appliedOk === false ? null : versionBeforeFetch,
+    fetched: true,
+  };
 }

@@ -2481,7 +2481,7 @@ export default function MainScreen() {
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         getItemLayout={getItemLayout}
-        initialScrollIndex={currentIndex}
+        initialScrollIndex={Math.min(currentIndex, Math.max(0, wells.length - 1))}
         removeClippedSubviews={Platform.OS === 'android'}
         maxToRenderPerBatch={2}
         windowSize={3}
@@ -2576,7 +2576,7 @@ export default function MainScreen() {
                   onMomentumScrollEnd={() => {
                     setPickerScrolling(false);
                   }}
-                  initialScrollIndex={currentIndex}
+                  initialScrollIndex={Math.min(currentIndex, Math.max(0, wells.length - 1))}
                   getItemLayout={(_, index) => ({
                     length: 50,
                     offset: 50 * index,

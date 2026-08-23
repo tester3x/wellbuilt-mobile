@@ -18,7 +18,9 @@
 //
 // Functions consumed inside reanimated useAnimatedStyle carry a
 // 'worklet' directive — a plain imported function would throw when the
-// UI thread tries to call it.
+// UI thread tries to call it. Worklets must be self-contained: a worklet
+// that calls another imported helper leaves that nested helper undefined
+// in the Reanimated UI runtime (release TypeError at fishingLineHeight).
 
 export const EDGE_MARGIN_PX = 4;
 /** The level text owns this horizontal fraction band of the interior. */
@@ -225,12 +227,20 @@ export function poleTipSway(swayRxPx: number, swayRyPx: number, angleDeg: number
  * Length of the fishing line from the pole tip down to the hooked fish.
  * Adapts to the live water level; never negative even if the surface
  * rises above the pole tip (fish then hangs just under the surface).
+ *
+ * Self-contained worklet: do NOT call other module helpers from here.
+ * Reanimated's UI-thread runtime does not capture nested imported
+ * worklets, so fishHookedCenterY would be undefined (release TypeError).
  */
 export function fishingLineHeight(waterTopPx: number, poleTipYPx: number, tugPx: number): number {
   'worklet';
   const wt = Number.isFinite(waterTopPx) ? Math.max(0, waterTopPx) : 0;
-  const fishCenter = fishHookedCenterY(wt, tugPx);
-  return Math.max(0, fishCenter - poleTipYPx);
+  const tug = Number.isFinite(tugPx) ? tugPx : 0;
+  const depth = Math.max(
+    FISH_MIN_SUBMERGE_PX,
+    FISH_HOOK_DEPTH_PX - Math.min(tug, FISH_TUG_AMPLITUDE_PX),
+  );
+  return Math.max(0, wt + depth - poleTipYPx);
 }
 
 /**

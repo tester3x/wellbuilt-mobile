@@ -107,6 +107,10 @@ describe('fisherman scene — rim lane, pole, line, hooked fish', () => {
       for (const tug of [-5, 0, 2, 3, 99]) {
         const fishY = fishHookedCenterY(waterTop, tug);
         expect(fishY).toBeGreaterThanOrEqual(waterTop + FISH_MIN_SUBMERGE_PX);
+        const layTip = 12;
+        expect(fishingLineHeight(waterTop, layTip, tug)).toBe(
+          Math.max(0, fishY - layTip),
+        );
       }
     }
   });
@@ -379,8 +383,20 @@ describe('follow-up wiring: waterline stability, lifecycle, reduced motion', () 
     const lib = fs.readFileSync(path.join(__dirname, '../tankWildlife.ts'), 'utf8');
     for (const fn of ['duckTopOffset', 'fishingLineHeight', 'fishHookedCenterY', 'poleTipSway', 'pelicanTopPx']) {
       const idx = lib.indexOf(`export function ${fn}`);
-      expect(lib.slice(idx, idx + 220)).toContain("'worklet'");
+      expect(lib.slice(idx, idx + 400)).toContain("'worklet'");
     }
+  });
+
+  test('fishingLineHeight is a self-contained worklet (no nested helper call)', () => {
+    const lib = fs.readFileSync(path.join(__dirname, '../tankWildlife.ts'), 'utf8');
+    const start = lib.indexOf('export function fishingLineHeight');
+    const end = lib.indexOf('export function fishHookedCenterY');
+    const body = lib.slice(start, end);
+    expect(body).toContain("'worklet'");
+    expect(body).toContain('FISH_MIN_SUBMERGE_PX');
+    expect(body).toContain('FISH_HOOK_DEPTH_PX');
+    expect(body).toContain('FISH_TUG_AMPLITUDE_PX');
+    expect(body).not.toMatch(/fishHookedCenterY\s*\(/);
   });
 
   test('pelican scales bottom-anchored so its feet stay on the number', () => {

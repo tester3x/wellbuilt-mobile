@@ -35,11 +35,7 @@ export async function secureLogin(displayName: string, passcode: string) {
     assignedRoutes?: unknown;
     assignedCustomers?: unknown;
     tier?: string | null;
-  }>('authenticateDriver', {
-    displayName,
-    passcode,
-    audience: 'wellbuilt-mobile',
-  });
+  }>('authenticateDriver', { displayName, passcode });
 
   if (!data.customToken) {
     throw new Error('authenticateDriver did not return a Firebase custom token');

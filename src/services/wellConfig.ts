@@ -183,7 +183,7 @@ export async function loadWellConfig(
   const ticket = captureBootstrapTicket(ident);
   try {
     const live = await fetchBootstrapFromServer();
-    const installed = await installBootstrapSnapshot(live, ticket);
+    const installed = await installBootstrapForCurrentIdentity(live, ticket);
     if (!installed) {
       throw new WellConfigUnavailableError('stale_bootstrap');
     }
@@ -318,6 +318,32 @@ export async function installBootstrapSnapshot(
     }
     return env;
   });
+}
+
+/**
+ * Install a live bootstrap for the exact authenticated identity that owns the
+ * app now. A same-identity session-generation change can legitimately occur
+ * while a callable is in flight (auth restoration and login publication both
+ * claim the session). Re-ticket once against the current exact identity so
+ * that benign publication ordering cannot turn a successful canonical
+ * bootstrap into "assignment unavailable". Driver/company replacement and
+ * logout remain fail-closed through the identity and Firebase Auth checks.
+ */
+async function installBootstrapForCurrentIdentity(
+  snap: WbmBootstrapSnapshot,
+  originalTicket: BootstrapTicket,
+): Promise<WbmBootstrapEnvelope | null> {
+  const first = await installBootstrapSnapshot(snap, originalTicket);
+  if (first) return first;
+
+  const current = await sessionIdentity();
+  if (current.driverId !== snap.driverId || (current.companyId || '') !== snap.companyId) {
+    return null;
+  }
+  if (!(await hasAuthSession())) return null;
+
+  const currentTicket = captureBootstrapTicket(current);
+  return installBootstrapSnapshot(snap, currentTicket);
 }
 
 export async function readMatchingEnvelope(
@@ -472,7 +498,7 @@ export async function fetchAssignmentClassified(
     const snap = bootstrapFn
       ? await bootstrapFn()
       : await fetchBootstrapFromServer();
-    const env = await installBootstrapSnapshot(snap, ticket);
+    const env = await installBootstrapForCurrentIdentity(snap, ticket);
     if (!env) return unknownVerdict('stale_bootstrap', true);
     return env.eligibility;
   } catch (error) {

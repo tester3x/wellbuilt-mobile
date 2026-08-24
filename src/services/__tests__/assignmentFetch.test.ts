@@ -21,7 +21,7 @@ jest.mock('../firebaseAuthSession', () => ({
   authorizedCallable: jest.fn(async () => { throw new Error('no_live'); }),
 }));
 
-import { fetchAssignmentClassified, persistBootstrapEnvelopeForTests, resetWellConfigCacheForTests, resolveCurrentEligibility, seedWellConfigCacheForTests } from '../wellConfig';
+import { bumpSessionGeneration, fetchAssignmentClassified, persistBootstrapEnvelopeForTests, resetWellConfigCacheForTests, resolveCurrentEligibility, seedWellConfigCacheForTests } from '../wellConfig';
 import { decideBootstrapRoute, decidePostAuthRoute } from '../eligibility';
 import { authorizeEstablishedSession } from '../postAuthGate';
 import { snapshotToEnvelope, type WbmBootstrapSnapshot } from '../wbmBootstrapCache';
@@ -82,6 +82,31 @@ describe('classified assignment fetch never becomes [] denial', () => {
     const v = await fetchAssignmentClassified(async () => snap(['North Loop'], { eligibilityStatus: 'eligible', eligibilityReason: 'scope_ok' }));
     expect(v.status).toBe('eligible');
     expect(v.routes).toEqual(['North Loop']);
+  });
+
+  test('same exact identity re-tickets a successful bootstrap after session publication advances generation', async () => {
+    const v = await fetchAssignmentClassified(async () => {
+      bumpSessionGeneration();
+      return snap(['Gabriels'], {
+        eligibilityStatus: 'eligible',
+        eligibilityReason: 'scope_ok',
+        wells: { 'Canonical Well': { route: 'Gabriels' } },
+      });
+    });
+    expect(v).toMatchObject({
+      status: 'eligible',
+      source: 'authoritative',
+      routes: ['Gabriels'],
+    });
+  });
+
+  test('generation retry remains fail-closed when the current company changes', async () => {
+    const v = await fetchAssignmentClassified(async () => {
+      bumpSessionGeneration();
+      mockSecure.companyId = 'foreign-company';
+      return snap(['Gabriels'], { eligibilityStatus: 'eligible' });
+    });
+    expect(v).toMatchObject({ status: 'unknown', reason: 'stale_bootstrap' });
   });
 
   test('durable last-known eligibility after bootstrap envelope', async () => {

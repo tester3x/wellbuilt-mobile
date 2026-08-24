@@ -2,7 +2,7 @@ import { Linking } from 'react-native';
 import * as Crypto from 'expo-crypto';
 
 export const ACCOUNT_RECOVERY_URL = 'https://wellbuilt-sync.web.app/account-recovery/';
-export const WBM_RECOVERY_RETURN = 'wellbuilt-mobile://account-recovery';
+export const WBM_RECOVERY_RETURN = 'wellbuiltmobile://account-recovery';
 
 export function buildAccountRecoveryUrl(state: string): string {
   if (!/^[a-f0-9]{64}$/.test(state)) throw new Error('invalid recovery state');

@@ -505,27 +505,54 @@ export default function DriverLoginScreen() {
 
             {renderPasscodeInput(t('driverLogin.passcodePlaceholder'))}
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? (
+              <View accessibilityRole="alert">
+                <Text style={styles.error}>{error}</Text>
+                <Text style={styles.invalidLoginHelp}>
+                  Already used an older version of WellBuilt? Tap Upgrade Existing Login.
+                </Text>
+              </View>
+            ) : null}
 
             <TouchableOpacity
               style={[styles.button, (!passcode.trim() || !displayName.trim()) && styles.buttonDisabled]}
               onPress={handleLogin}
               disabled={!passcode.trim() || !displayName.trim()}
+              accessibilityRole="button"
+              accessibilityLabel="Sign In"
             >
               <Text style={styles.buttonText}>{t('driverLogin.signIn')}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleSwitchToRegister}>
-              <Text style={styles.linkText}>
-                {t('driverLogin.newDriver')} <Text style={styles.linkBold}>{t('driverLogin.registerHere')}</Text>
-              </Text>
+            <TouchableOpacity
+              style={styles.upgradeButton}
+              onPress={() => { setError(''); clearUpgradeSecrets(); setMode('upgrade'); }}
+              accessibilityRole="button"
+              accessibilityLabel="Upgrade Existing Login"
+            >
+              <Text style={styles.upgradeButtonText}>Upgrade Existing Login</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => void openAccountRecovery().catch(() => setError(t('driverLogin.connectionError')))}>
-              <Text style={styles.linkText}>Forgot login or passcode?</Text>
+            <Text style={styles.upgradeSupportingText}>
+              Used WellBuilt before but haven’t upgraded yet? Use your current login and passcode once, then choose your secure passcode.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.textLinkTouchTarget}
+              onPress={() => void openAccountRecovery().catch(() => setError(t('driverLogin.connectionError')))}
+              accessibilityRole="link"
+              accessibilityLabel="Forgot Login or Passcode"
+            >
+              <Text style={[styles.linkText, styles.primaryLinkText]}>Forgot login or passcode?</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setError(''); clearUpgradeSecrets(); setMode('upgrade'); }}>
+
+            <TouchableOpacity
+              style={styles.textLinkTouchTarget}
+              onPress={handleSwitchToRegister}
+              accessibilityRole="link"
+              accessibilityLabel="New Employee Registration"
+            >
               <Text style={styles.linkText}>
-                {t('driverLogin.upgradeLink')}
+                New employee? <Text style={styles.linkBold}>{t('driverLogin.registerHere')}</Text>
               </Text>
             </TouchableOpacity>
           </View>
@@ -943,7 +970,8 @@ const styles = StyleSheet.create({
     paddingVertical: hp('1.8%'),
     paddingHorizontal: wp('10%'),
     borderRadius: 12,
-    minWidth: wp('60%'),
+    width: '100%',
+    minHeight: 48,
     alignItems: 'center',
     marginBottom: spacing.md,
   },
@@ -955,6 +983,49 @@ const styles = StyleSheet.create({
     fontSize: hp('2%'),
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  upgradeButton: {
+    width: '100%',
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#60A5FA',
+    backgroundColor: '#172554',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: hp('1.5%'),
+    paddingHorizontal: wp('5%'),
+    marginBottom: spacing.sm,
+  },
+  upgradeButtonText: {
+    color: '#DBEAFE',
+    fontSize: hp('1.9%'),
+    fontWeight: '700',
+  },
+  upgradeSupportingText: {
+    color: '#D1D5DB',
+    fontSize: hp('1.6%'),
+    lineHeight: hp('2.25%'),
+    textAlign: 'center',
+    marginBottom: spacing.md,
+    paddingHorizontal: wp('2%'),
+  },
+  invalidLoginHelp: {
+    color: '#FCD34D',
+    fontSize: hp('1.55%'),
+    lineHeight: hp('2.1%'),
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  textLinkTouchTarget: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  primaryLinkText: {
+    color: '#93C5FD',
+    fontWeight: '600',
   },
   linkText: {
     fontSize: hp('1.6%'),

@@ -49,8 +49,20 @@ export default function SessionVerifyScreen() {
       <Pressable
         style={styles.btn}
         onPress={async () => {
-          await clearDriverSession();
-          router.replace('/driver-login');
+          setBusy(true);
+          setCode(null);
+          try {
+            const loggedOut = await clearDriverSession();
+            if (!loggedOut) {
+              setCode('logout_not_verified');
+              return;
+            }
+            router.replace('/driver-login');
+          } catch {
+            setCode('logout_failed_retry');
+          } finally {
+            setBusy(false);
+          }
         }}
         disabled={busy}
       >

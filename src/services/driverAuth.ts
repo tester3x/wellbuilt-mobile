@@ -891,10 +891,31 @@ export async function performPermittedLogout(permit: SessionLogoutPermit): Promi
  * Manual logout of the exact current session. No-ops if identity cannot
  * be bound (avoids clearing a newer driver).
  */
-export const clearDriverSession = async (): Promise<void> => {
+async function clearUnboundCurrentSession(): Promise<boolean> {
+  return runSessionTransition(async () => {
+    const claimed = claimSessionGeneration();
+    const { clearAuthSessionVerified } = await import('./firebaseAuthSession');
+    await clearAuthSessionVerified();
+    if (getSessionGeneration() !== claimed) return false;
+
+    await wipeDurableWellConfigCache();
+    if (getSessionGeneration() !== claimed) return false;
+
+    for (const key of SESSION_SECURE_KEYS) {
+      await SecureStore.deleteItemAsync(key);
+    }
+    for (const key of SESSION_SECURE_KEYS) {
+      if (await SecureStore.getItemAsync(key)) return false;
+    }
+    clearWbmMemoryCatalog();
+    return true;
+  });
+}
+
+export const clearDriverSession = async (): Promise<boolean> => {
   const permit = await captureCurrentSessionPermit();
-  if (!permit) return;
-  await performPermittedLogout(permit);
+  if (!permit) return clearUnboundCurrentSession();
+  return performPermittedLogout(permit);
 };
 
 // --- Registration ---

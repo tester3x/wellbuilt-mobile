@@ -27,6 +27,10 @@ const mocks = {
     mockUser = null;
     delete mockSecure.wb_auth_uid;
   }),
+  clearAuthSessionVerified: jest.fn(async () => {
+    mockUser = null;
+    delete mockSecure.wb_auth_uid;
+  }),
   persistCustomTokenSession: jest.fn(async (token: string) => {
     const uid = String(token).includes('b') ? 'uid-b' : 'uid-a';
     mockUser = { uid };
@@ -36,6 +40,7 @@ const mocks = {
 };
 jest.mock('../firebaseAuthSession', () => ({
   clearAuthSession: () => mocks.clearAuthSession(),
+  clearAuthSessionVerified: () => mocks.clearAuthSessionVerified(),
   persistCustomTokenSession: (token: string) => mocks.persistCustomTokenSession(token),
   authorizedCallable: (...args: unknown[]) => mockCallable(...args),
   getFirebaseAuth: () => ({ currentUser: mockUser }),
@@ -156,6 +161,11 @@ describe('end-to-end session ownership', () => {
     for (const k of Object.keys(mockSecure)) delete mockSecure[k];
     mocks.clearAuthSession.mockReset();
     mocks.clearAuthSession.mockImplementation(async () => {
+      mockUser = null;
+      delete mockSecure.wb_auth_uid;
+    });
+    mocks.clearAuthSessionVerified.mockReset();
+    mocks.clearAuthSessionVerified.mockImplementation(async () => {
       mockUser = null;
       delete mockSecure.wb_auth_uid;
     });
@@ -355,6 +365,34 @@ describe('end-to-end session ownership', () => {
     expect(mockUser).toBeNull();
     expect(await durableDriverId()).toBeUndefined();
     expect(peekWellConfigCacheForTests()).toEqual({ config: null, envelope: null });
+  });
+
+  it('explicit logout releases a retained pre-contract session that cannot form a permit', async () => {
+    delete mockSecure.authMethod;
+    expect(await captureCurrentSessionPermit()).toBeNull();
+
+    await expect(clearDriverSession()).resolves.toBe(true);
+
+    expect(mocks.clearAuthSessionVerified).toHaveBeenCalledTimes(1);
+    expect(mockUser).toBeNull();
+    expect(mockSecure.driverId).toBeUndefined();
+    expect(mockSecure.driverName).toBeUndefined();
+    expect(mockSecure.companyId).toBeUndefined();
+    expect(mockSecure.wb_auth_uid).toBeUndefined();
+    expect(await durableDriverId()).toBeUndefined();
+    expect(peekWellConfigCacheForTests()).toEqual({ config: null, envelope: null });
+  });
+
+  it('unbound logout sign-out failure is truthful and retains local identity for retry', async () => {
+    delete mockSecure.authMethod;
+    mocks.clearAuthSessionVerified.mockRejectedValueOnce(new Error('firebase_signout_failed'));
+
+    await expect(clearDriverSession()).rejects.toThrow('firebase_signout_failed');
+
+    expect(mockSecure.driverId).toBe('driver-a');
+    expect(mockSecure.companyId).toBe('liquid-gold');
+    expect(mockUser?.uid).toBe('uid-a');
+    expect(await durableDriverId()).toBe('driver-a');
   });
 
   it('A permit is rejected after B authentication begins; B remains intact', async () => {

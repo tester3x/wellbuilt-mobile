@@ -106,6 +106,19 @@ export async function clearAuthSession(): Promise<void> {
   await SecureStore.deleteItemAsync('wb_auth_uid');
 }
 
+/** Explicit user logout must be truthful. Unlike best-effort recovery cleanup,
+ * this propagates sign-out failure and verifies that Firebase no longer owns a
+ * user before the caller removes local identity state. */
+export async function clearAuthSessionVerified(): Promise<void> {
+  const a = getFirebaseAuth();
+  await signOut(a);
+  if (a.currentUser) throw new Error('firebase_signout_unverified');
+  await SecureStore.deleteItemAsync('wb_auth_uid');
+  if (await SecureStore.getItemAsync('wb_auth_uid')) {
+    throw new Error('auth_uid_delete_unverified');
+  }
+}
+
 export async function getValidIdToken(): Promise<string> {
   await waitForAuthUser();
   const user = getFirebaseAuth().currentUser;

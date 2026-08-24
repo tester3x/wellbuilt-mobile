@@ -30,6 +30,7 @@ import {
   clearPendingRegistration,
 } from '../src/services/driverAuth';
 import { upgradeOwnLegacyLogin } from '../src/services/secureDriverAuth';
+import { openAccountRecovery } from '../src/services/accountRecoveryLink';
 import { diagnoseThrown } from '../src/services/connectionDiagnosis';
 import { userFacingErrorMessage } from '../src/i18n/userFacingError';
 import { authorizeEstablishedSession } from '../src/services/postAuthGate';
@@ -518,6 +519,9 @@ export default function DriverLoginScreen() {
               <Text style={styles.linkText}>
                 {t('driverLogin.newDriver')} <Text style={styles.linkBold}>{t('driverLogin.registerHere')}</Text>
               </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => void openAccountRecovery().catch(() => setError(t('driverLogin.connectionError')))}>
+              <Text style={styles.linkText}>Forgot login or passcode?</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => { setError(''); clearUpgradeSecrets(); setMode('upgrade'); }}>
               <Text style={styles.linkText}>

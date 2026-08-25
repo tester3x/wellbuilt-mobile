@@ -317,9 +317,21 @@ export function buildDeliveryItems(
   nowMs: number,
 ): DeliveryItem[] {
   const items: DeliveryItem[] = [];
-  const queuedPacketIds = new Set(queue.map(p => p.packetId).filter(Boolean));
+  // Blocker 2 (packet 83214): a packet that is BOTH locally queued AND already
+  // rejected server-side is ONE logical record — and the terminal server verdict
+  // is the truth, so the rejected history row represents it (not the transient
+  // queue mirror). Never two rows, never a "retrying" row masking a rejection.
+  const rejectedPacketIds = new Set(
+    history.filter(e => e.syncStatus === 'rejected').map(e => e.packetId).filter(Boolean),
+  );
+  // Queue ids that will actually be shown as live rows (rejection-dominated ones
+  // are dropped here so the history loop lets their rejected row through).
+  const queuedPacketIds = new Set(
+    queue.map(p => p.packetId).filter(id => id && !rejectedPacketIds.has(id)),
+  );
 
   for (const p of queue) {
+    if (p.packetId && rejectedPacketIds.has(p.packetId)) continue; // rejection dominates the mirror
     const failedThreshold = (p.retryCount || 0) >= SYNC_FAILED_THRESHOLD;
     items.push({
       packetId: p.packetId ?? null,
@@ -333,7 +345,11 @@ export function buildDeliveryItems(
       lastError: p.lastError ?? null,
       lastAttemptAt: p.lastAttemptAt ?? null,
       action: 'retry', // in the queue ⇒ a local transport-level packet
-      needsAttention: failedThreshold,
+      // Blocker 3 (packet 83214): a locally queued packet retrying transport is
+      // background_pending — the system retries automatically. Reaching the
+      // failure threshold is diagnostic metadata (status sync_failed) but must
+      // NEVER create a driver-attention "ticket".
+      needsAttention: false,
     });
   }
 
@@ -411,6 +427,11 @@ export function buildDeliveryItems(
       ?? (stuckSubmitted ? 'No server confirmation yet — needs attention' : null)
       ?? (classified ? formatDiagnosis(classified) : null);
     const thrown = op.lastError ? diagnoseThrown(new Error(op.lastError)) : null;
+    // Blocker 4 (packet 83214): an edit parked awaiting the backend edit
+    // capability (ingestWbmEdit) is dependency_blocked — preserved under its
+    // existing identity, NO Retry button, NO driver-attention banner, and its
+    // raw coding string is never shown.
+    const dependencyBlocked = op.blockedCode === 'edit_unsupported';
     items.push({
       packetId: op.originalPacketId,
       queueId: null,
@@ -423,20 +444,26 @@ export function buildDeliveryItems(
       attempts: op.attempts,
       lastError,
       lastAttemptAt: op.lastAttemptAt ?? (op.attempts > 0 ? op.updatedAt : null),
-      action: (status === 'edit_blocked' || status === 'edit_rejected')
+      action: (status === 'edit_blocked' || status === 'edit_rejected' || dependencyBlocked)
         ? null
         : (thrown && thrown.retryable === false && status === 'edit_failed')
           ? null
           : (op.attempts > 0 || status === 'edit_submitted' ? 'retryEdit' : null),
-      needsAttention:
-        status === 'edit_blocked' || status === 'edit_rejected' || status === 'edit_failed'
+      // Blocker 3: attempts (status 'edit_failed') NO LONGER create attention —
+      // a transient transport failure that hit the threshold is background_pending.
+      // Blocker 4: dependency_blocked never raises the driver-attention banner.
+      // Genuine problems (original rejected/legacy block, server rejection,
+      // stuck submission, malformed/permission) remain diagnostic attention.
+      needsAttention: dependencyBlocked ? false : (
+        (status === 'edit_blocked') || status === 'edit_rejected'
         || stuckSubmitted || malformed
         || (classified != null && classified.kind === 'auth_session')
         || (classified != null && classified.kind === 'permission')
         || (classified != null && classified.kind === 'malformed')
-        || (thrown != null && thrown.retryable === false && op.attempts > 0),
-      errorKind: thrown?.kind ?? classified?.kind ?? (malformed ? 'malformed' : null),
-      errorCode: thrown?.code ?? classified?.code ?? (malformed ? 'malformed_edit' : null),
+        || (thrown != null && thrown.retryable === false && thrown.kind !== 'dependency_blocked' && op.attempts > 0)
+      ),
+      errorKind: dependencyBlocked ? 'dependency_blocked' : (thrown?.kind ?? classified?.kind ?? (malformed ? 'malformed' : null)),
+      errorCode: dependencyBlocked ? 'edit_unsupported' : (thrown?.code ?? classified?.code ?? (malformed ? 'malformed_edit' : null)),
     });
   }
 

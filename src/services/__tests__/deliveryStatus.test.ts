@@ -166,10 +166,13 @@ describe('badge counts', () => {
     const c = computeDeliveryCounts(queue, history, now);
     expect(c).toEqual({
       pending: 2,          // q1 + q3 (below threshold)
-      failed: 1,           // q2
+      failed: 1,           // q2 (diagnostic only — a queued transport failure at
+                           //     the threshold is background_pending, NOT attention)
       submittedTooLong: 1, // p3
       rejected: 1,         // p5
-      attention: 3,
+      // Blocker 3 (packet 83214): attempts no longer create attention. Only the
+      // stuck submission (p3) and the server rejection (p5) are attention → 2.
+      attention: 2,
     });
   });
 

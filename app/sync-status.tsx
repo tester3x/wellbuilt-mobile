@@ -157,8 +157,11 @@ export default function SyncStatusScreen() {
             return <Text style={styles.empty}>{t(emptyKey)}</Text>;
           }
           return visible.map((item) => {
-          const color = STATUS_COLORS[item.status];
-          const statusKey = `syncStatus.${item.status}` as const;
+          // A dependency-blocked (parked) edit is not a failure — show it calm,
+          // not alarming red, and never as a retryable error.
+          const parked = item.errorKind === 'dependency_blocked';
+          const color = parked ? '#eab308' : STATUS_COLORS[item.status];
+          const statusKey = parked ? 'syncStatus.parked' : `syncStatus.${item.status}`;
           const actionKey =
             item.action === 'retry'
               ? 'syncStatus.retry'
@@ -192,12 +195,14 @@ export default function SyncStatusScreen() {
                 </Text>
               )}
               {item.lastError && (
-                <Text style={styles.error}>
-                  {item.errorKind === 'malformed' || item.errorKind === 'permission' || item.errorKind === 'server_rejection'
-                    ? t(`errors.${item.errorKind === 'server_rejection' ? 'serverRejection' : item.errorKind === 'permission' ? 'permission' : 'malformed'}`)
-                    : item.type === 'edit'
-                      ? t('syncStatus.editSendFailed')
-                      : t('syncStatus.sendFailed')}
+                <Text style={[styles.error, parked && { color: '#c8b26a' }]}>
+                  {parked
+                    ? t('syncStatus.editParked')
+                    : item.errorKind === 'malformed' || item.errorKind === 'permission' || item.errorKind === 'server_rejection'
+                      ? t(`errors.${item.errorKind === 'server_rejection' ? 'serverRejection' : item.errorKind === 'permission' ? 'permission' : 'malformed'}`)
+                      : item.type === 'edit'
+                        ? t('syncStatus.editSendFailed')
+                        : t('syncStatus.sendFailed')}
                 </Text>
               )}
               {item.packetId && <Text style={styles.packetId}>{item.packetId}</Text>}

@@ -693,7 +693,9 @@
     "working": "Working…",
     "emptyFull": "All pulls are confirmed synced. Nothing needs attention.",
     "emptyPending": "Nothing is waiting to send.",
-    "emptyAttention": "Nothing needs attention."
+    "emptyAttention": "Nothing needs attention.",
+    "parked": "Saved (parked)",
+    "editParked": "Saved on this phone — it will send automatically once the server supports pull edits. No action needed."
   },
   "noAccess": {
     "title": "WellBuilt Mobile",
@@ -783,6 +785,7 @@
     "unknown": "Something went wrong. Please try again.",
     "firebaseRead": "Could not load data. Please try again.",
     "firebaseWrite": "Could not save data. Please try again.",
-    "updateRequired": "This feature is unavailable. Please update the app."
+    "updateRequired": "This feature is unavailable. Please update the app.",
+    "dependencyBlocked": "Saved — will send when the server supports it."
   }
 }

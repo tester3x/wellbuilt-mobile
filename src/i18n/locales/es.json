@@ -693,7 +693,9 @@
     "working": "Trabajando…",
     "emptyFull": "Todas las extracciones están sincronizadas. Nada requiere atención.",
     "emptyPending": "Nada está esperando envío.",
-    "emptyAttention": "Nada requiere atención."
+    "emptyAttention": "Nada requiere atención.",
+    "parked": "Guardado (en espera)",
+    "editParked": "Guardado en este teléfono — se enviará automáticamente cuando el servidor admita ediciones. No requiere acción."
   },
   "noAccess": {
     "title": "WellBuilt Móvil",
@@ -783,6 +785,7 @@
     "unknown": "Algo salió mal. Inténtelo de nuevo.",
     "firebaseRead": "No se pudieron cargar los datos. Inténtelo de nuevo.",
     "firebaseWrite": "No se pudieron guardar los datos. Inténtelo de nuevo.",
-    "updateRequired": "Esta función no está disponible. Actualice la aplicación."
+    "updateRequired": "Esta función no está disponible. Actualice la aplicación.",
+    "dependencyBlocked": "Guardado — se enviará cuando el servidor lo admita."
   }
 }

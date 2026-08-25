@@ -14,6 +14,7 @@ export type ConnectionKind =
   | 'server_rejection'
   | 'malformed'
   | 'retryable'
+  | 'dependency_blocked'
   | 'server';
 
 export interface ConnectionDiagnosis {
@@ -33,6 +34,7 @@ export const CONNECTION_I18N_KEY: Record<ConnectionKind, string> = {
   server_rejection: 'errors.serverRejection',
   malformed: 'errors.malformed',
   retryable: 'errors.retryableQueued',
+  dependency_blocked: 'errors.dependencyBlocked',
   server: 'errors.server',
 };
 
@@ -79,11 +81,13 @@ export function diagnoseThrown(err: unknown): ConnectionDiagnosis {
   if (/unreachable|cannot reach|enotfound|dns/i.test(msg)) {
     return { kind: 'unreachable', code: 'unreachable', retryable: true };
   }
-  if (/unsupported_field_command:edit/i.test(msg)) {
-    return { kind: 'retryable', code: 'edit_capability_upgraded', retryable: true };
-  }
+  // Pull EDIT ingest is not a deployed capability yet. The endpoint cannot
+  // accept edits, so retrying can never succeed — this is a backend DEPENDENCY
+  // gap, not a transient failure and not a driver-fixable error. Park it under
+  // its existing identity until the governed edit capability (ingestWbmEdit)
+  // exists; no auto-retry, no driver Retry button, no driver-attention banner.
   if (/unsupported_field_command/i.test(msg)) {
-    return { kind: 'malformed', code: 'unsupported_field_command', retryable: false };
+    return { kind: 'dependency_blocked', code: 'edit_unsupported', retryable: false };
   }
   if (/functions\/invalid-argument|invalid-argument|missing_original|forged_well|idempotency_key_mismatch|invalid_bblsTaken|invalid_tankLevelFeet/i.test(msg)) {
     return { kind: 'malformed', code: 'invalid_edit', retryable: false };

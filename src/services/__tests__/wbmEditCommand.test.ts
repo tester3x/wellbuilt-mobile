@@ -177,9 +177,14 @@ describe('governed edit delivery', () => {
     expect(confirmAppliedEdit({ queued: true, committed: false }, op)).toBe(false);
   });
 
-  it('pre-correction unsupported edit error is retryable after upgrade', () => {
-    expect(isPermanentEditFailure('retryable [unclassified]: unsupported_field_command:edit')).toBe(false);
-    expect(diagnoseThrown(new Error('unsupported_field_command:edit')).retryable).toBe(true);
+  it('unsupported pull edit is a PARKED dependency, not a retryable error (packet 83214, Blocker 4)', () => {
+    // The endpoint does not support edits, so retrying can never succeed — it is
+    // classified dependency_blocked (not retryable), stops auto-retrying (parks),
+    // and never shows the driver a retryable error.
+    expect(isPermanentEditFailure('retryable [unclassified]: unsupported_field_command:edit')).toBe(true);
+    const d = diagnoseThrown(new Error('unsupported_field_command:edit'));
+    expect(d.retryable).toBe(false);
+    expect(d.kind).toBe('dependency_blocked');
     const op = {
       opId: 'editop_x',
       originalPacketId: PID,
@@ -192,7 +197,7 @@ describe('governed edit delivery', () => {
       lastAttemptAt: 1,
       lastError: 'unsupported_field_command:edit',
     };
-    expect(shouldAutoAttemptEdit(op, 100_000)).toBe(true);
+    expect(shouldAutoAttemptEdit(op, 100_000)).toBe(false); // parked — no auto-retry loop
   });
 });
 
@@ -229,10 +234,13 @@ describe('attention snapshot parity', () => {
     const items = buildDeliveryItems([], history, [op], NOW);
     const attention = selectDeliveryItems(items, 'attention');
     const counts = computeDeliveryCounts([], history, NOW, [op]);
+    // Parity invariant preserved: badge count === visible attention rows.
     expect(counts.attention).toBe(attention.length);
-    expect(attention.map((i) => `${i.type}:${i.packetId}`).sort()).toEqual(
-      ['edit:' + PID, 'pull:other'].sort(),
-    );
+    // Blocker 3: the transport-failing edit (attempts past threshold) is
+    // background_pending — NOT attention. Only the stuck submission remains.
+    expect(attention.map((i) => `${i.type}:${i.packetId}`).sort()).toEqual(['pull:other']);
+    // The edit is still VISIBLE in the full list — just not counted/flagged.
+    expect(items.some((i) => i.type === 'edit' && i.packetId === PID)).toBe(true);
   });
 });
 

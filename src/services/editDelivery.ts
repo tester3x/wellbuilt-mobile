@@ -67,6 +67,10 @@ export interface EditOperation {
   payload: EditPacketParams;
   state: EditOpState;
   blockedReason?: string;
+  /** Stable, non-raw reason marker for a blocked edit. 'edit_unsupported' means
+   *  parked awaiting the backend edit capability (dependency_blocked) — distinct
+   *  from an original-rejected/legacy block. Never a raw coding string. */
+  blockedCode?: string;
   rejectionReason?: string;
   createdAt: number;
   updatedAt: number;
@@ -127,8 +131,18 @@ export const EDIT_AUTO_BACKOFF_MS = [0, 2000, 8000, 20000, 60000] as const;
 
 export function isPermanentEditFailure(lastError: string | null): boolean {
   if (!lastError) return false;
-  if (/unsupported_field_command:edit/i.test(lastError)) return false;
-  return /permission|malformed|invalid-argument|missing_original|cross_driver|cross_company|forged_well|idempotency_key_mismatch|unsupported_field_command/i.test(lastError);
+  // unsupported_field_command(:edit) is a backend capability gap — the endpoint
+  // cannot accept edits, so a retry can NEVER succeed. It must stop auto-retrying
+  // (park) rather than loop and accrue attempts. It is "permanent" for the
+  // purpose of halting retries (not a driver error — see dependency_blocked).
+  return /permission|malformed|invalid-argument|missing_original|cross_driver|cross_company|forged_well|idempotency_key_mismatch|unsupported_field_command|dependency_blocked|edit_unsupported/i.test(lastError);
+}
+
+/** True when the edit is parked awaiting a backend capability (ingestWbmEdit),
+ *  as opposed to a driver-fixable or transient failure. */
+export function isDependencyBlockedEdit(lastError: string | null): boolean {
+  if (!lastError) return false;
+  return /dependency_blocked|edit_unsupported|unsupported_field_command/i.test(lastError);
 }
 
 export function shouldAutoAttemptEdit(op: EditOperation, nowMs: number): boolean {
@@ -335,6 +349,19 @@ async function processEditOperationsInner(
         }
       } catch (err: any) {
         const diagnosis = diagnoseThrown(err);
+        // Backend capability gap (pull edit not yet supported): PARK under the
+        // existing identity — no retry, no raw coding string, no driver
+        // attention — until the governed edit capability exists. Never delete
+        // or remint the edit.
+        if (diagnosis.kind === 'dependency_blocked') {
+          op.state = 'edit_blocked';
+          op.blockedReason = 'Edit saved — it will send once the server supports pull edits.';
+          op.blockedCode = 'edit_unsupported';
+          op.lastError = op.blockedReason;
+          await upsertOp(op);
+          await setPullEditStatus(op.originalPacketId, 'edit_pending', op.blockedReason);
+          continue;
+        }
         op.lastError = formatDiagnosis(diagnosis, diagnosis.retryable ? undefined : String(err?.message || err || ''));
         await upsertOp(op);
         if (!diagnosis.retryable || op.attempts >= EDIT_FAILED_THRESHOLD) {

@@ -150,9 +150,13 @@ describe('badge ↔ Sync Status parity', () => {
     const rejected = historyEntry({ syncStatus: 'rejected', rejectionReason: 'DUPLICATE_PACKET: already processed', wellName: 'Well B' });
     const failing = queued({ retryCount: SYNC_FAILED_THRESHOLD, data: { wellName: 'Well C', dateTime: 'x', bblsTaken: 1 } });
     const { counts, attentionRows } = assertParity([failing], [stuck, rejected], []);
-    expect(counts.attention).toBe(3);
-    expect(attentionRows.map(r => r.wellName).sort()).toEqual(['Well A', 'Well B', 'Well C']);
-    // …and each row says WHY it needs attention.
+    // Blocker 3 (packet 83214): a queued transport failure at the threshold
+    // (Well C) is background_pending — it retries silently and is NOT a
+    // driver-attention ticket. Only the stuck submission (A) and the server
+    // rejection (B) are actionable attention → badge 2.
+    expect(counts.attention).toBe(2);
+    expect(attentionRows.map(r => r.wellName).sort()).toEqual(['Well A', 'Well B']);
+    // …and each attention row says WHY it needs attention.
     for (const row of attentionRows) expect(row.lastError ?? row.status).toBeTruthy();
   });
 
@@ -208,22 +212,28 @@ describe('badge ↔ Sync Status parity', () => {
     const q = queued({ packetId: pid, retryCount: SYNC_FAILED_THRESHOLD });
     const h = historyEntry({ packetId: pid, syncStatus: 'rejected', rejectionReason: 'STALE' });
     const { counts, attentionRows } = assertParity([q], [h], []);
-    expect(attentionRows).toHaveLength(1); // the live queue row wins
-    expect(counts.attention).toBe(1); // never double-counted
+    // Blocker 2: one logical record — the terminal server REJECTION dominates the
+    // transient queue mirror (never two rows, never a "retrying" row masking a
+    // rejection). Counted exactly once.
+    expect(attentionRows).toHaveLength(1);
+    expect(attentionRows[0].status).toBe('rejected');
+    expect(counts.attention).toBe(1);
   });
 
-  test('still-failing edits and blocked/rejected edits remain visible AND counted', () => {
+  test('blocked/rejected edits are counted; a transport-failing edit is background (Blocker 3)', () => {
     const ops = [
-      editOp({ state: 'edit_pending', attempts: EDIT_FAILED_THRESHOLD }), // transport-failing
+      editOp({ state: 'edit_pending', attempts: EDIT_FAILED_THRESHOLD }), // transport-failing → background_pending, NOT attention
       editOp({ state: 'edit_blocked', blockedReason: 'original rejected' }),
       editOp({ state: 'edit_rejected', rejectionReason: 'REJECTED: bad time' }),
       editOp({ state: 'edit_pending', attempts: 1 }), // normal dependent wait — NOT attention
     ];
     const { counts, attentionRows, items } = assertParity([], [], ops);
-    expect(counts.attention).toBe(3);
-    expect(attentionRows).toHaveLength(3);
-    expect(items).toHaveLength(4); // the pending edit is visible but not flagged
-    expect(counts.pending).toBe(1);
+    // Only the genuinely-blocked (original rejected) and server-rejected edits
+    // are attention. The transport-failing edit that merely hit the threshold is
+    // background_pending — attempts never manufacture a ticket.
+    expect(counts.attention).toBe(2);
+    expect(attentionRows).toHaveLength(2);
+    expect(items).toHaveLength(4); // both non-attention edits are still visible
   });
 
   test('nonzero pending badge never opens an empty list', () => {

@@ -81,19 +81,28 @@ describe('attention-state contract', () => {
     expect(counts.pending).toBe(1);
   });
 
-  it('one actionable failure produces one badge and one visible Sync Status row', () => {
+  it('a queued transport failure at the threshold is background_pending, NOT attention (Blocker 3)', () => {
+    // Field bug: reaching the retry threshold manufactured a "needs attention"
+    // ticket. Attempts are diagnostic only — the system keeps retrying silently.
     const fail = queued({ retryCount: SYNC_FAILED_THRESHOLD, packetId: 'pid_fail', id: 'qf' });
     const items = buildDeliveryItems([fail], [hist({ syncStatus: 'sent' })], [], NOW);
-    const attention = selectDeliveryItems(items, 'attention');
-    const counts = computeDeliveryCounts([fail], [hist({ syncStatus: 'sent' })], NOW, []);
-    expect(counts.attention).toBe(1);
-    expect(attention).toHaveLength(1);
-    expect(attention[0].packetId).toBe('pid_fail');
+    expect(selectDeliveryItems(items, 'attention')).toHaveLength(0);
+    expect(computeDeliveryCounts([fail], [hist({ syncStatus: 'sent' })], NOW, []).attention).toBe(0);
   });
 
-  it('clearing the failure removes the badge and the row together', () => {
-    const fail = queued({ retryCount: SYNC_FAILED_THRESHOLD });
-    const before = computeDeliveryCounts([fail], [], NOW, []);
+  it('one genuine problem (server-rejected pull) produces one badge and one visible row', () => {
+    const rej = hist({ packetId: 'pid_rej', syncStatus: 'rejected', rejectionReason: 'quarantined' });
+    const items = buildDeliveryItems([], [rej], [], NOW);
+    const attention = selectDeliveryItems(items, 'attention');
+    const counts = computeDeliveryCounts([], [rej], NOW, []);
+    expect(counts.attention).toBe(1);
+    expect(attention).toHaveLength(1);
+    expect(attention[0].packetId).toBe('pid_rej');
+  });
+
+  it('clearing the problem removes the badge and the row together', () => {
+    const rej = hist({ packetId: 'pid_rej', syncStatus: 'rejected', rejectionReason: 'q' });
+    const before = computeDeliveryCounts([], [rej], NOW, []);
     expect(before.attention).toBe(1);
     const after = computeDeliveryCounts([], [hist({ syncStatus: 'sent' })], NOW, []);
     const rows = selectDeliveryItems(buildDeliveryItems([], [hist({ syncStatus: 'sent' })], [], NOW), 'attention');

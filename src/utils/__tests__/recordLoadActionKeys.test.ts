@@ -205,9 +205,21 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
       expect(keypad).toMatch(/actionBtnBlocked: \{\s*opacity: 0\.45,/);
     });
 
-    it('accessibility still reports blocked keys as disabled', () => {
+    it('accessibility is platform-split: Android must NOT get accessibilityState.disabled', () => {
+      // vc18 on-device: Android applies accessibilityState.disabled to the
+      // NATIVE view's enabled flag → the key stops claiming touches → the
+      // dismiss overlay treats the tap as blank form area (the exact defect).
       expect(keypad).toMatch(/accessibilityRole="button"/);
-      expect(keypad).toMatch(/accessibilityState=\{\{ disabled: !!blocked \}\}/);
+      expect(keypad).toMatch(/Platform\.OS === 'android'\s*\?\s*\{ accessibilityHint: blocked \? 'Unavailable' : undefined \}\s*:\s*\{ accessibilityState: \{ disabled: !!blocked \} \}/);
+    });
+
+    it('keypad sheet fences its touches from the dismiss overlay (deterministic)', () => {
+      // Any keypad-surface touch no key claimed is claimed by the sheet, so
+      // the overlay's blank-area candidate can never be armed by keypad taps —
+      // independent of native disabled/a11y quirks on individual keys.
+      const sheet = keypad.slice(keypad.indexOf('styles.sheet'), keypad.indexOf('styles.sheet') + 900);
+      expect(sheet).toMatch(/onStartShouldSetResponder=\{\(\) => true\}/);
+      expect(sheet).toMatch(/onTouchEnd=\{\(e\) => e\.stopPropagation\(\)\}/);
     });
 
     it('enabled wiring is untouched: Done → commitDone, Next → commitNext', () => {

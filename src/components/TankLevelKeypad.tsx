@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Platform, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MEASUREMENT_KEYPAD_HEIGHT } from '../utils/measurementKeypadLayout';
 import { useMeasurementKeypad } from '../contexts/MeasurementKeypadContext';
 
@@ -66,7 +66,14 @@ function ActionButton({
       onPress={blocked ? NOOP : onPress}
       activeOpacity={blocked ? 1 : 0.2}
       accessibilityRole="button"
-      accessibilityState={{ disabled: !!blocked }}
+      // vc18 field result: on Android, accessibilityState.disabled is applied
+      // to the NATIVE view's enabled flag, which strips the view out of touch
+      // claiming — blocked keys fell through to the dismiss overlay exactly
+      // like the removed disabled prop did. iOS keeps the semantic state;
+      // Android conveys unavailability through the hint instead.
+      {...(Platform.OS === 'android'
+        ? { accessibilityHint: blocked ? 'Unavailable' : undefined }
+        : { accessibilityState: { disabled: !!blocked } })}
     >
       <Text
         style={[
@@ -127,7 +134,18 @@ export default function TankLevelKeypad({ visible, showNext = true, doneAllowed 
   const symbol = (ch: string) => () => keypad.applyKey({ label: ch, value: ch });
 
   return (
-    <View style={styles.sheet}>
+    <View
+      style={styles.sheet}
+      // Touch fence: the keypad surface is never "blank form area". Any touch
+      // no individual key claimed (blocked keys under native a11y/disabled
+      // quirks, gaps between keys) is claimed HERE, so responder negotiation
+      // never reaches MeasurementKeypadDismissOverlay's blank-area detection —
+      // its dismiss-tap candidate is never armed by a keypad touch. The
+      // release also must not bubble into the overlay's onTouchEnd. Blank
+      // form-area taps outside this sheet keep their dismiss behavior.
+      onStartShouldSetResponder={() => true}
+      onTouchEnd={(e) => e.stopPropagation()}
+    >
       <View style={styles.grid}>
         <View style={styles.row}>
           <KeyButton label="1" onPress={digit('1')} />

@@ -976,6 +976,10 @@ function RecordScreenInner() {
             variant="numeric"
             placeholder="140"
             style={styles.input}
+            // Go = commit + send, so it exists only where Done would send:
+            // new loads. Edit mode keeps the blank slot — Save Edit is the
+            // sole explicit edit-submit action.
+            showGoAction={!isEditMode}
             onDoneComplete={(formatted) => {
               committedBarrelsRef.current = formatted;
               setBarrels(formatted);

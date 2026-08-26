@@ -20,19 +20,25 @@ describe('Record Load workflow action key: Next (Tank Level) / Go (BBLs)', () =>
   const ctx = src('src/contexts/MeasurementKeypadContext.tsx');
 
   const levelBlock = record.slice(record.indexOf('fieldKey={LEVEL_FIELD_KEY}'), record.indexOf('fieldKey={LEVEL_FIELD_KEY}') + 600);
-  const bblsBlock = record.slice(record.indexOf('fieldKey={BBLS_FIELD_KEY}'), record.indexOf('fieldKey={BBLS_FIELD_KEY}') + 700);
+  const bblsBlock = record.slice(record.indexOf('fieldKey={BBLS_FIELD_KEY}'), record.indexOf('fieldKey={BBLS_FIELD_KEY}') + 1000);
 
-  describe('1+5. the one existing action slot renders Next or Go by session', () => {
-    it('same slot: Next when the session advances (onNext), Go otherwise — no blank placeholder', () => {
-      expect(keypad).toMatch(/\{showNext \? \(\s*<ActionButton label="Next" onPress=\{keypad\.commitNext\} variant="next" blocked=\{!canCommit\} \/>\s*\) : \(\s*<ActionButton label="Go" onPress=\{keypad\.commitDone\} variant="next" blocked=\{!canCommit\} \/>\s*\)\}/);
-      expect(keypad).not.toMatch(/nextPlaceholder/);
+  describe('1+5. the one existing action slot renders Next, Go, or blank by explicit session intent', () => {
+    it('same slot: Next when the session advances (onNext), Go only on explicit opt-in, else blank', () => {
+      expect(keypad).toMatch(/\{showNext \? \(\s*<ActionButton label="Next" onPress=\{keypad\.commitNext\} variant="next" blocked=\{!canCommit\} \/>\s*\) : showGo \? \(\s*<ActionButton label="Go" onPress=\{keypad\.commitDone\} variant="next" blocked=\{!canCommit\} \/>\s*\) : \(\s*<View style=\{\[styles\.key, styles\.nextPlaceholder\]\} \/>\s*\)\}/);
       // showNext derives from the session having an onward field
       expect(ctx).toMatch(/showNext: !!session\?\.onNext/);
+      // showGo requires explicit per-session opt-in — `no onNext` alone NEVER means Go
+      expect(ctx).toMatch(/showGo: !session\?\.onNext && !!session\?\.showGoAction/);
+      // Go is off unless the field asks for it
+      expect(field).toMatch(/showGoAction = false/);
+      expect(keypad).toMatch(/showGo = false/);
     });
 
-    it('Tank Level session has onNext (→ Next); BBLs session has none (→ Go)', () => {
+    it('Tank Level session has onNext (→ Next); BBLs opts into Go for new loads only', () => {
       expect(levelBlock).toMatch(/onNextComplete=\{\(\) => \{\s*barrelsFieldRef\.current\?\.activateAsHandoffTarget\(\);/);
+      expect(levelBlock).not.toMatch(/showGoAction/);
       expect(bblsBlock).not.toMatch(/onNextComplete/);
+      expect(bblsBlock).toMatch(/showGoAction=\{!isEditMode\}/);
       // LevelFieldInput only sets session.onNext when onNextComplete is provided
       expect(field).toMatch(/onNext: onNextComplete\s*\?\s*\(formatted: string\) => \{\s*onChange\(formatted\);\s*onNextComplete\(formatted\);\s*\}\s*: undefined/);
     });
@@ -109,6 +115,30 @@ describe('Record Load workflow action key: Next (Tank Level) / Go (BBLs)', () =>
     it('commitDone clears the session after onDone, so a repeat press early-returns', () => {
       expect(ctx).toMatch(/current\.onDone\(committed\);\s*sessionRef\.current = null;/);
       expect(ctx).toMatch(/if \(!current \|\| !canCommitKeypadSession\(\{/);
+    });
+  });
+
+  describe('edit mode: no Go; Done and Save Edit keep their existing roles', () => {
+    it('edit-mode BBLs session does not opt into Go → blank slot as before', () => {
+      // showGoAction={!isEditMode}: edit mode passes false, so showGo stays
+      // false and the slot falls through to the blank placeholder branch.
+      expect(bblsBlock).toMatch(/showGoAction=\{!isEditMode\}/);
+      expect(keypad).toMatch(/styles\.nextPlaceholder/);
+    });
+
+    it('edit-mode drafts still commit/flush normally (Done + Save Edit flush)', () => {
+      // Gold Done key unchanged — same commitDone op, always present.
+      expect(keypad).toMatch(/<ActionButton label="Done" onPress=\{keypad\.commitDone\} variant="done" blocked=\{!canCommit\} \/>/);
+      // Save Edit flushes the active draft before submitting.
+      expect(record).toMatch(/const flushed = keypad\.flushActiveDraft\(\);\s*void handleSubmit\(\{/);
+    });
+
+    it('Save Edit is the sole explicit edit-submit path — keypad never sends in edit mode', () => {
+      // onDoneComplete (the only keypad→submit bridge) is gated to new loads.
+      expect(bblsBlock).toMatch(/if \(!isEditMode\) \{\s*void handleSubmit\(\{ barrels: formatted \}\);/);
+      // Exactly one handleSubmit call site inside the edit-mode button block.
+      const editBtn = record.slice(record.indexOf('styles.buttonEdit'), record.indexOf('styles.buttonEdit') + 500);
+      expect(editBtn.match(/handleSubmit\(/g)?.length).toBe(1);
     });
   });
 

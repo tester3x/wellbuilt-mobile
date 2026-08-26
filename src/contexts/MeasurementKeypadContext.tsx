@@ -74,6 +74,11 @@ export interface OpenKeypadConfig {
   /** Persist committed value without workflow navigation (direct field handoff). */
   onCommitValue?: (value: string) => void;
   onNext?: (value: string) => void;
+  /** Offer the committing Done action as a `Go` key in the workflow slot.
+   *  Explicit intent for terminal submit-on-commit fields ONLY (new-load
+   *  BBLs); a session without it keeps the slot blank — `no onNext` alone
+   *  never means Go. */
+  showGoAction?: boolean;
   /** Select the destination's full buffer once on this field activation. */
   selectExistingValue?: boolean;
 }
@@ -99,6 +104,9 @@ interface MeasurementKeypadContextValue {
   isOpen: boolean;
   activeFieldKey: string | null;
   showNext: boolean;
+  /** Workflow slot shows Go (commitDone semantics) — set only by sessions
+   *  opened with showGoAction. */
+  showGo: boolean;
   draft: string;
   selection: TextSelection;
   variant: KeypadVariant;
@@ -862,6 +870,7 @@ export function MeasurementKeypadProvider({ children }: { children: ReactNode })
       isOpen: !!session,
       activeFieldKey: session?.fieldKey ?? null,
       showNext: !!session?.onNext,
+      showGo: !session?.onNext && !!session?.showGoAction,
       draft: session?.draft ?? '',
       selection: session?.selection ?? { start: 0, end: 0 },
       variant: session?.variant ?? 'level',
@@ -1007,12 +1016,14 @@ export function MeasurementKeypadSlot() {
   const ctx = useContext(MeasurementKeypadContext);
   const [rendered, setRendered] = useState(false);
   const [showNext, setShowNext] = useState(true);
+  const [showGo, setShowGo] = useState(false);
   const slide = useRef(new Animated.Value(0)).current;
   const keypadWasOpenRef = useRef(false);
 
   useEffect(() => {
     if (ctx?.isOpen) {
       setShowNext(ctx.showNext);
+      setShowGo(ctx.showGo);
       if (!keypadWasOpenRef.current) {
         setRendered(true);
         slide.setValue(0);
@@ -1037,7 +1048,7 @@ export function MeasurementKeypadSlot() {
         if (finished) setRendered(false);
       });
     }
-  }, [ctx?.isOpen, ctx?.showNext, rendered, slide]);
+  }, [ctx?.isOpen, ctx?.showNext, ctx?.showGo, rendered, slide]);
 
   if (!rendered || !ctx) return null;
 
@@ -1048,7 +1059,7 @@ export function MeasurementKeypadSlot() {
 
   return (
     <Animated.View style={[styles.slot, { transform: [{ translateY }] }]}>
-      <TankLevelKeypad visible showNext={showNext} />
+      <TankLevelKeypad visible showNext={showNext} showGo={showGo} />
     </Animated.View>
   );
 }

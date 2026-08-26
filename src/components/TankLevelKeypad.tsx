@@ -33,6 +33,9 @@ function KeyButton({
   );
 }
 
+/** Blocked keys still execute a press — this one, which does nothing. */
+const NOOP = () => {};
+
 function ActionButton({
   label,
   onPress,
@@ -54,8 +57,16 @@ function ActionButton({
         variant === 'nav' && styles.navBtn,
         blocked && styles.actionBtnBlocked,
       ]}
-      onPress={onPress}
-      disabled={blocked}
+      // A blocked key must stay a live touch responder: with disabled={true}
+      // the TouchableOpacity releases the touch, MeasurementKeypadDismissOverlay
+      // sees the release as a blank-area tap, and the keypad dismiss-commits
+      // the draft (vc17 field defect). Keeping it enabled means it claims the
+      // touch exactly like every enabled key; the press itself is a no-op, so
+      // a blocked tap changes nothing — keypad open, field active, draft live.
+      onPress={blocked ? NOOP : onPress}
+      activeOpacity={blocked ? 1 : 0.2}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!blocked }}
     >
       <Text
         style={[

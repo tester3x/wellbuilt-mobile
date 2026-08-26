@@ -59,8 +59,8 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
   describe('2+6. Next enablement: valid level draft enables; BBLs stays inert', () => {
     it('Next blocked = !showNext || !canCommit', () => {
       expect(keypad).toMatch(/const nextBlocked = !showNext \|\| !canCommit;/);
-      // blocked ActionButtons are truly inert (TouchableOpacity disabled)
-      expect(keypad).toMatch(/disabled=\{blocked\}/);
+      // blocked ActionButtons absorb the touch and no-op (see inert suite below)
+      expect(keypad).toMatch(/onPress=\{blocked \? NOOP : onPress\}/);
       // showNext = the session advances to another field
       expect(ctx).toMatch(/showNext: !!session\?\.onNext/);
     });
@@ -185,10 +185,40 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
     });
   });
 
-  describe('15. disabled Done is fully inert', () => {
-    it('Done blocked = !canCommit || !doneAllowed, and blocked buttons are disabled', () => {
+  describe('15. blocked Done/Next are truly inert (vc17 field defect)', () => {
+    it('Done blocked = !canCommit || !doneAllowed', () => {
       expect(keypad).toMatch(/const doneBlocked = !canCommit \|\| !doneAllowed;/);
-      expect(keypad).toMatch(/disabled=\{blocked\}/);
+    });
+
+    it('blocked keys keep their touch target — no responder-releasing disabled={blocked}', () => {
+      // disabled={true} released the touch to MeasurementKeypadDismissOverlay,
+      // which dismiss-committed the draft as a blank-area tap. Blocked keys now
+      // stay enabled responders whose press is an explicit no-op.
+      expect(keypad).not.toMatch(/disabled=\{blocked\}/);
+      expect(keypad).toMatch(/const NOOP = \(\) => \{\};/);
+      expect(keypad).toMatch(/onPress=\{blocked \? NOOP : onPress\}/);
+    });
+
+    it('blocked keys stay rendered and dimmed with no press feedback', () => {
+      expect(keypad).toMatch(/blocked && styles\.actionBtnBlocked/);
+      expect(keypad).toMatch(/activeOpacity=\{blocked \? 1 : 0\.2\}/);
+      expect(keypad).toMatch(/actionBtnBlocked: \{\s*opacity: 0\.45,/);
+    });
+
+    it('accessibility still reports blocked keys as disabled', () => {
+      expect(keypad).toMatch(/accessibilityRole="button"/);
+      expect(keypad).toMatch(/accessibilityState=\{\{ disabled: !!blocked \}\}/);
+    });
+
+    it('enabled wiring is untouched: Done → commitDone, Next → commitNext', () => {
+      expect(keypad).toMatch(/<ActionButton label="Done" onPress=\{keypad\.commitDone\} variant="done" blocked=\{doneBlocked\} \/>/);
+      expect(keypad).toMatch(/<ActionButton label="Next" onPress=\{keypad\.commitNext\} variant="next" blocked=\{nextBlocked\} \/>/);
+    });
+
+    it('the dismiss overlay itself is unchanged — blank-area tap still dismisses', () => {
+      expect(ctx).toMatch(/const DISMISS_TAP_SLOP_PX = 12;/);
+      expect(ctx).toMatch(/onStartShouldSetResponder=\{\(event: GestureResponderEvent\) => \{/);
+      expect(ctx).toMatch(/ctx\.closeKeypad\(\);/);
     });
   });
 

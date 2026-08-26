@@ -98,6 +98,45 @@ export const computeBottomLevelHint = (
   return formatFeetInches(bottomLevel);
 };
 
+export type RecordLoadBlockReason = 'no_well' | 'missing_level' | 'missing_barrels';
+
+/**
+ * THE Record Load required-field validation authority. Extracted verbatim
+ * from handleSubmit's pre-flight checks (app/record.tsx) and now called by
+ * BOTH the submit path (to pick the rejection alert) and the keypad's Done
+ * gate (to dim Done until the form is complete) — one source, no drift.
+ *
+ * Existing rules, unchanged:
+ *  - no well selected → 'no_well'
+ *  - level unparseable AND well not down → 'missing_level'
+ *  - well not down AND barrels empty/non-numeric → 'missing_barrels'
+ *  - well down alone is a valid submission (level/barrels optional there)
+ * The future-time guard is NOT here: it stays a submit-time check with its
+ * interactive "Use current time" recovery dialog.
+ */
+export const getRecordLoadBlockReason = (form: {
+  wellName: string;
+  level: string;
+  barrels: string;
+  wellDown: boolean;
+}): RecordLoadBlockReason | null => {
+  if (!form.wellName) return 'no_well';
+  if (parseLevel(form.level) === null && !form.wellDown) return 'missing_level';
+  if (!form.wellDown && (!form.barrels || !/^\d+(\.\d+)?$/.test(form.barrels.trim()))) {
+    return 'missing_barrels';
+  }
+  return null;
+};
+
+/** Done-gate predicate: the whole Record Load form would pass submit's
+ *  required-field validation right now. */
+export const isRecordLoadSubmitReady = (form: {
+  wellName: string;
+  level: string;
+  barrels: string;
+  wellDown: boolean;
+}): boolean => getRecordLoadBlockReason(form) === null;
+
 /**
  * The value a measurement field is showing RIGHT NOW: the custom-keypad draft
  * while that field owns the active keypad session, else the committed form

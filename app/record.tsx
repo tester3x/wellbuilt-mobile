@@ -38,6 +38,8 @@ import {
   formatLevelDisplay,
   formatLevelForInput,
   getLevelHint,
+  getRecordLoadBlockReason,
+  isRecordLoadSubmitReady,
   liveMeasurementValue,
   parseLevel,
 } from '../src/utils/recordLoadHints';
@@ -490,22 +492,30 @@ function RecordScreenInner() {
   };
 
   const handleSubmit = async (committed?: { barrels?: string; level?: string }) => {
-    if (!wellName) {
+    const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
+    const levelValue = committed?.level ?? committedLevelRef.current ?? level;
+
+    // ONE required-field validation authority, shared with the keypad's Done
+    // gate (getRecordLoadBlockReason) — same checks, same order as always.
+    const blocked = getRecordLoadBlockReason({
+      wellName,
+      level: levelValue,
+      barrels: barrelsValue,
+      wellDown,
+    });
+    if (blocked === 'no_well') {
       alert.show("Error", "No well selected");
       return;
     }
-
-    const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
-    const levelValue = committed?.level ?? committedLevelRef.current ?? level;
-    const tankLevelFeet = parseLevel(levelValue);
-    if (tankLevelFeet === null && !wellDown) {
+    if (blocked === 'missing_level') {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingLevel'));
       return;
     }
-    if (!wellDown && (!barrelsValue || !/^\d+(\.\d+)?$/.test(barrelsValue.trim()))) {
+    if (blocked === 'missing_barrels') {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingBarrels'));
       return;
     }
+    const tankLevelFeet = parseLevel(levelValue);
 
     try {
       setIsSending(true);
@@ -813,6 +823,16 @@ function RecordScreenInner() {
   // Bottom level after pull: bottom = tankLevel - (bblsTaken / bblPerFoot)
   const bottomLevelHint = computeBottomLevelHint(liveLevel, liveBarrels, bblPerFoot);
 
+  // Keypad Done gate. New load: Done acts only when the WHOLE form would pass
+  // submit's required-field validation — evaluated from the same LIVE values
+  // as the hints (active keypad draft, committed state otherwise), through
+  // the same authority handleSubmit uses, so the gate can never disagree with
+  // the submit path. Edit mode: Done just finishes keypad entry (Save Edit is
+  // the explicit edit-submit control), so it stays draft-gated only.
+  const keypadDoneEnabled = isEditMode
+    ? true
+    : isRecordLoadSubmitReady({ wellName, level: liveLevel, barrels: liveBarrels, wellDown });
+
   // Title and button text based on mode
   const screenTitle = isEditMode ? t('recordExtra.editPull') : t('record.title');
   const submitButtonText = isEditMode
@@ -976,10 +996,6 @@ function RecordScreenInner() {
             variant="numeric"
             placeholder="140"
             style={styles.input}
-            // Go = commit + send, so it exists only where Done would send:
-            // new loads. Edit mode keeps the blank slot — Save Edit is the
-            // sole explicit edit-submit action.
-            showGoAction={!isEditMode}
             onDoneComplete={(formatted) => {
               committedBarrelsRef.current = formatted;
               setBarrels(formatted);
@@ -1084,7 +1100,7 @@ function RecordScreenInner() {
 
       {/* Custom Alert Modal */}
       <alert.AlertComponent />
-      <MeasurementKeypadSlot />
+      <MeasurementKeypadSlot doneEnabled={keypadDoneEnabled} />
     </View>
     </MeasurementKeypadDismissOverlay>
   );

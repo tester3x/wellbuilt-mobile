@@ -53,7 +53,11 @@ describe('WB-T numpad on Record Load measurement fields', () => {
   it('invalid or empty BBL drafts cannot submit', () => {
     expect(canCommitKeypadSession(createKeypadSession("10'6\"", 'numeric'))).toBe(false);
     expect(canCommitKeypadSession(createKeypadSession('abc', 'numeric'))).toBe(false);
-    expect(record).toMatch(/!wellDown && \(!barrelsValue \|\| !\/\^\\d\+\(\\\.\\d\+\)\?\$\/\.test\(barrelsValue\.trim\(\)\)\)/);
+    // barrels requirement now lives in the shared validation authority
+    // (recordLoadHints.getRecordLoadBlockReason), which handleSubmit consumes.
+    const hints = src('src/utils/recordLoadHints.ts');
+    expect(hints).toMatch(/!form\.wellDown && \(!form\.barrels \|\| !\/\^\\d\+\(\\\.\\d\+\)\?\$\/\.test\(form\.barrels\.trim\(\)\)\)/);
+    expect(record).toMatch(/getRecordLoadBlockReason\(\{/);
     expect(record).toMatch(/errorMissingBarrels/);
   });
 

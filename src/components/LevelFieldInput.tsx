@@ -55,9 +55,6 @@ interface LevelFieldInputProps {
   onBeforeOpen?: () => void;
   onDoneComplete?: (value: string) => void;
   onNextComplete?: (value: string) => void;
-  /** Offer the committing Done action as Go in the keypad's workflow slot.
-   *  Terminal submit-on-commit fields only (new-load BBLs). */
-  showGoAction?: boolean;
 }
 
 const MEASUREMENT_FONT = Platform.select({
@@ -79,7 +76,6 @@ const LevelFieldInput = forwardRef<LevelFieldInputHandle, LevelFieldInputProps>(
     onBeforeOpen,
     onDoneComplete,
     onNextComplete,
-    showGoAction = false,
   },
   ref,
 ) {
@@ -144,8 +140,7 @@ const LevelFieldInput = forwardRef<LevelFieldInputHandle, LevelFieldInputProps>(
           onNextComplete(formatted);
         }
       : undefined,
-    showGoAction,
-  }), [fieldKey, value, variant, onChange, onDoneComplete, onNextComplete, showGoAction]);
+  }), [fieldKey, value, variant, onChange, onDoneComplete, onNextComplete]);
 
   const openKeypadSession = useCallback((options?: {
     initialValue?: string;

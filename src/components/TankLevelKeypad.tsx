@@ -78,10 +78,14 @@ function actionLabelStyle(variant: string) {
 
 export interface TankLevelKeypadProps {
   visible: boolean;
+  /** The active session advances to another field — enables Next. Next is
+   *  ALWAYS rendered (uniform layout); false only dims it. */
   showNext?: boolean;
-  /** Show Go (commitDone semantics) in the workflow slot. Explicit opt-in per
-   *  session (showGoAction) — never implied by the absence of Next. */
-  showGo?: boolean;
+  /** Whether Done may act right now. The caller decides why (Record Load:
+   *  whole form complete/valid from live values); the keypad additionally
+   *  requires the active draft itself to be committable. Default true keeps
+   *  plain commit-gated Done. */
+  doneAllowed?: boolean;
 }
 
 /**
@@ -90,19 +94,21 @@ export interface TankLevelKeypadProps {
  * 7/27 — phone-style digit order (was calculator 789/456/123). Only the numeric
  * positions changed; the feet/inches/decimal (col 4) and Done/Next/Delete/nav
  * (col 5) keys keep their rows.
- * Row1: 1 2 3 ' Done
- * Row2: 4 5 6 " Next/Go/blank — Next when the session advances to another
- *   field (session.onNext set, e.g. Tank Level → BBLs); Go ONLY when the
- *   session explicitly opted in (showGoAction, e.g. new-load BBLs), carrying
- *   Done semantics (commitDone): commit the draft, then the field's onDone —
- *   on new-load BBLs that is onDoneComplete, the existing submit path.
- *   Neither (e.g. edit-mode BBLs) → blank placeholder, as before Go existed.
+ * Row1: 1 2 3 ' Done — gold completion key. Blocked unless the active draft
+ *   commits AND doneAllowed (caller-supplied gate; Record Load passes
+ *   whole-form readiness from live values, edit mode passes true).
+ * Row2: 4 5 6 " Next — always rendered so the keypad shape never changes
+ *   between fields; enabled only when the session advances to another field
+ *   (session.onNext, e.g. Tank Level → BBLs) and the draft commits. Terminal
+ *   fields (BBLs) show it dimmed/inert.
  * Row3: 7 8 9 . Delete
  * Row4: 0 SPACE(×2) < >
  */
-export default function TankLevelKeypad({ visible, showNext = true, showGo = false }: TankLevelKeypadProps) {
+export default function TankLevelKeypad({ visible, showNext = true, doneAllowed = true }: TankLevelKeypadProps) {
   const keypad = useMeasurementKeypad();
   const canCommit = keypad.canCommit;
+  const doneBlocked = !canCommit || !doneAllowed;
+  const nextBlocked = !showNext || !canCommit;
 
   if (!visible) return null;
 
@@ -117,7 +123,7 @@ export default function TankLevelKeypad({ visible, showNext = true, showGo = fal
           <KeyButton label="2" onPress={digit('2')} />
           <KeyButton label="3" onPress={digit('3')} />
           <KeyButton label="'" onPress={symbol("'")} />
-          <ActionButton label="Done" onPress={keypad.commitDone} variant="done" blocked={!canCommit} />
+          <ActionButton label="Done" onPress={keypad.commitDone} variant="done" blocked={doneBlocked} />
         </View>
 
         <View style={styles.row}>
@@ -125,13 +131,7 @@ export default function TankLevelKeypad({ visible, showNext = true, showGo = fal
           <KeyButton label="5" onPress={digit('5')} />
           <KeyButton label="6" onPress={digit('6')} />
           <KeyButton label='"' onPress={symbol('"')} />
-          {showNext ? (
-            <ActionButton label="Next" onPress={keypad.commitNext} variant="next" blocked={!canCommit} />
-          ) : showGo ? (
-            <ActionButton label="Go" onPress={keypad.commitDone} variant="next" blocked={!canCommit} />
-          ) : (
-            <View style={[styles.key, styles.nextPlaceholder]} />
-          )}
+          <ActionButton label="Next" onPress={keypad.commitNext} variant="next" blocked={nextBlocked} />
         </View>
 
         <View style={styles.row}>
@@ -208,10 +208,6 @@ const styles = StyleSheet.create({
   nextBtn: {
     backgroundColor: '#444',
     borderColor: '#555',
-  },
-  nextPlaceholder: {
-    backgroundColor: '#1a1a1a',
-    borderColor: '#2a2a2a',
   },
   deleteBtn: {
     backgroundColor: '#2a2a2a',

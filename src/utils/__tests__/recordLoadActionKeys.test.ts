@@ -7,145 +7,202 @@ import {
   createKeypadSession,
   type KeypadEditingState,
 } from '../measurementKeypadSession';
+import {
+  getRecordLoadBlockReason,
+  isRecordLoadSubmitReady,
+  liveMeasurementValue,
+} from '../recordLoadHints';
 
 const src = (rel: string) => readFileSync(join(__dirname, '../../..', rel), 'utf8');
 
 const key = (ch: string) => ({ label: ch, value: ch });
 const SPACE = { label: 'SPACE', action: 'space' as const };
 
-describe('Record Load workflow action key: Next (Tank Level) / Go (BBLs)', () => {
+const NEW_LOAD = { wellName: 'GS 3', wellDown: false };
+
+describe('Record Load keypad: uniform Next + form-gated Done', () => {
   const record = src('app/record.tsx');
   const keypad = src('src/components/TankLevelKeypad.tsx');
   const field = src('src/components/LevelFieldInput.tsx');
   const ctx = src('src/contexts/MeasurementKeypadContext.tsx');
+  const hints = src('src/utils/recordLoadHints.ts');
 
   const levelBlock = record.slice(record.indexOf('fieldKey={LEVEL_FIELD_KEY}'), record.indexOf('fieldKey={LEVEL_FIELD_KEY}') + 600);
-  const bblsBlock = record.slice(record.indexOf('fieldKey={BBLS_FIELD_KEY}'), record.indexOf('fieldKey={BBLS_FIELD_KEY}') + 1000);
+  const bblsBlock = record.slice(record.indexOf('fieldKey={BBLS_FIELD_KEY}'), record.indexOf('fieldKey={BBLS_FIELD_KEY}') + 700);
 
-  describe('1+5. the one existing action slot renders Next, Go, or blank by explicit session intent', () => {
-    it('same slot: Next when the session advances (onNext), Go only on explicit opt-in, else blank', () => {
-      expect(keypad).toMatch(/\{showNext \? \(\s*<ActionButton label="Next" onPress=\{keypad\.commitNext\} variant="next" blocked=\{!canCommit\} \/>\s*\) : showGo \? \(\s*<ActionButton label="Go" onPress=\{keypad\.commitDone\} variant="next" blocked=\{!canCommit\} \/>\s*\) : \(\s*<View style=\{\[styles\.key, styles\.nextPlaceholder\]\} \/>\s*\)\}/);
-      // showNext derives from the session having an onward field
-      expect(ctx).toMatch(/showNext: !!session\?\.onNext/);
-      // showGo requires explicit per-session opt-in — `no onNext` alone NEVER means Go
-      expect(ctx).toMatch(/showGo: !session\?\.onNext && !!session\?\.showGoAction/);
-      // Go is off unless the field asks for it
-      expect(field).toMatch(/showGoAction = false/);
-      expect(keypad).toMatch(/showGo = false/);
+  describe('1+5+8. uniform layout: Next and Done always rendered, on both fields', () => {
+    it('Next is rendered unconditionally — enabled state is the only variable', () => {
+      expect(keypad).toMatch(/<ActionButton label="Next" onPress=\{keypad\.commitNext\} variant="next" blocked=\{nextBlocked\} \/>/);
+      // no conditional rendering around the workflow slot anymore
+      expect(keypad).not.toMatch(/showNext \? \(/);
+      expect(keypad).not.toMatch(/nextPlaceholder/);
+      expect((keypad.match(/label="Next"/g) ?? []).length).toBe(1);
     });
 
-    it('Tank Level session has onNext (→ Next); BBLs opts into Go for new loads only', () => {
-      expect(levelBlock).toMatch(/onNextComplete=\{\(\) => \{\s*barrelsFieldRef\.current\?\.activateAsHandoffTarget\(\);/);
-      expect(levelBlock).not.toMatch(/showGoAction/);
-      expect(bblsBlock).not.toMatch(/onNextComplete/);
-      expect(bblsBlock).toMatch(/showGoAction=\{!isEditMode\}/);
-      // LevelFieldInput only sets session.onNext when onNextComplete is provided
-      expect(field).toMatch(/onNext: onNextComplete\s*\?\s*\(formatted: string\) => \{\s*onChange\(formatted\);\s*onNextComplete\(formatted\);\s*\}\s*: undefined/);
-    });
-
-    it('Go exists only on the keypad slot — no new form-level button', () => {
-      expect((keypad.match(/label="Go"/g) ?? []).length).toBe(1);
-      expect(record).not.toMatch(/label="Go"/);
-      expect(record).not.toMatch(/ActionButton/);
+    it('Done is rendered unconditionally in its existing gold position', () => {
+      expect(keypad).toMatch(/<ActionButton label="Done" onPress=\{keypad\.commitDone\} variant="done" blocked=\{doneBlocked\} \/>/);
+      expect((keypad.match(/label="Done"/g) ?? []).length).toBe(1);
     });
   });
 
-  describe('2. Next commits the level draft with existing commit/format behavior', () => {
-    it('level draft commits through commitKeypadSession (formatLevelOnCommit)', () => {
+  describe('7. Go does not exist', () => {
+    it('no Go key, no showGo/showGoAction anywhere in production source', () => {
+      for (const s of [record, keypad, field, ctx]) {
+        expect(s).not.toMatch(/label="Go"/);
+        expect(s).not.toMatch(/showGo/);
+      }
+    });
+  });
+
+  describe('2+6. Next enablement: valid level draft enables; BBLs stays inert', () => {
+    it('Next blocked = !showNext || !canCommit', () => {
+      expect(keypad).toMatch(/const nextBlocked = !showNext \|\| !canCommit;/);
+      // blocked ActionButtons are truly inert (TouchableOpacity disabled)
+      expect(keypad).toMatch(/disabled=\{blocked\}/);
+      // showNext = the session advances to another field
+      expect(ctx).toMatch(/showNext: !!session\?\.onNext/);
+    });
+
+    it('valid level draft commits (Next enabled); invalid blocks it', () => {
       let s: KeypadEditingState = createKeypadSession('', 'level');
       s = applyKeyToSession(s, key('1'));
       s = applyKeyToSession(s, key('0'));
       s = applyKeyToSession(s, SPACE);
       s = applyKeyToSession(s, key('8'));
       expect(canCommitKeypadSession(s)).toBe(true);
-      expect(commitKeypadSession(s)).toBe('10\'8"');
-    });
-
-    it('commitNext routes the committed value into the field before navigating', () => {
-      expect(ctx).toMatch(/const commitNext = useCallback\(\(\) => \{[\s\S]*?commitLeavingKeypadSession\(current, \{ advanceWorkflow: true \}\)/);
-      // advancing commit hands the committed draft to session.onNext,
-      // which (via LevelFieldInput) runs onChange(formatted) first
-      expect(ctx).toMatch(/if \(advanceWorkflow && current\.onNext\) \{\s*current\.onNext\(committed\);/);
-    });
-
-    it('invalid level drafts block the action key', () => {
       expect(canCommitKeypadSession(createKeypadSession("10'15", 'level'))).toBe(false);
-      expect(keypad).toMatch(/label="Next"[^/]*blocked=\{!canCommit\}/);
+    });
+
+    it('Tank Level session advances (onNext); BBLs never does → its Next is dimmed', () => {
+      expect(levelBlock).toMatch(/onNextComplete=\{\(\) => \{\s*barrelsFieldRef\.current\?\.activateAsHandoffTarget\(\);/);
+      expect(bblsBlock).not.toMatch(/onNextComplete/);
+      expect(field).toMatch(/onNext: onNextComplete\s*\?\s*\(formatted: string\) => \{\s*onChange\(formatted\);\s*onNextComplete\(formatted\);\s*\}\s*: undefined/);
     });
   });
 
-  describe('3. Next hands off to BBLs', () => {
-    it('onNextComplete activates the BBLs field through the existing keypad handoff', () => {
-      expect(levelBlock).toMatch(/activateAsHandoffTarget/);
-      expect(field).toMatch(/keypadCtx\.handoffToField\(\{/);
+  describe('3+4. Next commits, hands off, never submits', () => {
+    it('commitNext commits through the leaving-commit and routes to onNext', () => {
+      expect(ctx).toMatch(/const commitNext = useCallback\(\(\) => \{[\s\S]*?commitLeavingKeypadSession\(current, \{ advanceWorkflow: true \}\)/);
+      expect(ctx).toMatch(/if \(advanceWorkflow && current\.onNext\) \{\s*current\.onNext\(committed\);/);
+      expect(commitKeypadSession(createKeypadSession('10 8', 'level'))).toBe('10\'8"');
     });
-  });
 
-  describe('4. Next does not submit the load', () => {
     it('no submit call anywhere on the Tank Level field wiring', () => {
       expect(levelBlock).not.toMatch(/handleSubmit/);
       expect(levelBlock).not.toMatch(/onDoneComplete/);
     });
   });
 
-  describe('6. Go commits the active BBL draft before submit', () => {
-    it('commitDone commits the LIVE session draft, then hands that exact value to onDone', () => {
-      expect(ctx).toMatch(/const commitDone = useCallback[\s\S]*?const committed = commitKeypadSession\(\{\s*draft: current\.draft,[\s\S]*?current\.onDone\(committed\);/);
+  describe('9-13. Done gate = existing submit validation authority', () => {
+    it('9. missing required fields disable Done', () => {
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: '', barrels: '140' })).toBe(false);
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: '10 8', barrels: '' })).toBe(false);
+      expect(isRecordLoadSubmitReady({ wellName: '', level: '10 8', barrels: '140', wellDown: false })).toBe(false);
     });
 
-    it('record submits the formatted value it was handed (not stale state)', () => {
-      expect(bblsBlock).toMatch(/onDoneComplete=\{\(formatted\) => \{\s*committedBarrelsRef\.current = formatted;\s*setBarrels\(formatted\);\s*if \(!isEditMode\) \{\s*void handleSubmit\(\{ barrels: formatted \}\);/);
+    it('10. invalid live level draft disables Done', () => {
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: 'abc', barrels: '140' })).toBe(false);
+      // keypad-invalid level (inches > 11) is caught by the draft gate too
+      expect(canCommitKeypadSession(createKeypadSession("10'15", 'level'))).toBe(false);
     });
 
-    it('numeric commit yields the typed draft', () => {
+    it('11. invalid/empty live BBL draft disables Done', () => {
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: '10 8', barrels: '' })).toBe(false);
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: '10 8', barrels: 'abc' })).toBe(false);
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: '10 8', barrels: '14.' })).toBe(false);
+    });
+
+    it('12. optional fields never block: well-down submission stays valid with empty fields', () => {
+      // existing rule: a down well submits with no level/barrels
+      expect(isRecordLoadSubmitReady({ wellName: 'GS 3', level: '', barrels: '', wellDown: true })).toBe(true);
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: '10 8', barrels: '140' })).toBe(true);
+    });
+
+    it('13. Done flips enabled the moment the last live value becomes valid', () => {
       let s: KeypadEditingState = createKeypadSession('', 'numeric');
+      const readyFor = (state: KeypadEditingState) =>
+        isRecordLoadSubmitReady({
+          ...NEW_LOAD,
+          level: '10 8',
+          barrels: liveMeasurementValue('record-bbls-taken', '', 'record-bbls-taken', state.draft),
+        });
+      expect(readyFor(s)).toBe(false);          // empty draft → disabled
       s = applyKeyToSession(s, key('1'));
-      s = applyKeyToSession(s, key('4'));
-      s = applyKeyToSession(s, key('0'));
-      expect(commitKeypadSession(s)).toBe('140');
+      expect(readyFor(s)).toBe(true);           // first digit → enabled immediately
+      s = applyKeyToSession(s, { label: 'DELETE', action: 'delete' });
+      expect(readyFor(s)).toBe(false);          // backspace to empty → disabled again
     });
   });
 
-  describe('7+8. exactly one submission per Go press; duplicate protection intact', () => {
-    it('one onDoneComplete → one handleSubmit call', () => {
-      const done = record.slice(record.indexOf('onDoneComplete='), record.indexOf('onDoneComplete=') + 420);
-      expect(done.match(/handleSubmit\(/g)?.length).toBe(1);
+  describe('14. gating uses LIVE keypad drafts, same derivation as the hints', () => {
+    it('record feeds liveLevel/liveBarrels into the readiness predicate', () => {
+      expect(record).toMatch(/const liveLevel = liveMeasurementValue\(LEVEL_FIELD_KEY, level, keypad\.activeFieldKey, keypad\.draft\)/);
+      expect(record).toMatch(/const liveBarrels = liveMeasurementValue\(BBLS_FIELD_KEY, barrels, keypad\.activeFieldKey, keypad\.draft\)/);
+      expect(record).toMatch(/isRecordLoadSubmitReady\(\{ wellName, level: liveLevel, barrels: liveBarrels, wellDown \}\)/);
+      expect(record).toMatch(/<MeasurementKeypadSlot doneEnabled=\{keypadDoneEnabled\} \/>/);
+      // slot hands the gate to the keypad
+      expect(ctx).toMatch(/<TankLevelKeypad visible showNext=\{showNext\} doneAllowed=\{doneEnabled\} \/>/);
+    });
+  });
+
+  describe('15. disabled Done is fully inert', () => {
+    it('Done blocked = !canCommit || !doneAllowed, and blocked buttons are disabled', () => {
+      expect(keypad).toMatch(/const doneBlocked = !canCommit \|\| !doneAllowed;/);
+      expect(keypad).toMatch(/disabled=\{blocked\}/);
+    });
+  });
+
+  describe('16+17. enabled Done commits the latest draft and submits exactly once', () => {
+    it('commitDone commits the LIVE session draft, then hands that exact value to onDone', () => {
+      expect(ctx).toMatch(/const commitDone = useCallback[\s\S]*?const committed = commitKeypadSession\(\{\s*draft: current\.draft,[\s\S]*?current\.onDone\(committed\);/);
+      expect(bblsBlock).toMatch(/onDoneComplete=\{\(formatted\) => \{\s*committedBarrelsRef\.current = formatted;\s*setBarrels\(formatted\);\s*if \(!isEditMode\) \{\s*void handleSubmit\(\{ barrels: formatted \}\);/);
     });
 
-    it('commitDone clears the session after onDone, so a repeat press early-returns', () => {
+    it('one Done press → one submission; repeat press finds no session', () => {
+      const done = record.slice(record.indexOf('onDoneComplete='), record.indexOf('onDoneComplete=') + 420);
+      expect(done.match(/handleSubmit\(/g)?.length).toBe(1);
       expect(ctx).toMatch(/current\.onDone\(committed\);\s*sessionRef\.current = null;/);
       expect(ctx).toMatch(/if \(!current \|\| !canCommitKeypadSession\(\{/);
     });
   });
 
-  describe('edit mode: no Go; Done and Save Edit keep their existing roles', () => {
-    it('edit-mode BBLs session does not opt into Go → blank slot as before', () => {
-      // showGoAction={!isEditMode}: edit mode passes false, so showGo stays
-      // false and the slot falls through to the blank placeholder branch.
-      expect(bblsBlock).toMatch(/showGoAction=\{!isEditMode\}/);
-      expect(keypad).toMatch(/styles\.nextPlaceholder/);
+  describe('18. submit path rejects the same invalid cases via the same authority', () => {
+    it('handleSubmit routes rejection alerts through getRecordLoadBlockReason', () => {
+      expect(record).toMatch(/const blocked = getRecordLoadBlockReason\(\{\s*wellName,\s*level: levelValue,\s*barrels: barrelsValue,\s*wellDown,\s*\}\)/);
+      expect(record).toMatch(/blocked === 'no_well'/);
+      expect(record).toMatch(/blocked === 'missing_level'/);
+      expect(record).toMatch(/blocked === 'missing_barrels'/);
+      expect(record).toMatch(/errorMissingLevel/);
+      expect(record).toMatch(/errorMissingBarrels/);
     });
 
-    it('edit-mode drafts still commit/flush normally (Done + Save Edit flush)', () => {
-      // Gold Done key unchanged — same commitDone op, always present.
-      expect(keypad).toMatch(/<ActionButton label="Done" onPress=\{keypad\.commitDone\} variant="done" blocked=\{!canCommit\} \/>/);
-      // Save Edit flushes the active draft before submitting.
-      expect(record).toMatch(/const flushed = keypad\.flushActiveDraft\(\);\s*void handleSubmit\(\{/);
+    it('the authority still applies the original checks verbatim', () => {
+      expect(hints).toMatch(/parseLevel\(form\.level\) === null && !form\.wellDown/);
+      expect(hints).toMatch(/!form\.wellDown && \(!form\.barrels \|\| !\/\^\\d\+\(\\\.\\d\+\)\?\$\/\.test\(form\.barrels\.trim\(\)\)\)/);
+      expect(getRecordLoadBlockReason({ wellName: '', level: '10 8', barrels: '140', wellDown: false })).toBe('no_well');
+      expect(getRecordLoadBlockReason({ ...NEW_LOAD, level: '', barrels: '140' })).toBe('missing_level');
+      expect(getRecordLoadBlockReason({ ...NEW_LOAD, level: '10 8', barrels: 'x' })).toBe('missing_barrels');
+      expect(getRecordLoadBlockReason({ ...NEW_LOAD, level: '10 8', barrels: '140' })).toBeNull();
     });
+  });
 
-    it('Save Edit is the sole explicit edit-submit path — keypad never sends in edit mode', () => {
-      // onDoneComplete (the only keypad→submit bridge) is gated to new loads.
+  describe('19+20. edit mode: Done finishes entry only; Save Edit is the submit authority', () => {
+    it('edit-mode Done bypasses the form gate (commit-only), never submits', () => {
+      expect(record).toMatch(/const keypadDoneEnabled = isEditMode\s*\?\s*true\s*:\s*isRecordLoadSubmitReady/);
       expect(bblsBlock).toMatch(/if \(!isEditMode\) \{\s*void handleSubmit\(\{ barrels: formatted \}\);/);
-      // Exactly one handleSubmit call site inside the edit-mode button block.
+    });
+
+    it('Save Edit flushes active drafts and is the only edit-mode submit call site', () => {
+      expect(record).toMatch(/const flushed = keypad\.flushActiveDraft\(\);\s*void handleSubmit\(\{/);
       const editBtn = record.slice(record.indexOf('styles.buttonEdit'), record.indexOf('styles.buttonEdit') + 500);
       expect(editBtn.match(/handleSubmit\(/g)?.length).toBe(1);
     });
   });
 
-  describe('9. keypad layout and normal keys unchanged', () => {
+  describe('layout/keys otherwise unchanged (no redesign)', () => {
     it('4 rows, same digits/symbols/action keys', () => {
       expect((keypad.match(/<View style=\{styles\.row\}>/g) ?? []).length).toBe(4);
-      for (const label of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', "'", '.', 'SPACE', 'DELETE', 'Done', '‹', '›']) {
+      for (const label of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', "'", '.', 'SPACE', 'DELETE', 'Done', 'Next', '‹', '›']) {
         expect(keypad).toContain(`label="${label}"`);
       }
       expect(keypad).toContain('label=\'"\''); // inches key uses single-quoted JSX
@@ -154,6 +211,6 @@ describe('Record Load workflow action key: Next (Tank Level) / Go (BBLs)', () =>
     });
   });
 
-  // 10. Live Bottom/hint behavior from c8a624c is covered by
-  // recordLoadLiveHints.test.ts, which runs in the same suite.
+  // 21+22: recordLoadLiveHints.test.ts and bblNumpadParity.test.ts run in the
+  // same suite and lock the live Bottom/hint behavior and keypad parity.
 });

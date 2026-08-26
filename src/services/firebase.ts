@@ -1575,36 +1575,46 @@ export const getWellNameList = async (): Promise<{ name: string; route?: string 
   }));
 };
 
+// Restore (2026-08-25): the tank-performance screen regressed when the
+// double-tap read was repointed from the authenticated RTDB path
+// performance/{wellKey} (last-good 0c70265) to the callable
+// getDriverWellPerformance, which is NOT deployed in this project — so the
+// screen opened but errored. The Cloud Function still WRITES
+// performance/{wellKey}/rows/..., and the deployed `performance` RTDB rule is
+// unchanged (.read:true), so the direct authenticated read still returns the
+// existing data. This restores the former data source WITHOUT re-adding the
+// removed placeholder gate and WITHOUT depending on the undeployed callable.
+// Date-range narrowing is applied downstream in getWellPerformance
+// (filterRowsByDate); fromDate/toDate are accepted for signature compatibility.
+// If the governed driver-scoped callable (getDriverWellPerformance) is later
+// deployed, the read can be routed through it again — that is backend work.
 export const getRawWellData = async (
   wellName: string,
-  fromDate?: Date,
-  toDate?: Date,
+  _fromDate?: Date,
+  _toDate?: Date,
 ): Promise<RawWellData> => {
-  const { authorizedCallable } = await import('./firebaseAuthSession');
-  const payload: Record<string, unknown> = { wellName };
-  const from = toIsoDate(fromDate);
-  const to = toIsoDate(toDate);
-  if (from) payload.fromDate = from;
-  if (to) payload.toDate = to;
-  const result = await authorizedCallable<DriverWellPerformanceFetch>(
-    'getDriverWellPerformance',
-    payload,
-  );
-  const rows: RawPullData[] = [];
-  if (Array.isArray(result?.rows)) {
-    for (const row of result.rows) {
-      const r = row as RawPullData;
-      if (r && typeof r.d === 'string' && Number.isFinite(r.a) && Number.isFinite(r.p) && r.a > 0 && r.p > 0) {
-        rows.push({ d: r.d, a: r.a, p: r.p });
+  try {
+    const wellKey = wellName.replace(/\s+/g, '_');
+    const perfData = await firebaseGet(`performance/${wellKey}`);
+    const rows: RawPullData[] = [];
+    if (perfData && perfData.rows) {
+      for (const [, row] of Object.entries(perfData.rows)) {
+        const r = row as RawPullData;
+        if (r && typeof r.d === 'string' && Number.isFinite(r.a) && Number.isFinite(r.p) && r.a > 0 && r.p > 0) {
+          rows.push({ d: r.d, a: r.a, p: r.p });
+        }
       }
     }
+    return {
+      wellName: (perfData && perfData.wellName) || wellName,
+      totalPulls: rows.length,
+      updated: (perfData && perfData.updated) || '',
+      rows,
+    };
+  } catch (error) {
+    console.error('[Performance] Error reading well:', error);
+    return { wellName, totalPulls: 0, updated: '', rows: [] };
   }
-  return {
-    wellName: result?.wellName || wellName,
-    totalPulls: rows.length,
-    updated: result?.updated || '',
-    rows,
-  };
 };
 
 export const getWellPerformance = async (

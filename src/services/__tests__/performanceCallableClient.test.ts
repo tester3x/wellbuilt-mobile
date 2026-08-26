@@ -21,8 +21,14 @@ describe('Performance route/data contract', () => {
     expect(detail).not.toMatch(/PERFORMANCE_READS_AVAILABLE/);
     expect(list).not.toMatch(/updateRequired/);
     expect(detail).not.toMatch(/updateRequired/);
-    expect(firebase).toMatch(/getDriverWellPerformance/);
-    expect(firebase).not.toMatch(/firebaseGet\([`'"]performance/);
+  });
+
+  it('reads performance from the authenticated RTDB path, not the undeployed callable', () => {
+    // Restored 2026-08-25: the double-tap read uses the existing authenticated
+    // RTDB path performance/{wellKey} (last-good), not the undeployed
+    // getDriverWellPerformance callable which left the screen erroring.
+    expect(firebase).toMatch(/firebaseGet\(`performance\/\$\{wellKey\}`\)/);
+    expect(firebase).not.toMatch(/authorizedCallable<[^>]*>\(\s*[`'"]getDriverWellPerformance/);
   });
 
   it('performance data exists → getWellPerformance still computes metrics', () => {

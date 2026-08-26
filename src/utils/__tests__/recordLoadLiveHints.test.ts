@@ -146,7 +146,9 @@ describe('Record Load live hints (2026-08-26 field regressions)', () => {
     it('BBLs field keeps its numeric keypad wiring and Done-submits new pulls', () => {
       expect(record).toMatch(/fieldKey=\{BBLS_FIELD_KEY\}/);
       expect(record).toMatch(/variant="numeric"/);
-      const done = record.slice(record.indexOf('onDoneComplete='), record.indexOf('onDoneComplete=') + 420);
+      // scope to the BBLs field — Tank Level now has its own onDoneComplete
+      const bbls = record.slice(record.indexOf('fieldKey={BBLS_FIELD_KEY}'));
+      const done = bbls.slice(bbls.indexOf('onDoneComplete='), bbls.indexOf('onDoneComplete=') + 420);
       expect(done).toMatch(/handleSubmit\(\{ barrels: formatted \}\)/);
       expect(done.match(/handleSubmit\(/g)?.length).toBe(1);
     });

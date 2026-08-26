@@ -957,7 +957,10 @@ function RecordScreenInner() {
         {/* Tank Level - custom measurement keypad (level variant), same
             LevelFieldInput system as BBLs. No Android QWERTY: the keypad's
             feet/inches/space/decimal keys cover every accepted entry format.
-            Next hands off to the BBLs field (Tank Level → Next → BBLs). */}
+            Next = navigation only (Tank Level → Next → BBLs, never submits).
+            Done = finish the complete load from HERE: whole-form gated
+            (keypadDoneEnabled), commits this live draft, submits with the
+            already committed BBL value — no detour back through BBLs. */}
         <View style={styles.section}>
           <Text style={styles.label}>{t('record.tankLevelSection')}</Text>
           <LevelFieldInput
@@ -972,6 +975,13 @@ function RecordScreenInner() {
             style={styles.input}
             onNextComplete={() => {
               barrelsFieldRef.current?.activateAsHandoffTarget();
+            }}
+            onDoneComplete={(formatted) => {
+              committedLevelRef.current = formatted;
+              setLevel(formatted);
+              if (!isEditMode) {
+                void handleSubmit({ level: formatted, barrels: committedBarrelsRef.current });
+              }
             }}
           />
           <Text style={styles.levelHint}>{levelHint}</Text>
@@ -1010,9 +1020,11 @@ function RecordScreenInner() {
         </View>
       </ScrollView>
 
-      {/* New pulls submit via the keyboard's Go key — no footer button, which
-          keeps the info box + form visible above the keyboard. Edit mode keeps
-          Submit + Cancel (it has no info box and needs a back-out). */}
+      {/* New pulls submit via the keypad's gold Done key (enabled only when
+          the whole form is complete/valid, from either measurement field) —
+          no footer button, which keeps the info box + form visible above the
+          keypad. Edit mode keeps Submit + Cancel (it has no info box and
+          needs a back-out). */}
       {isEditMode && (
         <View style={styles.buttonBlock}>
           <TouchableOpacity

@@ -27,8 +27,10 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
   const ctx = src('src/contexts/MeasurementKeypadContext.tsx');
   const hints = src('src/utils/recordLoadHints.ts');
 
-  const levelBlock = record.slice(record.indexOf('fieldKey={LEVEL_FIELD_KEY}'), record.indexOf('fieldKey={LEVEL_FIELD_KEY}') + 600);
+  const levelBlock = record.slice(record.indexOf('fieldKey={LEVEL_FIELD_KEY}'), record.indexOf('fieldKey={LEVEL_FIELD_KEY}') + 1100);
   const bblsBlock = record.slice(record.indexOf('fieldKey={BBLS_FIELD_KEY}'), record.indexOf('fieldKey={BBLS_FIELD_KEY}') + 700);
+  // The Next handler alone — Done behavior is asserted separately, never conflated.
+  const levelNextHandler = levelBlock.slice(levelBlock.indexOf('onNextComplete='), levelBlock.indexOf('onDoneComplete='));
 
   describe('1+5+8. uniform layout: Next and Done always rendered, on both fields', () => {
     it('Next is rendered unconditionally — enabled state is the only variable', () => {
@@ -87,9 +89,47 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
       expect(commitKeypadSession(createKeypadSession('10 8', 'level'))).toBe('10\'8"');
     });
 
-    it('no submit call anywhere on the Tank Level field wiring', () => {
-      expect(levelBlock).not.toMatch(/handleSubmit/);
-      expect(levelBlock).not.toMatch(/onDoneComplete/);
+    it('Tank Level Next handler is navigation ONLY — no submit call inside it', () => {
+      expect(levelNextHandler).toMatch(/barrelsFieldRef\.current\?\.activateAsHandoffTarget\(\);/);
+      expect(levelNextHandler).not.toMatch(/handleSubmit/);
+    });
+  });
+
+  describe('Tank Level Done finishes a complete new load from the level field', () => {
+    it('level Done commits the LIVE level draft and submits it with the committed BBL value', () => {
+      expect(levelBlock).toMatch(
+        /onDoneComplete=\{\(formatted\) => \{\s*committedLevelRef\.current = formatted;\s*setLevel\(formatted\);\s*if \(!isEditMode\) \{\s*void handleSubmit\(\{ level: formatted, barrels: committedBarrelsRef\.current \}\);/,
+      );
+      // handleSubmit consumes the fresh value synchronously — no dependency
+      // on setLevel having rendered
+      expect(record).toMatch(/const levelValue = committed\?\.level \?\? committedLevelRef\.current \?\? level;/);
+    });
+
+    it('exactly one submission per level Done press; edit mode never submits from it', () => {
+      const levelDone = levelBlock.slice(levelBlock.indexOf('onDoneComplete='));
+      expect(levelDone.match(/handleSubmit\(/g)?.length).toBe(1);
+      expect(levelDone).toMatch(/if \(!isEditMode\) \{/);
+    });
+
+    it('correction flow: level active + committed BBLs → Done eligible, no BBLs detour needed', () => {
+      // Driver re-opens Tank Level after BBLs is filled: readiness = live
+      // level draft + committed barrels → Done enabled from the level field.
+      // session opens with the existing value selected (select-all-on-entry);
+      // DELETE clears it and the driver retypes the corrected level
+      let s: KeypadEditingState = createKeypadSession('10 8', 'level');
+      s = applyKeyToSession(s, { label: 'DELETE', action: 'delete' });
+      s = applyKeyToSession(s, key('1'));
+      s = applyKeyToSession(s, key('0'));
+      s = applyKeyToSession(s, SPACE);
+      s = applyKeyToSession(s, key('9'));
+      const liveLevel = liveMeasurementValue('record-tank-level', '10 8', 'record-tank-level', s.draft);
+      expect(liveLevel).toBe('10 9');
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: liveLevel, barrels: '140' })).toBe(true);
+      // …but with BBLs still missing, level Done stays disabled
+      expect(isRecordLoadSubmitReady({ ...NEW_LOAD, level: liveLevel, barrels: '' })).toBe(false);
+      // and the Done path itself never routes through the BBLs field
+      const levelDone = levelBlock.slice(levelBlock.indexOf('onDoneComplete='));
+      expect(levelDone).not.toMatch(/activateAsHandoffTarget/);
     });
   });
 
@@ -159,8 +199,8 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
     });
 
     it('one Done press → one submission; repeat press finds no session', () => {
-      const done = record.slice(record.indexOf('onDoneComplete='), record.indexOf('onDoneComplete=') + 420);
-      expect(done.match(/handleSubmit\(/g)?.length).toBe(1);
+      const bblsDone = bblsBlock.slice(bblsBlock.indexOf('onDoneComplete='));
+      expect(bblsDone.match(/handleSubmit\(/g)?.length).toBe(1);
       expect(ctx).toMatch(/current\.onDone\(committed\);\s*sessionRef\.current = null;/);
       expect(ctx).toMatch(/if \(!current \|\| !canCommitKeypadSession\(\{/);
     });

@@ -44,7 +44,9 @@ describe('WB-T numpad on Record Load measurement fields', () => {
   });
 
   it('one Done press produces one committed BBL value and one submission', () => {
-    const done = record.slice(record.indexOf('onDoneComplete='), record.indexOf('onDoneComplete=') + 420);
+    // scope to the BBLs field — Tank Level has its own onDoneComplete now
+    const bbls = record.slice(record.indexOf('fieldKey={BBLS_FIELD_KEY}'));
+    const done = bbls.slice(bbls.indexOf('onDoneComplete='), bbls.indexOf('onDoneComplete=') + 420);
     expect(done).toMatch(/handleSubmit\(\{ barrels: formatted \}\)/);
     expect(done.match(/handleSubmit\(/g)?.length).toBe(1);
     expect(record).toMatch(/if \(!isEditMode\)/);

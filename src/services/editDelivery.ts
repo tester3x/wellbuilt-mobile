@@ -20,6 +20,7 @@
 // deterministic per original.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { readJsonPath } from './backendAccess';
 import { diagnoseThrown, formatDiagnosis } from './connectionDiagnosis';
 import { uploadEditPacket } from './firebase';
@@ -120,25 +121,32 @@ export async function getEditOperations(): Promise<EditOperation[]> {
   return loadOps();
 }
 
-const editEventRandom = () => Math.random().toString(36).slice(2, 10);
+/**
+ * Mint one unique correction identity: a crypto-secure V4 UUID (expo-crypto,
+ * RFC4122), prefixed so it is clearly an edit-event id, firebase-key-safe, and
+ * within the backend's 8–128 char bound. No Math.random, no time/value/well
+ * derivation — two corrections to the SAME original are always distinct. This
+ * is the literal `editEventId` the governed backend requires and the key its
+ * durable receipt is correlated by.
+ */
+export function mintEditEventId(): string {
+  return `editevt_${Crypto.randomUUID()}`;
+}
 
 /**
- * Mint one unique correction identity. The base keeps the human-correlatable
- * `edit_<origTs>_<well>` prefix (so it lines up with the original pull), and a
- * collision-safe unique component (monotonic time + random) guarantees two
- * distinct corrections to the SAME original are always distinct — never a bare
- * original-id / well / value / timestamp derivation. Mirrors the project's
- * existing mintPacketId identity style; introduces no new dependency.
+ * Mint the durable LOCAL queue identity for one correction. Distinct from the
+ * packet's editEventId (never the packet identity), but correlatable to the
+ * original via the historical `editop_<original>` prefix, and unique per
+ * correction so two corrections to one original are two durable operations.
  */
-export function mintEditEventId(originalPacketTimestamp: string, wellName: string): string {
-  const ts = (originalPacketTimestamp || '').slice(0, 15);
-  const well = (wellName || '').replace(/\s+/g, '');
-  return `edit_${ts}_${well}_${Date.now().toString(36)}${editEventRandom()}`;
+function mintOpId(originalPacketId: string): string {
+  return `editop_${originalPacketId}_${Crypto.randomUUID().slice(0, 8)}`;
 }
 
 /** The receipt/server-correlation key for an operation: a v2 op correlates by
- *  its unique editEventId; a legacy op falls back to the historical
- *  deterministic key so stored operations keep resolving without a remint. */
+ *  its unique editEventId; a genuinely-legacy stored op (no editEventId) falls
+ *  back to the historical deterministic key so it keeps resolving old receipts
+ *  without a remint. New operations always carry an editEventId. */
 function editCorrelationKey(op: EditOperation): string {
   if (op.editEventId) return op.editEventId;
   const ts = (op.payload.originalPacketTimestamp || '').slice(0, 15);
@@ -147,12 +155,13 @@ function editCorrelationKey(op: EditOperation): string {
 
 function newOp(payload: EditPacketParams, state: EditOpState, blockedReason?: string): EditOperation {
   const now = Date.now();
-  // Each call is one freshly-submitted correction → mint one new identity. The
-  // durable queue key IS the unique editEventId, so a later correction to the
-  // same original appends a distinct record instead of overwriting the earlier.
-  const editEventId = mintEditEventId(payload.originalPacketTimestamp, payload.wellName);
+  // Each call is one freshly-submitted correction → mint one new packet identity
+  // (editEventId) AND a distinct local queue identity (opId). A later correction
+  // to the same original appends a distinct record rather than overwriting the
+  // earlier one; local operation identity is never the packet identity.
+  const editEventId = mintEditEventId();
   return {
-    opId: editEventId,
+    opId: mintOpId(payload.originalPacketId),
     editEventId,
     originalPacketId: payload.originalPacketId,
     wellName: payload.wellName,
@@ -336,6 +345,21 @@ async function processEditOperationsInner(
     }
 
     if (op.state === 'edit_pending') {
+      // Serial per original: never SEND a later correction while an earlier
+      // correction to the SAME original is still transiently in flight
+      // (edit_pending awaiting delivery, or edit_submitted awaiting confirmation).
+      // Terminal states (edit_blocked / edit_rejected / edited) do NOT block the
+      // queue — a parked earlier correction lets the next one proceed. Ordered by
+      // durable local creation time; neither correction is ever dropped.
+      const isEarlier = (o: EditOperation) =>
+        o.createdAt < op.createdAt || (o.createdAt === op.createdAt && o.opId < op.opId);
+      const earlierInFlight = ops.some(o =>
+        o.opId !== op.opId
+        && o.originalPacketId === op.originalPacketId
+        && isEarlier(o)
+        && (o.state === 'edit_pending' || o.state === 'edit_submitted'));
+      if (earlierInFlight) { held++; continue; }
+
       // Re-check the original's fate every pass.
       const queue = await getQueuedPackets();
       if (queue.some(p => p.type === 'pull' && p.packetId === op.originalPacketId)) {

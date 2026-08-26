@@ -78,18 +78,46 @@ beforeEach(async () => {
 });
 
 describe('edit command packet', () => {
+  const EVID = 'editevt_00000000-0000-4000-8000-000000000001';
+
+  it('emits exactly the 36d37e5 allowlist with a literal editEventId and no v2 fields', () => {
+    const cmd = buildWbmEditCommand({ ...editParams(), editEventId: EVID });
+    // Exact allowlist fields (time omitted here); nothing else.
+    expect(Object.keys(cmd).sort()).toEqual([
+      'bblsTaken', 'editEventId', 'idempotencyKey', 'originalPacketId',
+      'packetId', 'requestType', 'tankLevelFeet', 'wellDown', 'wellName',
+    ]);
+    expect(cmd.requestType).toBe('edit');
+    expect(cmd.editEventId).toBe(EVID);          // literal identity field
+    expect(cmd.idempotencyKey).toBe(EVID);       // idempotencyKey === editEventId
+    expect(cmd.originalPacketId).toBe(PID);
+    expect(cmd.packetId).toBe(PID);
+    // No rejected-engine fields ever serialized.
+    expect('schemaVersion' in cmd).toBe(false);
+    expect('editedFields' in cmd).toBe(false);
+    expect('correctionCreatedAtUTC' in cmd).toBe(false);
+    // Never the legacy deterministic key.
+    expect(cmd.idempotencyKey).not.toBe(wbmEditIdempotencyKey(PID.slice(0, 15), 'Gabriel 2'));
+  });
+
   it('omits operational time unless the user edited it and never uses now', () => {
-    const omitted = buildWbmEditCommand(editParams());
+    const omitted = buildWbmEditCommand({ ...editParams(), editEventId: EVID });
     expect(commandOmitsOperationalTime(omitted)).toBe(true);
     expect(JSON.stringify(omitted)).not.toMatch(/2026-08-23T1[6-9]:/);
-    const keyed = wbmEditIdempotencyKey(PID.slice(0, 15), 'Gabriel 2');
-    expect(omitted.idempotencyKey).toBe(keyed);
     const timed = buildWbmEditCommand({
       ...editParams(),
+      editEventId: EVID,
       dateTimeUTC: '2026-08-23T16:40:00.000Z',
       dateTime: '8/23/2026 11:40 AM',
     });
     expect(timed.dateTimeUTC).toBe('2026-08-23T16:40:00.000Z');
+  });
+
+  it('fails closed for a missing / malformed / colliding editEventId (no legacy fallback)', () => {
+    expect(() => buildWbmEditCommand(editParams())).toThrow('edit_event_id_required');
+    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: 'short' })).toThrow('edit_event_id_required');
+    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: 'has/slash/unsafe' })).toThrow('edit_event_id_required');
+    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: PID })).toThrow('edit_event_id_collides_with_original');
   });
 });
 

@@ -154,10 +154,11 @@ describe('case 2 — original submitted but unresolved', () => {
     const ops = rawOps();
     expect(ops).toHaveLength(1);
     expect(ops[0].state).toBe('edit_pending');
-    // v2 identity: one unique correction event; opId IS its editEventId.
-    expect(ops[0].editEventId).toBeTruthy();
-    expect(ops[0].opId).toBe(ops[0].editEventId);
-    expect(ops[0].editEventId).toMatch(new RegExp(`^edit_${PID.slice(0, 15)}_Gunslinger3_`));
+    // Distinct identities: a crypto editEventId (packet identity) and a separate
+    // local opId (queue identity) — the opId is NEVER the packet identity.
+    expect(ops[0].editEventId).toMatch(/^editevt_[0-9a-f-]{36}$/);
+    expect(ops[0].opId).toMatch(new RegExp(`^editop_${PID}_`));
+    expect(ops[0].opId).not.toBe(ops[0].editEventId);
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edit_pending');
     expect(entry.status).not.toBe('edited');
@@ -350,7 +351,7 @@ describe('legacy identity + snapshot metadata + ordering', () => {
     await submitPullEdit(editParams(PID));
     const meta = await getPendingEditForWell('Gunslinger 3');
     expect(meta).toMatchObject({ state: 'edit_pending', originalPacketId: PID });
-    expect(meta!.opId).toBe(rawOps()[0].editEventId); // opId is the unique correction identity
+    expect(meta!.opId).toBe(rawOps()[0].opId); // local queue identity (not the packet editEventId)
     expect(await getPendingEditForWell('Atlas 1')).toBeNull();
   });
 

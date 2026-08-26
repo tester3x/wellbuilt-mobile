@@ -1,8 +1,8 @@
-// Distinct edit-event identity (2026-08-26). Proves two genuinely different
-// corrections to ONE original pull coexist as two durable operations with two
-// distinct editEventId values — neither overwriting the other — exercised
-// through the REAL submit/persist/hydrate/transport-command/receipt paths.
-// All storage/network mocked; no Firebase writes; transport is NOT activated.
+// Governed WB-M pull-edit client recovery (2026-08-26). Exercises the REAL
+// submit/persist/serialize/retry/receipt paths of editDelivery — no hand-built
+// mirror. Storage + network are mocked; the authenticated transport is mocked
+// at the uploadEditPacket boundary. expo-crypto is auto-mocked (src/__mocks__)
+// with deterministic, distinct V4-shaped UUIDs.
 const mockStore: Record<string, string> = {};
 const mockOnline = { value: true };
 
@@ -21,7 +21,9 @@ jest.mock('@react-native-community/netinfo', () => ({
     addEventListener: jest.fn(() => () => undefined),
   },
 }));
-const mockedUploadEdit = jest.fn(async () => ({ wellName: 'Gunslinger 3' })); // resolves WITHOUT a commit proof
+// Transport stub: resolves WITHOUT a commit proof by default (→ edit_submitted,
+// never 'edited'), so a pending callable response is never treated as applied.
+const mockedUploadEdit = jest.fn(async (..._args: any[]): Promise<any> => ({ wellName: 'Gunslinger 3' }));
 jest.mock('../firebase', () => ({
   uploadTankPacket: jest.fn(),
   uploadEditPacket: (...a: unknown[]) => mockedUploadEdit(...(a as [])),
@@ -34,7 +36,6 @@ import {
   EditPacketParams, EditOperation, getEditOperations, processEditOperations,
   submitPullEdit, mintEditEventId,
 } from '../editDelivery';
-import { buildWbmEditCommand } from '../wbmEditCommand';
 import { addPullToHistory, clearPullHistory, getPullHistory, setPullSyncStatus } from '../pullHistory';
 
 const EDIT_OPS_KEY = '@wellbuilt_edit_ops';
@@ -50,6 +51,7 @@ const makeFetch = (paths: Record<string, unknown>) =>
   }) as unknown as typeof fetch;
 const rawOps = (): EditOperation[] => JSON.parse(mockStore[EDIT_OPS_KEY] || '[]');
 const processedOriginal = { [`packets/processed/${PID}`]: { packetId: PID } };
+const sentUploadIds = () => mockedUploadEdit.mock.calls.map((c: any[]) => c[0].editEventId);
 
 beforeEach(async () => {
   Object.keys(mockStore).forEach((k) => delete mockStore[k]);
@@ -61,48 +63,31 @@ beforeEach(async () => {
   await setPullSyncStatus(PID, 'sent'); // original processed → corrections deliver
 });
 
-async function submitCorrection(bbls: number) {
+async function submit(bbls: number) {
   return submitPullEdit(editParams(bbls), makeFetch(processedOriginal));
 }
 
-describe('distinct edit-event identity — two corrections to one original', () => {
-  it('#1/#6 one correction → one durable op + one editEventId, original id preserved', async () => {
-    await submitCorrection(140);
-    const ops = rawOps();
-    expect(ops).toHaveLength(1);
-    expect(ops[0].editEventId).toBeTruthy();
-    expect(ops[0].opId).toBe(ops[0].editEventId);
-    expect(ops[0].originalPacketId).toBe(PID); // never reminted
+describe('WB-M governed edit client — identity, durability, serialization', () => {
+  it('mints a crypto UUID editEventId, persists it BEFORE transport, distinct from a local opId', async () => {
+    let persistedAtTransport: EditOperation | undefined;
+    mockedUploadEdit.mockImplementationOnce(async (arg: any) => {
+      // At the moment of transport, the op + its editEventId are already durable.
+      persistedAtTransport = rawOps().find((o) => o.editEventId === arg.editEventId);
+      throw new Error('network request failed'); // transient — stays pending
+    });
+    await submit(140);
+    const op = rawOps()[0];
+    expect(op.editEventId).toMatch(/^editevt_[0-9a-f-]{36}$/); // crypto V4-shaped, no Math.random
+    expect(op.opId).toMatch(new RegExp(`^editop_${PID}_`));    // local identity, correlatable
+    expect(op.opId).not.toBe(op.editEventId);                  // never the packet identity
+    expect(op.originalPacketId).toBe(PID);                     // canonical original retained
+    expect(persistedAtTransport?.editEventId).toBe(op.editEventId); // persisted before transport
   });
 
-  it('#3/#4/#6 two DIFFERENT corrections → two distinct editEventIds, both stored, same original', async () => {
-    await submitCorrection(140);
-    await submitCorrection(155);
-    const ops = rawOps();
-    expect(ops).toHaveLength(2);
-    expect(ops[0].editEventId).not.toBe(ops[1].editEventId);       // distinct identities
-    expect(ops[0].opId).not.toBe(ops[1].opId);                     // neither overwrote the other
-    expect(new Set(ops.map((o) => o.payload.bblsTaken)).size).toBe(2); // two genuinely different corrections
-    expect(ops.every((o) => o.originalPacketId === PID)).toBe(true); // same original, never reminted
-  });
-
-  it('#5 each outbound command carries its OWN persisted editEventId as idempotencyKey', async () => {
-    await submitCorrection(140);
-    await submitCorrection(155);
-    const ops = rawOps();
-    // The real submit path threads each op's editEventId into uploadEditPacket.
-    const sentIds = mockedUploadEdit.mock.calls.map((c: any[]) => c[0].editEventId);
-    expect(sentIds).toEqual(expect.arrayContaining(ops.map((o) => o.editEventId)));
-    // The command builder maps that identity to the idempotencyKey.
-    const cmd = buildWbmEditCommand({ ...editParams(140), editEventId: ops[0].editEventId });
-    expect(cmd.idempotencyKey).toBe(ops[0].editEventId);
-  });
-
-  it('#2 retrying one correction reuses the same op + editEventId (never a new id)', async () => {
-    mockedUploadEdit.mockRejectedValueOnce(new Error('network request failed')); // transient
-    await submitCorrection(140);
+  it('a retry reuses the same persisted editEventId (never a new id)', async () => {
+    mockedUploadEdit.mockRejectedValueOnce(new Error('network request failed'));
+    await submit(140);
     const op1 = rawOps()[0];
-    expect(op1.attempts).toBeGreaterThanOrEqual(1);
     const id = op1.editEventId;
     await processEditOperations(makeFetch(processedOriginal), { forceOpId: op1.opId }); // retry
     const after = rawOps();
@@ -111,81 +96,112 @@ describe('distinct edit-event identity — two corrections to one original', () 
     expect(after[0].opId).toBe(op1.opId);
   });
 
-  it('#9/#10 an applied receipt terminates ONLY the matching correction', async () => {
-    await submitCorrection(140);
-    await submitCorrection(155);
-    const [opA, opB] = rawOps();
-    // Receipt for A only (keyed by A's editEventId).
-    await processEditOperations(makeFetch({
-      ...processedOriginal,
-      [`packets/processed/${opA.editEventId}`]: { committed: true, editCommitted: true, editCommittedReceiptKey: 'r-A' },
-    }));
-    const afterA = rawOps();
-    expect(afterA).toHaveLength(1);
-    expect(afterA[0].editEventId).toBe(opB.editEventId); // B survives; A's receipt did not terminate B
-    // Now B's own receipt.
-    await processEditOperations(makeFetch({
-      ...processedOriginal,
-      [`packets/processed/${opB.editEventId}`]: { committed: true, editCommitted: true, editCommittedReceiptKey: 'r-B' },
-    }));
-    expect(rawOps()).toHaveLength(0);
-  });
-
-  it('#8 a 404/throw transport result preserves BOTH operations (no loss)', async () => {
-    mockedUploadEdit.mockRejectedValue(new Error('Callable ingestWbmEdit failed (404)'));
-    await submitCorrection(140);
-    await submitCorrection(155);
+  it('two corrections to one original are two durable operations with distinct identities', async () => {
+    await submit(140);
+    await submit(155);
     const ops = rawOps();
-    expect(ops).toHaveLength(2);                                   // neither lost
-    expect(ops.map((o) => o.editEventId).filter(Boolean).length).toBe(2);
-    expect(ops.every((o) => o.state !== 'edited')).toBe(true);     // no false success
+    expect(ops).toHaveLength(2);
+    expect(ops[0].originalPacketId).toBe(PID);
+    expect(ops[1].originalPacketId).toBe(PID);
+    expect(ops[0].editEventId).not.toBe(ops[1].editEventId);
+    expect(ops[0].opId).not.toBe(ops[1].opId);
+    expect(new Set(ops.map((o) => o.payload.bblsTaken)).size).toBe(2);
   });
 
-  it('#14 no operation is marked edited without a durable applied receipt', async () => {
-    await submitCorrection(140);
-    await submitCorrection(155);
-    // uploaded (edit_submitted) but no receipt written → never 'edited'
+  it('same-original corrections are transported SERIALLY in creation order (B waits for A)', async () => {
+    await submit(140); // A uploads (edit_submitted, no commit proof)
+    await submit(155); // B held — A still in flight
+    const [a, b] = rawOps().sort((x, y) => x.createdAt - y.createdAt || (x.opId < y.opId ? -1 : 1));
+    expect(a.state).toBe('edit_submitted');
+    expect(b.state).toBe('edit_pending');
+    // Only A was ever sent, and its literal editEventId reached the transport.
+    expect(sentUploadIds()).toEqual([a.editEventId]);
+  });
+
+  it('a transient failure blocks the later same-original correction without deleting either', async () => {
+    mockedUploadEdit.mockRejectedValue(new Error('network request failed')); // A never lands
+    await submit(140);
+    await submit(155);
     await processEditOperations(makeFetch(processedOriginal));
-    expect(rawOps().every((o) => o.state !== 'edited')).toBe(true);
+    const ops = rawOps();
+    expect(ops).toHaveLength(2);                       // neither deleted
+    const [a, b] = ops.sort((x, y) => x.createdAt - y.createdAt || (x.opId < y.opId ? -1 : 1));
+    expect(a.state).toBe('edit_pending');              // A still trying
+    expect(b.state).toBe('edit_pending');              // B still waiting behind A
+    expect(sentUploadIds().every((id: string) => id === a.editEventId)).toBe(true); // B never sent
+  });
+
+  it('a terminal rejection PARKS A (evidence kept) and lets the next correction proceed', async () => {
+    await submit(140); // A → edit_submitted
+    await submit(155); // B → edit_pending (held)
+    const [a, b] = rawOps().sort((x, y) => x.createdAt - y.createdAt || (x.opId < y.opId ? -1 : 1));
+    // A is terminally rejected by the server; then the queue may advance to B.
+    await processEditOperations(makeFetch({
+      ...processedOriginal,
+      [`packets/rejected/${a.editEventId}`]: { reason: 'forged_well', readableReason: 'well mismatch' },
+    }));
+    const afterA = rawOps().find((o) => o.opId === a.opId)!;
+    expect(afterA.state).toBe('edit_rejected');            // parked
+    expect(afterA.rejectionReason).toContain('forged_well'); // evidence preserved
+    // B is no longer blocked by A (A is terminal) → it delivers.
+    await processEditOperations(makeFetch(processedOriginal));
+    const afterB = rawOps().find((o) => o.opId === b.opId)!;
+    expect(afterB.state).toBe('edit_submitted');
+    expect(sentUploadIds()).toContain(b.editEventId);
+    expect(rawOps().find((o) => o.opId === a.opId)!.state).toBe('edit_rejected'); // A never resurrected
+  });
+
+  it('an applied receipt for A can NEVER complete B (receipts correlate by literal editEventId)', async () => {
+    // Seed two independent edit_submitted operations (bypassing serialization for
+    // the setup) so we can prove receipt correlation is per-editEventId.
+    const now = Date.now();
+    const mk = (evid: string, opid: string, bbls: number): EditOperation => ({
+      opId: opid, editEventId: evid, originalPacketId: PID, wellName: 'Gunslinger 3',
+      payload: editParams(bbls), state: 'edit_submitted',
+      createdAt: now, updatedAt: now, attempts: 1, lastAttemptAt: now, lastError: null,
+    });
+    const A = mk('editevt_aaaaaaaa-0000-4000-8000-000000000001', 'editop_A', 140);
+    const B = mk('editevt_bbbbbbbb-0000-4000-8000-000000000002', 'editop_B', 155);
+    mockStore[EDIT_OPS_KEY] = JSON.stringify([A, B]);
+    // Only A's receipt exists (keyed by A's editEventId).
+    await processEditOperations(makeFetch({
+      ...processedOriginal,
+      [`packets/processed/${A.editEventId}`]: { committed: true, editCommitted: true, editCommittedReceiptKey: 'r-A' },
+    }));
+    const ops = rawOps();
+    expect(ops.find((o) => o.opId === 'editop_A')).toBeUndefined(); // A confirmed + removed
+    const bAfter = ops.find((o) => o.opId === 'editop_B')!;
+    expect(bAfter).toBeTruthy();                 // B survives — A's receipt did NOT complete it
+    expect(bAfter.state).not.toBe('edited');
+  });
+
+  it('a pending callable response is not treated as applied', async () => {
+    mockedUploadEdit.mockResolvedValue({ queued: true, committed: false, wellName: 'Gunslinger 3' });
+    await submit(140);
+    expect(rawOps()[0].state).toBe('edit_submitted');           // uploaded, awaiting proof
+    expect(rawOps()[0].state).not.toBe('edited');
     expect((await getPullHistory())[0].status).not.toBe('edited');
   });
 
-  it('#7 app remount preserves both identities (fresh module, same storage)', async () => {
-    await submitCorrection(140);
-    await submitCorrection(155);
-    const before = rawOps().map((o) => o.editEventId).sort();
+  it('app remount preserves both identities (fresh module, same storage)', async () => {
+    await submit(140);
+    await submit(155);
+    const before = rawOps().map((o) => ({ opId: o.opId, editEventId: o.editEventId })).sort((x, y) => (x.opId < y.opId ? -1 : 1));
     jest.resetModules();
     const fresh = require('../editDelivery') as typeof import('../editDelivery');
-    const ops = await fresh.getEditOperations();
-    expect(ops).toHaveLength(2);
-    expect(ops.map((o) => o.editEventId).sort()).toEqual(before); // no remint on hydrate
-    expect(ops.every((o) => o.originalPacketId === PID)).toBe(true);
+    const ops = (await fresh.getEditOperations())
+      .map((o) => ({ opId: o.opId, editEventId: o.editEventId }))
+      .sort((x, y) => (x.opId < y.opId ? -1 : 1));
+    expect(ops).toEqual(before); // no remint on hydrate
   });
 
-  it('#11/#12 legacy op hydrates without reminting and coexists with a new v2 correction', async () => {
-    // Seed a legacy operation (opId = editop_<original>, NO editEventId).
-    const legacy: EditOperation = {
-      opId: `editop_${PID}`, originalPacketId: PID, wellName: 'Gunslinger 3',
-      payload: editParams(150), state: 'edit_pending',
-      createdAt: 1, updatedAt: 1, attempts: 0, lastAttemptAt: null, lastError: null,
-    };
-    mockStore[EDIT_OPS_KEY] = JSON.stringify([legacy]);
-    const hydrated = await getEditOperations();
-    expect(hydrated[0].opId).toBe(`editop_${PID}`);   // identity retained
-    expect(hydrated[0].editEventId).toBeUndefined();  // not reminted
-    // A later v2 correction to the SAME original coexists.
-    await submitCorrection(160);
-    const ops = rawOps();
-    expect(ops).toHaveLength(2);
-    expect(ops.some((o) => o.opId === `editop_${PID}` && !o.editEventId)).toBe(true); // legacy intact
-    expect(ops.some((o) => !!o.editEventId && o.opId === o.editEventId)).toBe(true);  // v2 alongside
-  });
-
-  it('#13 rapid submissions cannot collide — mintEditEventId is unique', () => {
+  it('mintEditEventId is unique and firebase-key-safe; no Math.random derivation', () => {
     const ids = new Set<string>();
-    for (let i = 0; i < 500; i++) ids.add(mintEditEventId(PID.slice(0, 15), 'Gunslinger 3'));
+    for (let i = 0; i < 500; i++) ids.add(mintEditEventId());
     expect(ids.size).toBe(500);
-    // Every id keeps the correlatable prefix + a unique component.
-    for (const id of ids) expect(id).toMatch(/^edit_20260721_120600_Gunslinger3_.+/);
+    for (const id of ids) {
+      expect(id).toMatch(/^editevt_[0-9a-f-]{36}$/);
+      expect(id).not.toMatch(/[.#$\[\]/]/); // firebase-key-safe
+    }
   });
 });

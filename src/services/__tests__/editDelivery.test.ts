@@ -154,7 +154,10 @@ describe('case 2 — original submitted but unresolved', () => {
     const ops = rawOps();
     expect(ops).toHaveLength(1);
     expect(ops[0].state).toBe('edit_pending');
-    expect(ops[0].opId).toBe(`editop_${PID}`);       // stable op identity
+    // v2 identity: one unique correction event; opId IS its editEventId.
+    expect(ops[0].editEventId).toBeTruthy();
+    expect(ops[0].opId).toBe(ops[0].editEventId);
+    expect(ops[0].editEventId).toMatch(new RegExp(`^edit_${PID.slice(0, 15)}_Gunslinger3_`));
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edit_pending');
     expect(entry.status).not.toBe('edited');
@@ -259,7 +262,7 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted');
-    const editKey = `edit_${PID.slice(0, 15)}_Gunslinger3`;
+    const editKey = rawOps()[0].editEventId!; // v2: receipts correlate by the op's unique editEventId
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID }, // no editedAt
       [`packets/rejected/${editKey}`]: { reason: 'ORIGINAL_PACKET_NOT_FOUND', readableReason: 'original missing' },
@@ -346,7 +349,8 @@ describe('legacy identity + snapshot metadata + ordering', () => {
     await seedHistory(PID, 'submitted');
     await submitPullEdit(editParams(PID));
     const meta = await getPendingEditForWell('Gunslinger 3');
-    expect(meta).toEqual({ opId: `editop_${PID}`, state: 'edit_pending', originalPacketId: PID });
+    expect(meta).toMatchObject({ state: 'edit_pending', originalPacketId: PID });
+    expect(meta!.opId).toBe(rawOps()[0].editEventId); // opId is the unique correction identity
     expect(await getPendingEditForWell('Atlas 1')).toBeNull();
   });
 
@@ -444,7 +448,7 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     await seedHistory(PID, 'sent');
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
-    const editKey = `edit_${PID.slice(0, 15)}_Gunslinger3`;
+    const editKey = rawOps()[0].editEventId!; // v2: receipts correlate by the op's unique editEventId
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID },
       [`packets/processed/${editKey}`]: {
@@ -462,7 +466,7 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     await seedHistory(PID, 'sent');
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
-    const editKey = `edit_${PID.slice(0, 15)}_Gunslinger3`;
+    const editKey = rawOps()[0].editEventId!; // v2: receipts correlate by the op's unique editEventId
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID },
       [`packets/incoming/${editKey}`]: { packetId: editKey },

@@ -518,6 +518,7 @@ export const uploadEditPacket = async (params: {
   tankLevelFeet: number;
   bblsTaken: number;
   wellDown: boolean;
+  editEventId?: string;      // per-correction identity (idempotency key)
 }) => {
   const {
     originalPacketTimestamp,
@@ -528,6 +529,7 @@ export const uploadEditPacket = async (params: {
     tankLevelFeet,
     bblsTaken,
     wellDown,
+    editEventId,
   } = params;
 
   // Get device timezone (IANA format like "America/Chicago")
@@ -543,8 +545,10 @@ export const uploadEditPacket = async (params: {
     bblsTaken,
     wellDown,
     timezone,
+    editEventId,
   });
-  const editId = wbmEditIdempotencyKey(originalPacketTimestamp, wellName);
+  // The command's own idempotency identity — per-correction when present.
+  const editId = (packet.idempotencyKey as string) || wbmEditIdempotencyKey(originalPacketTimestamp, wellName);
 
   const { secureSubmitFieldCommand } = await import('./secureOperationalApi');
   const commandResult = await secureSubmitFieldCommand(packet);

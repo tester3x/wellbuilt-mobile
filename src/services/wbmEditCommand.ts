@@ -14,6 +14,10 @@ export type WbmEditCommandInput = {
   bblsTaken: number;
   wellDown: boolean;
   timezone?: string;
+  /** Unique per-correction identity. When present it is the command's
+   *  idempotencyKey (distinct corrections → distinct commands; retries of one
+   *  correction reuse it). Absent for legacy ops → historical deterministic key. */
+  editEventId?: string;
 };
 
 export function wbmEditIdempotencyKey(originalPacketTimestamp: string, wellName: string): string {
@@ -30,7 +34,9 @@ export function buildWbmEditCommand(input: WbmEditCommandInput): Record<string, 
     tankLevelFeet: input.tankLevelFeet,
     bblsTaken: input.bblsTaken,
     wellDown: input.wellDown === true,
-    idempotencyKey: wbmEditIdempotencyKey(input.originalPacketTimestamp, input.wellName),
+    // Per-correction identity when supplied (distinct corrections stay distinct);
+    // otherwise the historical deterministic key (legacy backward compatibility).
+    idempotencyKey: input.editEventId || wbmEditIdempotencyKey(input.originalPacketTimestamp, input.wellName),
   };
   const dateTimeUTC = (input.dateTimeUTC || '').trim();
   const dateTime = (input.dateTime || '').trim();

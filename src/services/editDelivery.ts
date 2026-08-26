@@ -46,6 +46,10 @@ export interface EditPacketParams {
   tankLevelFeet: number;
   bblsTaken: number;
   wellDown: boolean;
+  /** This correction's unique event identity, carried to the transport command
+   *  as the idempotency key. Optional for backward compatibility with legacy
+   *  operations (which fall back to the historical deterministic key). */
+  editEventId?: string;
 }
 
 export type EditOpState =
@@ -58,10 +62,16 @@ export type EditOpState =
 //  attempts/lastError; history shows edit_failed past the threshold)
 
 export interface EditOperation {
-  /** Stable operation identity — one per original pull, reused verbatim on
-   *  every retry (the server incoming key edit_<origTs>_<well> is equally
-   *  deterministic, so replays are idempotent). */
+  /** Durable local queue-record identity. For v2 corrections this equals the
+   *  op's own editEventId (unique per correction). Legacy operations keep their
+   *  historical `editop_<originalPacketId>` value and are NEVER reminted. */
   opId: string;
+  /** Unique identity of ONE correction event: minted once when the correction
+   *  is first submitted, persisted before transport, reused verbatim on every
+   *  retry, and DISTINCT for a later correction to the same original. Absent on
+   *  legacy operations (they correlate by the historical deterministic key).
+   *  Two distinct corrections to one original therefore coexist as two records. */
+  editEventId?: string;
   originalPacketId: string;
   wellName: string;
   payload: EditPacketParams;
@@ -110,10 +120,40 @@ export async function getEditOperations(): Promise<EditOperation[]> {
   return loadOps();
 }
 
+const editEventRandom = () => Math.random().toString(36).slice(2, 10);
+
+/**
+ * Mint one unique correction identity. The base keeps the human-correlatable
+ * `edit_<origTs>_<well>` prefix (so it lines up with the original pull), and a
+ * collision-safe unique component (monotonic time + random) guarantees two
+ * distinct corrections to the SAME original are always distinct — never a bare
+ * original-id / well / value / timestamp derivation. Mirrors the project's
+ * existing mintPacketId identity style; introduces no new dependency.
+ */
+export function mintEditEventId(originalPacketTimestamp: string, wellName: string): string {
+  const ts = (originalPacketTimestamp || '').slice(0, 15);
+  const well = (wellName || '').replace(/\s+/g, '');
+  return `edit_${ts}_${well}_${Date.now().toString(36)}${editEventRandom()}`;
+}
+
+/** The receipt/server-correlation key for an operation: a v2 op correlates by
+ *  its unique editEventId; a legacy op falls back to the historical
+ *  deterministic key so stored operations keep resolving without a remint. */
+function editCorrelationKey(op: EditOperation): string {
+  if (op.editEventId) return op.editEventId;
+  const ts = (op.payload.originalPacketTimestamp || '').slice(0, 15);
+  return `edit_${ts}_${op.wellName.replace(/\s+/g, '')}`;
+}
+
 function newOp(payload: EditPacketParams, state: EditOpState, blockedReason?: string): EditOperation {
   const now = Date.now();
+  // Each call is one freshly-submitted correction → mint one new identity. The
+  // durable queue key IS the unique editEventId, so a later correction to the
+  // same original appends a distinct record instead of overwriting the earlier.
+  const editEventId = mintEditEventId(payload.originalPacketTimestamp, payload.wellName);
   return {
-    opId: `editop_${payload.originalPacketId}`,
+    opId: editEventId,
+    editEventId,
     originalPacketId: payload.originalPacketId,
     wellName: payload.wellName,
     payload,
@@ -336,7 +376,10 @@ async function processEditOperationsInner(
       op.lastAttemptAt = nowMs;
       op.updatedAt = nowMs;
       try {
-        const uploadResult = await uploadEditPacket(op.payload);
+        // Carry THIS correction's persisted editEventId as the command's
+        // idempotency identity so retries are idempotent per-correction and a
+        // later correction to the same original is a distinct command.
+        const uploadResult = await uploadEditPacket({ ...op.payload, editEventId: op.editEventId });
         if (confirmNewSecureEdit(uploadResult)) {
           await markConfirmed(op);
           confirmed++;
@@ -383,8 +426,10 @@ async function processEditOperationsInner(
         confirmed++;
         continue;
       }
-      const wellClean = op.wellName.replace(/\s+/g, '');
-      const editKey = `edit_${op.payload.originalPacketTimestamp}_${wellClean}`;
+      // Correlate ONLY this correction's own receipt/records (v2: its unique
+      // editEventId; legacy: the historical deterministic key). A receipt for a
+      // different correction can never terminate this operation.
+      const editKey = editCorrelationKey(op);
       const processedEdit = await readPath(`packets/processed/${editKey}`, fetchFn);
       if (confirmNewSecureEdit(processedEdit.data)) {
         await markConfirmed(op);

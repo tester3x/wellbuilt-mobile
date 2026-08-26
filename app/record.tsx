@@ -4,15 +4,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Keyboard,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,7 +32,18 @@ import {
   useMeasurementKeypad,
 } from '../src/contexts/MeasurementKeypadContext';
 import LevelFieldInput, { type LevelFieldInputHandle } from '../src/components/LevelFieldInput';
+import {
+  computeBottomLevelHint,
+  formatFeetInches,
+  formatLevelDisplay,
+  formatLevelForInput,
+  getLevelHint,
+  liveMeasurementValue,
+  parseLevel,
+} from '../src/utils/recordLoadHints';
 
+// Stable field keys for the two Record Load measurement fields.
+const LEVEL_FIELD_KEY = 'record-tank-level';
 const BBLS_FIELD_KEY = 'record-bbls-taken';
 
 // Key prefix for persisting draft form data (per-well)
@@ -45,80 +53,8 @@ const DRAFT_STORAGE_PREFIX = 'wellbuilt_draft_';
 const getDraftKey = (wellName: string) => `${DRAFT_STORAGE_PREFIX}${wellName.replace(/\s+/g, '_')}`;
 
 
-// Parse level input - handles multiple formats:
-// "6.4" → 6.4 feet (decimal feet - for quick entry)
-// "6 4" → 6' 4" (space separated, integer inches)
-// "6 4.5" → 6' 4.5" (space separated, fractional inches for precision)
-// "6'4" or "6'4\"" → 6' 4"
-// "6'4.5" → 6' 4.5" (fractional inches)
-// "6" → 6' 0"
-const parseLevel = (input: string): number | null => {
-  // Keep ONLY digits, dots, and spaces. Everything else (quotes, backticks, primes,
-  // smart quotes, unicode symbols, whatever iOS/OneUI invents next) becomes a space.
-  // This makes parsing immune to any keyboard symbol variation.
-  const stripped = input
-    .replace(/[^\d.\s]/g, ' ')  // anything that isn't a digit, dot, or space → space
-    .replace(/\s+/g, ' ')       // collapse multiple spaces
-    .trim();
-
-  if (!stripped) return null;
-
-  // Check for space-separated feet and inches: "10 4" or "10 4.5"
-  const spaceMatch = stripped.match(/^(\d+)\s+(\d+(?:\.\d+)?)$/);
-  if (spaceMatch) {
-    const ft = parseInt(spaceMatch[1], 10);
-    const inch = parseFloat(spaceMatch[2]);
-    return ft + inch / 12;
-  }
-
-  // Check for pure decimal with no space: 6.4 means 6.4 feet (decimal feet)
-  // This is different from "6 4" which means 6 feet 4 inches
-  if (stripped.includes('.') && !stripped.includes(' ')) {
-    const val = parseFloat(stripped);
-    return isNaN(val) ? null : val;
-  }
-
-  // Plain number - treat as feet only: 6 → 6' 0"
-  const val = parseInt(stripped, 10);
-  return isNaN(val) ? null : val;
-};
-
-// Format level for display - floors to whole inches
-// Always floor so timestamp backdating math works correctly
-// Driver sees conservative level, math uses precise timestamp adjustment
-const formatLevelDisplay = (feet: number): string => {
-  // Add small epsilon to handle floating point precision (e.g., 23.9999... → 24)
-  const totalInches = Math.floor(feet * 12 + 0.0001);
-  const ft = Math.floor(totalInches / 12);
-  const inches = totalInches % 12;
-  return `${ft}'${inches}"`;
-};
-
-// Format hint based on current input - shows floored display value
-// Driver sees what they'll see everywhere else in the app
-const getLevelHint = (input: string, defaultHint: string, invalidHint: string): string => {
-  const trimmed = input.trim();
-  if (!trimmed) return defaultHint;
-
-  const parsed = parseLevel(trimmed);
-  if (parsed === null) return invalidHint;
-
-  // Show the floored display value (what they'll see everywhere)
-  return `= ${formatLevelDisplay(parsed)}`;
-};
-
-// Format feet to display string (alias for consistency)
-const formatFeetInches = formatLevelDisplay;
-
-// Format level as input string (feet inches with space)
-// Always floor to match display everywhere
-const formatLevelForInput = (feet: number): string => {
-  // Add small epsilon to handle floating point precision (e.g., 23.9999... → 24)
-  const totalInches = Math.floor(feet * 12 + 0.0001);
-  const ft = Math.floor(totalInches / 12);
-  const inches = totalInches % 12;
-  return `${ft} ${inches}`;
-};
+// Level parse/format helpers live in src/utils/recordLoadHints.ts (extracted
+// verbatim so live-draft hint derivation is unit-testable).
 
 // Parse datetime string like "12/13/2025 5:30 PM" to Date
 const parseDateTimeString = (dateTimeStr: string): Date => {
@@ -234,16 +170,13 @@ function RecordScreenInner() {
   const loadLineRef = useRef<number>(0);
   const wellIsDownRef = useRef<boolean>(false);
 
-  const levelRef = useRef<TextInput>(null);
   const barrelsFieldRef = useRef<LevelFieldInputHandle>(null);
   const committedBarrelsRef = useRef('');
-  const scrollViewRef = useRef<ScrollView>(null);
+  // Committed tank level, readable synchronously at submit time (mirror of
+  // committedBarrelsRef): a level flushed from the active keypad draft must
+  // count immediately, before React state has re-rendered.
+  const committedLevelRef = useRef('');
   const barrelsInputY = useRef<number>(0);
-  // Keyboard-aware scroll: track current offset + which field is focused so we
-  // can scroll by the MEASURED overlap (never a device-specific constant).
-  const scrollYRef = useRef<number>(0);
-  const focusedFieldRef = useRef<TextInput | null>(null);
-  const { height: winHeight } = useWindowDimensions();
   const hasDraftLoaded = useRef<boolean>(false);
   // Original displayed minute when entering edit mode. If the user submits
   // without changing the displayed minute we suppress dateTimeUTC/dateTime in
@@ -390,45 +323,9 @@ function RecordScreenInner() {
     }
   }, [isEditMode, editDateTime, editLevel, editBbls, editWellDown]);
 
-  const handleLevelFocus = () => {
-    focusedFieldRef.current = levelRef.current;
-  };
-
-  const openBblsKeypad = () => {
-    barrelsFieldRef.current?.focus();
-  };
-
-  // Keyboard-aware scroll. On show, measure the focused field and scroll up by
-  // EXACTLY the amount it overlaps the keyboard — never more. On a screen with
-  // room (e.g. tall foldable cover) the overlap is <= 0, so nothing moves and
-  // the info box stays put; on a short screen (e.g. iPhone SE) it nudges just
-  // enough to reveal the field. On hide, restore the top so the info box
-  // returns. Per-platform events + real keyboard height → no device constants.
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvt, (e: any) => {
-      const kbH = e?.endCoordinates?.height || 0;
-      const field = focusedFieldRef.current;
-      if (!kbH || !field) return;
-      setTimeout(() => {
-        field.measureInWindow((_x: number, y: number, _w: number, h: number) => {
-          const overlap = (y + h + 16) - (winHeight - kbH); // field bottom vs keyboard top (+16 margin)
-          if (overlap > 0) {
-            scrollViewRef.current?.scrollTo({ y: scrollYRef.current + overlap, animated: true });
-          }
-        });
-      }, 50);
-    });
-    const hideSub = Keyboard.addListener(hideEvt, () => {
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [winHeight]);
+  // Native-keyboard-aware scroll machinery removed: both measurement fields
+  // now use the custom keypad (showSoftInputOnFocus=false), so the native soft
+  // keyboard never opens on this screen and there is no overlap to correct.
 
   // Load well status data (only for new pulls, not edits)
   useEffect(() => {
@@ -592,14 +489,15 @@ function RecordScreenInner() {
     setTempDateTime(now);
   };
 
-  const handleSubmit = async (committed?: { barrels?: string }) => {
+  const handleSubmit = async (committed?: { barrels?: string; level?: string }) => {
     if (!wellName) {
       alert.show("Error", "No well selected");
       return;
     }
 
     const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
-    const tankLevelFeet = parseLevel(level);
+    const levelValue = committed?.level ?? committedLevelRef.current ?? level;
+    const tankLevelFeet = parseLevel(levelValue);
     if (tankLevelFeet === null && !wellDown) {
       alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingLevel'));
       return;
@@ -904,20 +802,16 @@ function RecordScreenInner() {
     }
   };
 
-  const levelHint = getLevelHint(level, t('record.tankLevelHint'), t('record.invalidFormat'));
+  // Live values: while a field owns the active custom-keypad session its
+  // visible value is the keypad DRAFT — hints must derive from that so they
+  // update on every number/backspace, not only after Done/commit.
+  const liveLevel = liveMeasurementValue(LEVEL_FIELD_KEY, level, keypad.activeFieldKey, keypad.draft);
+  const liveBarrels = liveMeasurementValue(BBLS_FIELD_KEY, barrels, keypad.activeFieldKey, keypad.draft);
 
-  // Calculate bottom level after pull
-  const getBottomLevelHint = (): string | null => {
-    const tankLevel = parseLevel(level);
-    const bblsTaken = parseFloat(barrels);
-    if (tankLevel === null || isNaN(bblsTaken) || bblsTaken <= 0) return null;
+  const levelHint = getLevelHint(liveLevel, t('record.tankLevelHint'), t('record.invalidFormat'));
 
-    const feetPulled = bblsTaken / bblPerFoot;
-    const bottomLevel = Math.max(tankLevel - feetPulled, 0);
-    return formatFeetInches(bottomLevel);
-  };
-
-  const bottomLevelHint = getBottomLevelHint();
+  // Bottom level after pull: bottom = tankLevel - (bblsTaken / bblPerFoot)
+  const bottomLevelHint = computeBottomLevelHint(liveLevel, liveBarrels, bblPerFoot);
 
   // Title and button text based on mode
   const screenTitle = isEditMode ? t('recordExtra.editPull') : t('record.title');
@@ -926,6 +820,7 @@ function RecordScreenInner() {
     : (isSending ? t('record.buttonSubmitSending') : t('record.buttonSubmit'));
 
   useEffect(() => { committedBarrelsRef.current = barrels; }, [barrels]);
+  useEffect(() => { committedLevelRef.current = level; }, [level]);
 
   return (
     <MeasurementKeypadDismissOverlay>
@@ -950,13 +845,10 @@ function RecordScreenInner() {
       </View>
 
       <ScrollView
-        ref={scrollViewRef}
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         keyboardShouldPersistTaps="handled"
         bounces={false}
-        scrollEventThrottle={16}
-        onScroll={(e) => { scrollYRef.current = e.nativeEvent.contentOffset.y; }}
       >
         {/* Edit mode banner */}
         {isEditMode && (
@@ -1042,24 +934,25 @@ function RecordScreenInner() {
           </View>
         </View>
 
-        {/* Tank Level - Single Input with DEFAULT keyboard for space support */}
+        {/* Tank Level - custom measurement keypad (level variant), same
+            LevelFieldInput system as BBLs. No Android QWERTY: the keypad's
+            feet/inches/space/decimal keys cover every accepted entry format.
+            Next hands off to the BBLs field (Tank Level → Next → BBLs). */}
         <View style={styles.section}>
           <Text style={styles.label}>{t('record.tankLevelSection')}</Text>
-          <TextInput
-            ref={levelRef}
-            style={styles.input}
+          <LevelFieldInput
+            fieldKey={LEVEL_FIELD_KEY}
             value={level}
-            onChangeText={setLevel}
-            keyboardType="default"
+            onChange={(v) => {
+              committedLevelRef.current = v;
+              setLevel(v);
+            }}
+            variant="level"
             placeholder={t('record.tankLevelPlaceholder') || "10 8 or 10.5"}
-            placeholderTextColor="#6B7280"
-            returnKeyType="next"
-            blurOnSubmit={false}
-            onSubmitEditing={openBblsKeypad}
-            onFocus={handleLevelFocus}
-            autoCapitalize="none"
-            autoCorrect={false}
-            selectTextOnFocus={isEditMode}
+            style={styles.input}
+            onNextComplete={() => {
+              barrelsFieldRef.current?.activateAsHandoffTarget();
+            }}
           />
           <Text style={styles.levelHint}>{levelHint}</Text>
         </View>
@@ -1112,6 +1005,7 @@ function RecordScreenInner() {
               const flushed = keypad.flushActiveDraft();
               void handleSubmit({
                 barrels: flushed?.fieldKey === BBLS_FIELD_KEY ? flushed.committed : committedBarrelsRef.current,
+                level: flushed?.fieldKey === LEVEL_FIELD_KEY ? flushed.committed : committedLevelRef.current,
               });
             }}
             disabled={isSending}

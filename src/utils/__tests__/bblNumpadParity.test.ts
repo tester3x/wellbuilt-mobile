@@ -5,23 +5,22 @@ import { applyKeyToSession, canCommitKeypadSession, createKeypadSession } from '
 // Ported from wellbuilt-ticket TankLevelKeypad.tsx @ 59fb97e30056bd77549a59efb82f7a2f82e2d621
 const src = (rel: string) => readFileSync(join(__dirname, '../../..', rel), 'utf8');
 
-describe('WB-T numpad on BBLs Taken only', () => {
+describe('WB-T numpad on Record Load measurement fields', () => {
   const record = src('app/record.tsx');
   const keypad = src('src/components/TankLevelKeypad.tsx');
   const field = src('src/components/LevelFieldInput.tsx');
 
-  it('Tank Level submit/Next opens the BBL keypad', () => {
-    expect(record).toMatch(/onSubmitEditing=\{openBblsKeypad\}/);
-    expect(record).toMatch(/const openBblsKeypad = \(\) => \{\s*barrelsFieldRef\.current\?\.focus\(\);/);
-    expect(record).not.toMatch(/barrelsRef/);
+  it('Tank Level Next hands off to the BBL keypad field', () => {
+    expect(record).toMatch(/onNextComplete=\{\(\) => \{\s*barrelsFieldRef\.current\?\.activateAsHandoffTarget\(\);/);
+    expect(record).not.toMatch(/barrelsRef\b/);
     expect(record).not.toMatch(/isBarrelsFocused/);
     expect(record).not.toMatch(/handleBarrelsFocus/);
   });
 
-  it('opens the numeric variant for BBLs; level stays QWERTY', () => {
+  it('opens the numeric variant for BBLs and the level variant for Tank Level — no native keyboard', () => {
     expect(record).toMatch(/variant="numeric"/);
-    expect(record).toMatch(/keyboardType="default"/);
-    expect(record).not.toMatch(/keyboardType="number-pad"/);
+    expect(record).toMatch(/variant="level"/);
+    expect(record).not.toMatch(/keyboardType=/);
     expect(field).toMatch(/variant = 'level'/);
   });
 

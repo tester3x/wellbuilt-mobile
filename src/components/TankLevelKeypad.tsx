@@ -88,7 +88,10 @@ export interface TankLevelKeypadProps {
  * positions changed; the feet/inches/decimal (col 4) and Done/Next/Delete/nav
  * (col 5) keys keep their rows.
  * Row1: 1 2 3 ' Done
- * Row2: 4 5 6 " Next
+ * Row2: 4 5 6 " Next/Go — Next when the session advances to another field
+ *   (session.onNext set, e.g. Tank Level → BBLs); Go otherwise. Go carries
+ *   Done semantics (commitDone): commit the draft, then the field's onDone —
+ *   on Record Load BBLs that is onDoneComplete, the existing submit path.
  * Row3: 7 8 9 . Delete
  * Row4: 0 SPACE(×2) < >
  */
@@ -120,7 +123,7 @@ export default function TankLevelKeypad({ visible, showNext = true }: TankLevelK
           {showNext ? (
             <ActionButton label="Next" onPress={keypad.commitNext} variant="next" blocked={!canCommit} />
           ) : (
-            <View style={[styles.key, styles.nextPlaceholder]} />
+            <ActionButton label="Go" onPress={keypad.commitDone} variant="next" blocked={!canCommit} />
           )}
         </View>
 
@@ -198,10 +201,6 @@ const styles = StyleSheet.create({
   nextBtn: {
     backgroundColor: '#444',
     borderColor: '#555',
-  },
-  nextPlaceholder: {
-    backgroundColor: '#1a1a1a',
-    borderColor: '#2a2a2a',
   },
   deleteBtn: {
     backgroundColor: '#2a2a2a',

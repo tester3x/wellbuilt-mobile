@@ -157,7 +157,7 @@ describe('case 2 — original submitted but unresolved', () => {
     // Distinct identities: a crypto editEventId (packet identity) and a separate
     // local opId (queue identity) — the opId is NEVER the packet identity.
     expect(ops[0].editEventId).toMatch(/^editevt_[0-9a-f-]{36}$/);
-    expect(ops[0].opId).toMatch(new RegExp(`^editop_${PID}_`));
+    expect(ops[0].opId).toMatch(/^editop_[0-9a-f-]{36}$/);
     expect(ops[0].opId).not.toBe(ops[0].editEventId);
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edit_pending');

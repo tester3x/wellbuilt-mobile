@@ -32,6 +32,7 @@ jest.mock('../firebase', () => ({
 jest.mock('../driverAuth', () => ({ getDriverId: jest.fn(async () => 'driver-a'), getDriverName: jest.fn(async () => 'Driver A') }));
 jest.mock('../secureOperationalApi', () => ({ getFieldCommandStatus: async () => { throw new Error('no_receipt'); } }));
 
+import * as Crypto from 'expo-crypto';
 import {
   EditPacketParams, EditOperation, getEditOperations, processEditOperations,
   submitPullEdit, mintEditEventId,
@@ -78,7 +79,7 @@ describe('WB-M governed edit client — identity, durability, serialization', ()
     await submit(140);
     const op = rawOps()[0];
     expect(op.editEventId).toMatch(/^editevt_[0-9a-f-]{36}$/); // crypto V4-shaped, no Math.random
-    expect(op.opId).toMatch(new RegExp(`^editop_${PID}_`));    // local identity, correlatable
+    expect(op.opId).toMatch(/^editop_[0-9a-f-]{36}$/);         // full-entropy local identity
     expect(op.opId).not.toBe(op.editEventId);                  // never the packet identity
     expect(op.originalPacketId).toBe(PID);                     // canonical original retained
     expect(persistedAtTransport?.editEventId).toBe(op.editEventId); // persisted before transport
@@ -193,6 +194,66 @@ describe('WB-M governed edit client — identity, durability, serialization', ()
       .map((o) => ({ opId: o.opId, editEventId: o.editEventId }))
       .sort((x, y) => (x.opId < y.opId ? -1 : 1));
     expect(ops).toEqual(before); // no remint on hydrate
+  });
+
+  it('regression: full-entropy opId — two UUIDs sharing the first 8 chars still yield two distinct ops', async () => {
+    // Every minted UUID shares the first segment ('deadbeef') but has a unique
+    // tail. Under the old slice(0,8) opId this collapsed both corrections into
+    // one record; with a full-entropy opId they remain two distinct operations.
+    let n = 0;
+    const spy = jest.spyOn(Crypto, 'randomUUID').mockImplementation(() => {
+      n += 1;
+      return `deadbeef-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+    });
+    try {
+      await submit(140);
+      await submit(155);
+    } finally {
+      spy.mockRestore();
+    }
+    const ops = rawOps();
+    expect(ops).toHaveLength(2);                                  // NO collision
+    expect(ops[0].opId.startsWith('editop_deadbeef')).toBe(true); // shared leading chars
+    expect(ops[1].opId.startsWith('editop_deadbeef')).toBe(true);
+    expect(ops[0].opId).not.toBe(ops[1].opId);                   // yet distinct (full entropy)
+    expect(ops[0].editEventId).not.toBe(ops[1].editEventId);
+    expect(ops.every((o) => o.originalPacketId === PID)).toBe(true);
+  });
+
+  it('only a durable governed receipt marks an edit applied — incoming/processed presence does not', async () => {
+    const now = Date.now();
+    const op: EditOperation = {
+      opId: 'editop_deadbeef-0000-4000-8000-000000000001',
+      editEventId: 'editevt_deadbeef-0000-4000-8000-000000000002',
+      originalPacketId: PID, wellName: 'Gunslinger 3',
+      payload: editParams(140), state: 'edit_submitted',
+      createdAt: now, updatedAt: now, attempts: 1, lastAttemptAt: now, lastError: null,
+    };
+    const reseed = () => { mockStore[EDIT_OPS_KEY] = JSON.stringify([op]); };
+
+    // (a) Mere presence at packets/incoming/{editEventId} → still in flight, NOT applied.
+    reseed();
+    await processEditOperations(makeFetch({
+      ...processedOriginal,
+      [`packets/incoming/${op.editEventId}`]: { requestType: 'edit', packetId: PID },
+    }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+
+    // (b) Mere presence at packets/processed/{editEventId} (no commit proof) → NOT applied.
+    reseed();
+    await processEditOperations(makeFetch({
+      ...processedOriginal,
+      [`packets/processed/${op.editEventId}`]: { packetId: op.editEventId },
+    }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+
+    // (c) ONLY the matching durable governed receipt transitions the op to edited.
+    reseed();
+    await processEditOperations(makeFetch({
+      ...processedOriginal,
+      [`packets/processed/${op.editEventId}`]: { committed: true, editCommitted: true, editCommittedReceiptKey: 'r-1' },
+    }));
+    expect(rawOps().find((o) => o.opId === op.opId)).toBeUndefined(); // confirmed + removed
   });
 
   it('mintEditEventId is unique and firebase-key-safe; no Math.random derivation', () => {

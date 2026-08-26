@@ -134,13 +134,16 @@ export function mintEditEventId(): string {
 }
 
 /**
- * Mint the durable LOCAL queue identity for one correction. Distinct from the
- * packet's editEventId (never the packet identity), but correlatable to the
- * original via the historical `editop_<original>` prefix, and unique per
- * correction so two corrections to one original are two durable operations.
+ * Mint the durable LOCAL queue identity for one correction: a full-entropy
+ * crypto V4 UUID (never truncated), `editop_`-prefixed as the local queue
+ * marker. Distinct from the packet's editEventId (never the packet identity),
+ * and not derived from the original packet id — the op carries originalPacketId
+ * as its own field for correlation. Full entropy guarantees two corrections to
+ * one original are two distinct durable operations even if some other id's
+ * leading characters happen to coincide.
  */
-function mintOpId(originalPacketId: string): string {
-  return `editop_${originalPacketId}_${Crypto.randomUUID().slice(0, 8)}`;
+function mintOpId(): string {
+  return `editop_${Crypto.randomUUID()}`;
 }
 
 /** The receipt/server-correlation key for an operation: a v2 op correlates by
@@ -161,7 +164,7 @@ function newOp(payload: EditPacketParams, state: EditOpState, blockedReason?: st
   // earlier one; local operation identity is never the packet identity.
   const editEventId = mintEditEventId();
   return {
-    opId: mintOpId(payload.originalPacketId),
+    opId: mintOpId(),
     editEventId,
     originalPacketId: payload.originalPacketId,
     wellName: payload.wellName,

@@ -523,6 +523,25 @@ export async function getPendingEditForWell(
   return op ? { opId: op.opId, state: op.state, originalPacketId: op.originalPacketId } : null;
 }
 
+/**
+ * Resolve a dependent edit operation whose base pull was RECOVERED server-side
+ * (Mechanism A) WITHOUT transmitting the edit. The corrected values are already
+ * canonical on the recovered replacement pull, so re-sending would be a
+ * duplicate; the op is simply removed from the durable queue. Returns the count
+ * removed (0 = safe no-op when no op exists for that original). Never uploads.
+ */
+export async function resolveRecoveredEditWithoutSend(originalPacketId: string): Promise<number> {
+  if (!originalPacketId) return 0;
+  const ops = await loadOps();
+  const remaining = ops.filter(o => o.originalPacketId !== originalPacketId);
+  const removed = ops.length - remaining.length;
+  if (removed > 0) {
+    await saveOps(remaining);
+    console.log('[EditDelivery] Resolved recovered edit without send:', originalPacketId, `(${removed})`);
+  }
+  return removed;
+}
+
 let _started = false;
 
 /** Lifecycle wiring: a pass at startup (dependencies survive restart) and

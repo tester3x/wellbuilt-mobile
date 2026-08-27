@@ -63,6 +63,10 @@ export interface PullHistoryEntry {
   rejectionReason?: string;      // stable reason code + readable text from packets/rejected
   editStatus?: PullEditStatus;   // edit lifecycle (absent when never edited via new flow)
   editStatusReason?: string;     // rejection/blocked reason for the edit
+  /** When this entry is the recovered replacement for a server-rejected pull,
+   *  the ORIGINAL rejected packetId — preserved as local audit so the row can
+   *  explain that the earlier submission was recovered (never deleted). */
+  recoveredFromPacketId?: string;
 }
 
 let cachedHistory: PullHistoryEntry[] = [];
@@ -688,6 +692,66 @@ export async function setPullSyncStatus(
   }
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
   console.log('[PullHistory] syncStatus:', packetId, '→', syncStatus);
+  return true;
+}
+
+/**
+ * Re-point a locally-rejected pull entry onto its canonical recovered
+ * replacement (Mechanism A). The single rejected row becomes the ONE corrected
+ * row: its identity moves to the replacement packetId, corrected values are
+ * applied, delivery status flips to 'sent' (attention clears), and the original
+ * rejected id is preserved on recoveredFromPacketId for audit. Any pre-existing
+ * entry already under the replacement id (e.g. a backfilled processed row) is
+ * removed so history shows EXACTLY ONE corrected pull — never AM + PM.
+ *
+ * Caller must have already confirmed packets/processed/<replacementPacketId>
+ * exists — this function does not itself gate on the server receipt.
+ * Returns true when a rejected entry was found and re-pointed.
+ */
+export async function repointRecoveredPull(
+  rejectedPacketId: string,
+  replacementPacketId: string,
+  fields: { dateTime?: string; tankLevelFeet?: number; bblsTaken?: number; wellDown?: boolean } = {},
+): Promise<boolean> {
+  if (cachedHistory.length === 0) {
+    await loadPullHistory();
+  }
+  if (!rejectedPacketId || !replacementPacketId || rejectedPacketId === replacementPacketId) {
+    return false;
+  }
+  const entry = cachedHistory.find(e => e.packetId === rejectedPacketId || e.id === rejectedPacketId);
+  if (!entry) return false;
+
+  // Dedupe: drop any OTHER row already carrying the replacement id so exactly
+  // one corrected pull remains.
+  cachedHistory = cachedHistory.filter(
+    e => e === entry || (e.packetId !== replacementPacketId && e.id !== replacementPacketId),
+  );
+
+  // Re-point identity to the canonical replacement.
+  entry.id = replacementPacketId;
+  entry.packetId = replacementPacketId;
+  const tsMatch = replacementPacketId.match(/^(\d{8}_\d{6})/);
+  if (tsMatch) entry.packetTimestamp = tsMatch[1];
+  entry.recoveredFromPacketId = rejectedPacketId; // audit lineage preserved
+
+  // Apply corrected values (from the authoritative processed replacement).
+  if (typeof fields.dateTime === 'string' && fields.dateTime) entry.dateTime = fields.dateTime;
+  if (typeof fields.tankLevelFeet === 'number' && Number.isFinite(fields.tankLevelFeet)) entry.tankLevelFeet = fields.tankLevelFeet;
+  if (typeof fields.bblsTaken === 'number' && Number.isFinite(fields.bblsTaken)) entry.bblsTaken = fields.bblsTaken;
+  if (typeof fields.wellDown === 'boolean') entry.wellDown = fields.wellDown;
+
+  // Delivery is now confirmed → attention clears; the AM rejection no longer
+  // applies. The row reflects the driver's confirmed correction.
+  entry.syncStatus = 'sent';
+  entry.sentConfirmedAt = Date.now();
+  entry.rejectionReason = undefined;
+  entry.editStatus = 'edited';
+  entry.status = 'edited';
+  if (!entry.editedAt) entry.editedAt = new Date().toISOString();
+
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
+  console.log('[PullHistory] Re-pointed recovered pull:', rejectedPacketId, '→', replacementPacketId);
   return true;
 }
 

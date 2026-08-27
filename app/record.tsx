@@ -971,7 +971,12 @@ function RecordScreenInner() {
               setLevel(v);
             }}
             variant="level"
-            placeholder={t('record.tankLevelPlaceholder') || "10 8 or 10.5"}
+            // No in-field example placeholder — the example/format hint lives
+            // under the field (levelHint) where it always has. Accessibility
+            // name is preserved via accessibilityLabel (was previously carried
+            // by the placeholder text).
+            placeholder=""
+            accessibilityLabel={t('record.tankLevelSection')}
             style={styles.input}
             onNextComplete={() => {
               barrelsFieldRef.current?.activateAsHandoffTarget();
@@ -1131,7 +1136,12 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingTop: spacing.sm,
     paddingHorizontal: wp('5%'),
-    paddingBottom: hp('30%'),  // Extra padding for keyboard scrolling
+    // Normal small form-bottom spacing only. The custom keypad's
+    // MeasurementKeypadSlot reserves its own space in normal flow, so no
+    // keypad-height / percent-of-screen spacer is needed here. The ScrollView
+    // is preserved, so natural scrolling still applies when content genuinely
+    // overflows (small screens, landscape, large text / accessibility scale).
+    paddingBottom: spacing.md,
   },
   // Fixed header at top
   fixedHeader: {

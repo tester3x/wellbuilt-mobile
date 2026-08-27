@@ -48,6 +48,10 @@ interface LevelFieldInputProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  /** Accessible name for the input. Provide when the placeholder is empty so
+   *  screen readers still announce the field (placeholder is the a11y name by
+   *  default, so an empty placeholder would otherwise leave the field unnamed). */
+  accessibilityLabel?: string;
   style?: object;
   hint?: string | null;
   label?: string;
@@ -69,6 +73,7 @@ const LevelFieldInput = forwardRef<LevelFieldInputHandle, LevelFieldInputProps>(
     value,
     onChange,
     placeholder = '10 4',
+    accessibilityLabel,
     style,
     hint,
     label,
@@ -252,6 +257,7 @@ const LevelFieldInput = forwardRef<LevelFieldInputHandle, LevelFieldInputProps>(
           {...(keypadCommandSelection && !nativeSelectOnFocus ? { selection: keypadCommandSelection } : {})}
           placeholder={placeholder}
           placeholderTextColor="#555"
+          {...(accessibilityLabel ? { accessibilityLabel } : {})}
           showSoftInputOnFocus={activeVisualProps.showSoftInputOnFocus}
           selectTextOnFocus={nativeSelectOnFocus}
           editable

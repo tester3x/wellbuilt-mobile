@@ -17,7 +17,9 @@ import {
   View,
   type GestureResponderEvent,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TankLevelKeypad, { type KeypadVariant } from '../components/TankLevelKeypad';
+import { getMeasurementSlotGeometry } from '../utils/measurementKeypadLayout';
 import type { TextSelection } from '../utils/tankLevelEditing';
 import type { KeypadEntryMode } from '../utils/measurementInputFocus';
 import {
@@ -1009,6 +1011,11 @@ export function MeasurementKeypadSlot({ doneEnabled = true }: { doneEnabled?: bo
   const [showNext, setShowNext] = useState(true);
   const slide = useRef(new Animated.Value(0)).current;
   const keypadWasOpenRef = useRef(false);
+  // The slot is the single geometry owner: base keypad height + bottom
+  // safe-area inset (added exactly once) so the bottom key row clears the
+  // navigation / gesture bar. Zero inset preserves the base geometry.
+  const insets = useSafeAreaInsets();
+  const slotGeometry = getMeasurementSlotGeometry(insets.bottom);
 
   useEffect(() => {
     if (ctx?.isOpen) {
@@ -1043,11 +1050,16 @@ export function MeasurementKeypadSlot({ doneEnabled = true }: { doneEnabled?: bo
 
   const translateY = slide.interpolate({
     inputRange: [0, 1],
-    outputRange: [195, 0],
+    outputRange: [slotGeometry.entryTranslateY, 0],
   });
 
   return (
-    <Animated.View style={[styles.slot, { transform: [{ translateY }] }]}>
+    <Animated.View
+      style={[
+        styles.slot,
+        { paddingBottom: slotGeometry.safeAreaPadding, transform: [{ translateY }] },
+      ]}
+    >
       <TankLevelKeypad visible showNext={showNext} doneAllowed={doneEnabled} />
     </Animated.View>
   );
@@ -1059,5 +1071,8 @@ const styles = StyleSheet.create({
   },
   slot: {
     width: '100%',
+    // Matches the keypad sheet so the bottom safe-area padding reads as part of
+    // the keypad rather than a two-tone strip over the nav/gesture bar.
+    backgroundColor: '#1a1a1a',
   },
 });

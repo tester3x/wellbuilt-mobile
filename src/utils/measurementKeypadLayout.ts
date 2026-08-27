@@ -8,6 +8,29 @@ export const MEASUREMENT_KEYPAD_HEIGHT = 195;
 /** ShellFooter button row height excluding safe-area padding. */
 export const SHELL_FOOTER_CONTENT_HEIGHT = 58;
 
+/**
+ * Single authoritative geometry for the measurement keypad slot. The slot is
+ * the one geometry owner: it reserves the base keypad height PLUS the bottom
+ * safe-area inset — added here exactly once — so the bottom key row clears the
+ * Android/iOS navigation / gesture bar. The keypad component keeps its own
+ * internal bottom padding; the inset is NOT added again there. A zero inset
+ * (tablets, some landscape) returns the base geometry unchanged.
+ */
+export function getMeasurementSlotGeometry(safeAreaBottom: number): {
+  keypadHeight: number;
+  safeAreaPadding: number;
+  reservedHeight: number;
+  entryTranslateY: number;
+} {
+  const inset = Number.isFinite(safeAreaBottom) && safeAreaBottom > 0 ? safeAreaBottom : 0;
+  return {
+    keypadHeight: MEASUREMENT_KEYPAD_HEIGHT,
+    safeAreaPadding: inset,
+    reservedHeight: MEASUREMENT_KEYPAD_HEIGHT + inset,
+    entryTranslateY: MEASUREMENT_KEYPAD_HEIGHT + inset,
+  };
+}
+
 /** Combined bottom zone: keypad + footer + safe area. */
 export function getMeasurementBottomInset(safeAreaBottom: number): number {
   return MEASUREMENT_KEYPAD_HEIGHT + SHELL_FOOTER_CONTENT_HEIGHT + safeAreaBottom + 8;

@@ -67,6 +67,7 @@ const recoveredServer = () => ({
     dateTime: '8/26/2026 7:39 PM', dateTimeUTC: '2026-08-27T00:39:00.000Z',
     tankLevelFeet: 7, bblsTaken: 60, wellDown: false,
     recoveredFromPacketId: REJECTED,
+    canonicalProcessingComplete: true, // authoritative completion receipt
   },
 });
 
@@ -153,6 +154,24 @@ describe('reconcileRecoveredRejections — gating', () => {
     expect(hist[0].packetId).toBe(REJECTED);   // unchanged
     expect(hist[0].syncStatus).toBe('rejected');
     expect(await getEditOperations()).toHaveLength(1); // edit still held
+    expect(mockedUploadEdit).not.toHaveBeenCalled();
+  });
+
+  test('EARLY processed row WITHOUT the completion receipt → nothing cleared', async () => {
+    await seedStrandedState();
+    // The replacement processed row exists but the non-atomic chain has NOT
+    // stamped canonicalProcessingComplete — an early row, not completion.
+    const server = recoveredServer();
+    delete (server as Record<string, Record<string, unknown>>)[`packets/processed/${REPLACEMENT}`].canonicalProcessingComplete;
+
+    const res = await reconcileRecoveredRejections(makeFetch(server));
+    expect(res.reconciled).toBe(0);
+
+    const hist = await getPullHistory();
+    expect(hist[0].packetId).toBe(REJECTED);           // history NOT re-pointed
+    expect(hist[0].syncStatus).toBe('rejected');        // attention remains
+    expect(await getEditOperations()).toHaveLength(1);  // edit still blocked
+    expect(await getSubmittedPayload(REJECTED)).not.toBeNull(); // payload NOT forgotten
     expect(mockedUploadEdit).not.toHaveBeenCalled();
   });
 

@@ -70,8 +70,14 @@ async function reconcileRecoveredRejectionsInner(
     if (!processed.found || !processed.data) continue;
     const p = processed.data as {
       dateTime?: string; tankLevelFeet?: number; bblsTaken?: number; wellDown?: boolean;
-      recoveredFromPacketId?: unknown;
+      recoveredFromPacketId?: unknown; canonicalProcessingComplete?: unknown;
     };
+
+    // The processed row is written EARLY in a non-atomic chain. Require the
+    // authoritative canonical-completion receipt — an early row alone must leave
+    // ALL local recovery state intact (attention stays, edit stays blocked,
+    // payload retained). Retry converges once the receipt lands.
+    if (p.canonicalProcessingComplete !== true) continue;
 
     // Defensive: the processed replacement must point back to THIS rejected id.
     if (typeof p.recoveredFromPacketId === 'string' && p.recoveredFromPacketId !== rejectedId) continue;

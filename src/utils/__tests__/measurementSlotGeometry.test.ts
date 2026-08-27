@@ -1,6 +1,55 @@
 // Single-owner keypad slot geometry: base keypad height + bottom safe-area
 // inset, added exactly once, so the bottom key row clears the nav/gesture bar.
-import { getMeasurementSlotGeometry, MEASUREMENT_KEYPAD_HEIGHT } from '../measurementKeypadLayout';
+import {
+  getEffectiveBottomClearance,
+  getMeasurementSlotGeometry,
+  MEASUREMENT_KEYPAD_HEIGHT,
+} from '../measurementKeypadLayout';
+
+describe('getEffectiveBottomClearance', () => {
+  it('both candidates zero → 0', () => {
+    expect(getEffectiveBottomClearance(0, 0)).toBe(0);
+  });
+
+  it('live inset only (nav bar shown; no captured initial)', () => {
+    expect(getEffectiveBottomClearance(34, 0)).toBe(34);
+    expect(getEffectiveBottomClearance(34, undefined)).toBe(34);
+  });
+
+  it('initial/protected inset only (immersive: live is 0)', () => {
+    expect(getEffectiveBottomClearance(0, 126)).toBe(126);
+  });
+
+  it('both present → the LARGER wins, never the sum', () => {
+    expect(getEffectiveBottomClearance(34, 126)).toBe(126); // not 160
+    expect(getEffectiveBottomClearance(126, 34)).toBe(126); // not 160
+  });
+
+  it('equal values are counted once', () => {
+    expect(getEffectiveBottomClearance(48, 48)).toBe(48); // not 96
+  });
+
+  it('missing / non-finite / negative values clamp to 0', () => {
+    expect(getEffectiveBottomClearance(undefined, null)).toBe(0);
+    expect(getEffectiveBottomClearance(Number.NaN, Number.POSITIVE_INFINITY)).toBe(0);
+    expect(getEffectiveBottomClearance(-10, -5)).toBe(0);
+    expect(getEffectiveBottomClearance(-10, 24)).toBe(24); // negative ignored, positive kept
+  });
+
+  it('feeds the slot geometry so the effective inset is applied exactly once', () => {
+    const effective = getEffectiveBottomClearance(0, 126); // immersive S24 case
+    const g = getMeasurementSlotGeometry(effective);
+    expect(g.safeAreaPadding).toBe(126);
+    expect(g.reservedHeight).toBe(MEASUREMENT_KEYPAD_HEIGHT + 126);
+    expect(g.entryTranslateY).toBe(MEASUREMENT_KEYPAD_HEIGHT + 126);
+    // Exactly once: reserved − base == effective, not 2×.
+    expect(g.reservedHeight - MEASUREMENT_KEYPAD_HEIGHT).toBe(126);
+    // Genuine zero-inset device keeps the base geometry unchanged.
+    const z = getMeasurementSlotGeometry(getEffectiveBottomClearance(0, 0));
+    expect(z.reservedHeight).toBe(MEASUREMENT_KEYPAD_HEIGHT);
+    expect(z.safeAreaPadding).toBe(0);
+  });
+});
 
 describe('getMeasurementSlotGeometry', () => {
   it('#7 zero bottom inset preserves the base keypad geometry', () => {

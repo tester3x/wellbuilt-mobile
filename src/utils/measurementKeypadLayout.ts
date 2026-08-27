@@ -8,6 +8,25 @@ export const MEASUREMENT_KEYPAD_HEIGHT = 195;
 /** ShellFooter button row height excluding safe-area padding. */
 export const SHELL_FOOTER_CONTENT_HEIGHT = 58;
 
+/** A bottom inset is usable only if it is a finite, positive number. */
+function sanitizeInset(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * One authoritative effective bottom clearance from every candidate inset. The
+ * live safe-area bottom is 0 while WB-M hides the Android nav bar (immersive
+ * overlay-swipe), but the pre-hide `initialWindowSafeAreaInsets.bottom` still
+ * carries the real protected region — so we take the LARGER of the candidates
+ * (never their sum). Missing / non-finite / negative values clamp to 0, so a
+ * genuine zero-inset device (iOS with no home indicator, tablets) stays at 0.
+ */
+export function getEffectiveBottomClearance(
+  ...candidates: Array<number | null | undefined>
+): number {
+  return candidates.reduce<number>((max, v) => Math.max(max, sanitizeInset(v)), 0);
+}
+
 /**
  * Single authoritative geometry for the measurement keypad slot. The slot is
  * the one geometry owner: it reserves the base keypad height PLUS the bottom

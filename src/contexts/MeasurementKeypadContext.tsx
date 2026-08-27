@@ -17,9 +17,9 @@ import {
   View,
   type GestureResponderEvent,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, initialWindowSafeAreaInsets } from 'react-native-safe-area-context';
 import TankLevelKeypad, { type KeypadVariant } from '../components/TankLevelKeypad';
-import { getMeasurementSlotGeometry } from '../utils/measurementKeypadLayout';
+import { getEffectiveBottomClearance, getMeasurementSlotGeometry } from '../utils/measurementKeypadLayout';
 import type { TextSelection } from '../utils/tankLevelEditing';
 import type { KeypadEntryMode } from '../utils/measurementInputFocus';
 import {
@@ -1011,11 +1011,18 @@ export function MeasurementKeypadSlot({ doneEnabled = true }: { doneEnabled?: bo
   const [showNext, setShowNext] = useState(true);
   const slide = useRef(new Animated.Value(0)).current;
   const keypadWasOpenRef = useRef(false);
-  // The slot is the single geometry owner: base keypad height + bottom
-  // safe-area inset (added exactly once) so the bottom key row clears the
-  // navigation / gesture bar. Zero inset preserves the base geometry.
+  // The slot is the single geometry owner: base keypad height + effective
+  // bottom clearance (added exactly once) so the bottom key row clears the
+  // navigation / gesture bar. The live safe-area bottom is 0 while WB-M hides
+  // the Android nav bar (immersive overlay-swipe), so we take the larger of the
+  // live inset and the pre-hide initialWindowSafeAreaInsets.bottom. Zero inset
+  // (iOS no-home-indicator, tablets) preserves the base geometry.
   const insets = useSafeAreaInsets();
-  const slotGeometry = getMeasurementSlotGeometry(insets.bottom);
+  const effectiveBottom = getEffectiveBottomClearance(
+    insets.bottom,
+    initialWindowSafeAreaInsets?.bottom,
+  );
+  const slotGeometry = getMeasurementSlotGeometry(effectiveBottom);
 
   useEffect(() => {
     if (ctx?.isOpen) {

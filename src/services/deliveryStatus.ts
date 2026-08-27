@@ -25,6 +25,7 @@ import {
   queuePacket,
 } from './packetQueue';
 import { PullHistoryEntry, getPullHistory, setPullSyncStatus } from './pullHistory';
+import { reconcileRecoveredRejections } from './recoveryReconcile';
 
 /** A packet stuck in 'submitted' longer than this needs attention — the
  *  server normally answers in seconds. It stays preserved either way. */
@@ -129,6 +130,14 @@ async function reconcileSubmittedPullsInner(
   if (confirmedSent || confirmedRejected) {
     console.log(`[DeliveryStatus] Reconciled: ${confirmedSent} sent, ${confirmedRejected} rejected, ${stillUnknown} pending outcome`);
   }
+
+  // Server-recovered rejections (Mechanism A): once a corrected replacement is
+  // processed, bring the phone into agreement (re-point to one corrected pull,
+  // resolve/retarget dependent edits, clear attention). Runs inside this same
+  // guarded pass — no separate poll loop, serialized with the reconcilers above.
+  // Its own in-flight guard dedupes against concurrent invocations.
+  try { await reconcileRecoveredRejections(fetchFn); } catch { /* leave state untouched on failure */ }
+
   return { confirmedSent, confirmedRejected, stillUnknown };
 }
 

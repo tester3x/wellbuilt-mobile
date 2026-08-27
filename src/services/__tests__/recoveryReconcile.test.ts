@@ -39,7 +39,7 @@ import {
 } from '../pullHistory';
 import { getEditOperations } from '../editDelivery';
 import { rememberSubmittedPayload, getSubmittedPayload } from '../packetQueue';
-import { computeDeliveryCounts } from '../deliveryStatus';
+import { computeDeliveryCounts, reconcileSubmittedPulls } from '../deliveryStatus';
 
 const EDIT_OPS_KEY = '@wellbuilt_edit_ops';
 const mockedUploadEdit = uploadEditPacket as jest.Mock;
@@ -197,5 +197,50 @@ describe('reconcileRecoveredRejections — dedupe to one pull', () => {
     const hist = await getPullHistory();
     expect(hist).toHaveLength(1);               // exactly one corrected pull
     expect(hist[0].packetId).toBe(REPLACEMENT);
+  });
+});
+
+describe('lifecycle wiring — the authoritative reconciler invokes recovery', () => {
+  test('reconcileSubmittedPulls() drives recovered-rejection reconciliation (not dormant)', async () => {
+    await seedStrandedState();
+    // Call the coordinator the badge/startup/reconnect paths all use — NOT the
+    // recovery service directly — and prove the recovery actually happened.
+    await reconcileSubmittedPulls(makeFetch(recoveredServer()));
+    const hist = await getPullHistory();
+    expect(hist).toHaveLength(1);
+    expect(hist[0].packetId).toBe(REPLACEMENT);
+    expect(hist[0].syncStatus).toBe('sent');
+    expect(mockedUploadEdit).not.toHaveBeenCalled();
+  });
+});
+
+describe('multiple dependent edits — no user intent discarded', () => {
+  const twoEdits = (laterBbls: number) => JSON.stringify([
+    { // equivalent to the processed PM replacement → superseded (resolved)
+      opId: 'editop_a', editEventId: 'editevt_a', originalPacketId: REJECTED, wellName: WELL,
+      payload: { originalPacketId: REJECTED, wellName: WELL, dateTimeUTC: '2026-08-27T00:39:00.000Z', tankLevelFeet: 7, bblsTaken: 60, wellDown: false },
+      state: 'edit_blocked', createdAt: 1, updatedAt: 1, attempts: 0, lastAttemptAt: null, lastError: null,
+    },
+    { // a LATER, non-equivalent correction (different bbls) → must be preserved
+      opId: 'editop_b', editEventId: 'editevt_b', originalPacketId: REJECTED, wellName: WELL,
+      payload: { originalPacketId: REJECTED, wellName: WELL, dateTimeUTC: '2026-08-27T00:39:00.000Z', tankLevelFeet: 7, bblsTaken: laterBbls, wellDown: false },
+      state: 'edit_blocked', createdAt: 2, updatedAt: 2, attempts: 0, lastAttemptAt: null, lastError: null,
+    },
+  ]);
+
+  test('equivalent edit resolved without send; later distinct edit re-targeted to the replacement', async () => {
+    await addPullToHistory(WELL, '8/26/2026 7:39 AM', 7, 60, false, REJECTED.slice(0, 15), REJECTED, 'rejected');
+    await setPullSyncStatus(REJECTED, 'rejected', { rejectionReason: 'STALE_PULL_TIME' });
+    mockStore[EDIT_OPS_KEY] = twoEdits(75); // op_b asserts 75 bbl (≠ processed 60)
+
+    await reconcileRecoveredRejections(makeFetch(recoveredServer()));
+
+    const ops = await getEditOperations();
+    expect(ops).toHaveLength(1);                 // equivalent one dropped, later one kept
+    expect(ops[0].opId).toBe('editop_b');
+    expect(ops[0].originalPacketId).toBe(REPLACEMENT); // retargeted to the recovered pull
+    expect(ops[0].state).toBe('edit_pending');        // will deliver normally as an edit
+    expect(ops[0].payload.originalPacketId).toBe(REPLACEMENT);
+    expect(mockedUploadEdit).not.toHaveBeenCalled();  // reconcile never transmits
   });
 });

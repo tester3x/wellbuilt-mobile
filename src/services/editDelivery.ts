@@ -523,23 +523,78 @@ export async function getPendingEditForWell(
   return op ? { opId: op.opId, state: op.state, originalPacketId: op.originalPacketId } : null;
 }
 
+/** Material values represented by an authoritative processed pull. */
+export interface ProcessedMaterial {
+  tankLevelFeet?: number;
+  bblsTaken?: number;
+  wellDown?: boolean;
+  dateTimeUTC?: string;
+}
+
+const topInches = (feet: unknown): number | null =>
+  typeof feet === 'number' && Number.isFinite(feet) ? Math.round(feet * 12) : null;
+
 /**
- * Resolve a dependent edit operation whose base pull was RECOVERED server-side
- * (Mechanism A) WITHOUT transmitting the edit. The corrected values are already
- * canonical on the recovered replacement pull, so re-sending would be a
- * duplicate; the op is simply removed from the durable queue. Returns the count
- * removed (0 = safe no-op when no op exists for that original). Never uploads.
+ * Is this edit's final intent already REPRESENTED by the processed receipt?
+ * Compared on the material fields the edit asserts (top level, bbls, wellDown,
+ * and dateTimeUTC when the edit carries one). A field the edit does not assert
+ * is "no assertion" and never blocks equivalence. The processed receipt — never
+ * unchecked local values — is authoritative.
  */
-export async function resolveRecoveredEditWithoutSend(originalPacketId: string): Promise<number> {
-  if (!originalPacketId) return 0;
+export function editRepresentedBy(op: EditOperation, processed: ProcessedMaterial): boolean {
+  const p = op.payload;
+  const pTop = topInches(p.tankLevelFeet);
+  if (pTop !== null && pTop !== topInches(processed.tankLevelFeet)) return false;
+  if (typeof p.bblsTaken === 'number' && Number.isFinite(p.bblsTaken) && p.bblsTaken !== processed.bblsTaken) return false;
+  if (typeof p.wellDown === 'boolean' && typeof processed.wellDown === 'boolean' && p.wellDown !== processed.wellDown) return false;
+  const pUtc = typeof p.dateTimeUTC === 'string' && p.dateTimeUTC ? p.dateTimeUTC : null;
+  if (pUtc && processed.dateTimeUTC && pUtc !== processed.dateTimeUTC) return false;
+  return true;
+}
+
+/**
+ * Reconcile the dependent edit operations of a pull that was RECOVERED
+ * server-side (Mechanism A) against the authoritative processed replacement —
+ * WITHOUT transmitting any edit that is already represented:
+ *   - an edit whose final values equal the processed receipt is SUPERSEDED →
+ *     removed (no send, no duplicate);
+ *   - a later, non-equivalent edit is NOT discarded — it is RE-TARGETED onto the
+ *     replacement pull (state edit_pending) so it delivers normally as an edit to
+ *     the now-canonical pull. No user intent disappears merely because it shared
+ *     the rejected original id.
+ * Returns counts. Never uploads.
+ */
+export async function reconcileRecoveredEdits(
+  originalPacketId: string,
+  replacementPacketId: string,
+  processed: ProcessedMaterial,
+): Promise<{ resolved: number; retargeted: number }> {
+  if (!originalPacketId || !replacementPacketId) return { resolved: 0, retargeted: 0 };
   const ops = await loadOps();
-  const remaining = ops.filter(o => o.originalPacketId !== originalPacketId);
-  const removed = ops.length - remaining.length;
-  if (removed > 0) {
-    await saveOps(remaining);
-    console.log('[EditDelivery] Resolved recovered edit without send:', originalPacketId, `(${removed})`);
+  let resolved = 0;
+  let retargeted = 0;
+  const next: EditOperation[] = [];
+  for (const op of ops) {
+    if (op.originalPacketId !== originalPacketId) { next.push(op); continue; }
+    if (editRepresentedBy(op, processed)) {
+      resolved++; // superseded by the recovered pull — drop without sending
+      continue;
+    }
+    // A distinct later correction — re-target it to the replacement pull.
+    const replacementTs = replacementPacketId.slice(0, 15);
+    op.originalPacketId = replacementPacketId;
+    op.payload = { ...op.payload, originalPacketId: replacementPacketId, originalPacketTimestamp: replacementTs };
+    op.state = 'edit_pending';
+    op.lastError = null;
+    op.updatedAt = Date.now();
+    retargeted++;
+    next.push(op);
   }
-  return removed;
+  if (resolved > 0 || retargeted > 0) {
+    await saveOps(next);
+    console.log('[EditDelivery] Recovered-edit reconcile:', originalPacketId, `resolved=${resolved} retargeted→${replacementPacketId}=${retargeted}`);
+  }
+  return { resolved, retargeted };
 }
 
 let _started = false;

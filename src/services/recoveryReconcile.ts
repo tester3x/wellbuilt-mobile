@@ -19,7 +19,7 @@
 
 import { readJsonPath } from './backendAccess';
 import { getPullHistory, repointRecoveredPull } from './pullHistory';
-import { getEditOperations, resolveRecoveredEditWithoutSend } from './editDelivery';
+import { getEditOperations, reconcileRecoveredEdits } from './editDelivery';
 import { forgetSubmittedPayload } from './packetQueue';
 
 export interface RecoveryReconcileResult {
@@ -27,7 +27,19 @@ export interface RecoveryReconcileResult {
   reconciled: number;
 }
 
+// Overlap guard: startup, flush, reconnect, login/SSO and the manual Sync Status
+// refresh can all fire together — only one pass runs; concurrent callers join it.
+let _inFlight: Promise<RecoveryReconcileResult> | null = null;
+
 export async function reconcileRecoveredRejections(
+  fetchFn: typeof fetch = fetch,
+): Promise<RecoveryReconcileResult> {
+  if (_inFlight) return _inFlight;
+  _inFlight = reconcileRecoveredRejectionsInner(fetchFn).finally(() => { _inFlight = null; });
+  return _inFlight;
+}
+
+async function reconcileRecoveredRejectionsInner(
   fetchFn: typeof fetch = fetch,
 ): Promise<RecoveryReconcileResult> {
   const [history, ops] = [await getPullHistory(), await getEditOperations()];
@@ -72,13 +84,21 @@ export async function reconcileRecoveredRejections(
       wellDown: typeof p.wellDown === 'boolean' ? p.wellDown : undefined,
     });
 
-    // 4. Resolve the dependent blocked edit WITHOUT transmitting it.
-    const editsResolved = await resolveRecoveredEditWithoutSend(rejectedId);
+    // 4. Reconcile dependent edits against the authoritative processed receipt:
+    //    supersede represented ones without sending; re-target later distinct
+    //    corrections onto the replacement pull (never discard intent).
+    const editOutcome = await reconcileRecoveredEdits(rejectedId, replacementId, {
+      tankLevelFeet: typeof p.tankLevelFeet === 'number' ? p.tankLevelFeet : undefined,
+      bblsTaken: typeof p.bblsTaken === 'number' ? p.bblsTaken : undefined,
+      wellDown: typeof p.wellDown === 'boolean' ? p.wellDown : undefined,
+      dateTimeUTC: typeof (p as { dateTimeUTC?: unknown }).dateTimeUTC === 'string'
+        ? (p as { dateTimeUTC?: string }).dateTimeUTC : undefined,
+    });
 
     // 5. Forget the retained AM payload so Check & recover cannot resubmit it.
     await forgetSubmittedPayload(rejectedId);
 
-    if (repointed || editsResolved > 0) reconciled++;
+    if (repointed || editOutcome.resolved > 0 || editOutcome.retargeted > 0) reconciled++;
   }
 
   return { scanned: candidates.size, reconciled };

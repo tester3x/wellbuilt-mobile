@@ -1136,12 +1136,13 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingTop: spacing.sm,
     paddingHorizontal: wp('5%'),
-    // Normal small form-bottom spacing only. The custom keypad's
-    // MeasurementKeypadSlot reserves its own space in normal flow, so no
-    // keypad-height / percent-of-screen spacer is needed here. The ScrollView
-    // is preserved, so natural scrolling still applies when content genuinely
-    // overflows (small screens, landscape, large text / accessibility scale).
-    paddingBottom: spacing.md,
+    // Normal small form-bottom spacing only — a fixed density-independent 16dp
+    // value, NOT a screen percentage (all spacing.* tokens resolve through
+    // hp()). The custom keypad's MeasurementKeypadSlot reserves its own space in
+    // normal flow, so no keypad-height / percent-of-screen spacer is needed
+    // here. The ScrollView is preserved, so natural scrolling still applies when
+    // content genuinely overflows (small screens, landscape, large text scale).
+    paddingBottom: 16,
   },
   // Fixed header at top
   fixedHeader: {

@@ -15,11 +15,17 @@ describe('Record Load / Pull Edit — Issue 1: artificial form gap removed', () 
 
   it('#1 the obsolete 30% content padding is gone', () => {
     expect(record).not.toMatch(/paddingBottom:\s*hp\(['"]30%['"]\)/);
-    expect(contentContainer).not.toMatch(/hp\(/); // no percent-of-screen workaround at all
+    // (the "no screen-derived value at the form-bottom padding" guarantee is
+    //  enforced precisely on the padding VALUE in #2, not on comment text)
   });
 
-  it('#2 only normal small bottom form spacing remains', () => {
-    expect(contentContainer).toMatch(/paddingBottom:\s*spacing\.(sm|md)/);
+  it('#2 form-bottom padding is a fixed density-independent dp value, not screen-derived', () => {
+    const pb = ((contentContainer.match(/paddingBottom:\s*([^,\n]+)/) || [])[1] || '').trim();
+    expect(pb).toMatch(/^\d+$/);            // a plain dp number (e.g. 16), not a token/expression
+    expect(pb).not.toMatch(/hp\(|wp\(/);    // reject any screen percentage
+    expect(pb).not.toMatch(/spacing\./);    // reject spacing tokens (all resolve through hp())
+    expect(Number(pb)).toBeGreaterThan(0);
+    expect(Number(pb)).toBeLessThanOrEqual(48); // reject restoration of a large artificial spacer
   });
 
   it('#3 the ScrollView is preserved (natural scrolling retained on overflow)', () => {

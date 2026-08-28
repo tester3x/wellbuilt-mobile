@@ -104,7 +104,6 @@ describe('reconciliation freshness (stale "Submitted — awaiting server" fix)',
 const read = (p: string) => fs.readFileSync(path.join(__dirname, p), 'utf8');
 const recordSrc = read('../../../app/record.tsx');
 const toastSrc = read('../../components/SyncToast.tsx');
-const badgeSrc = read('../../components/SyncAttentionBadge.tsx');
 const syncScreenSrc = read('../../../app/sync-status.tsx');
 const layoutSrc = read('../../../app/_layout.tsx');
 
@@ -197,22 +196,12 @@ describe('SyncToast — branded, truthful, nonblocking', () => {
   });
 });
 
-describe('badge — route-aware and immediately fresh', () => {
-  test('uses route placement, hides via placement, and left/right offsets', () => {
-    expect(badgeSrc).toContain('badgePlacementForRoute(pathname)');
-    expect(badgeSrc).toContain("placement === 'hidden'");
-    expect(badgeSrc).toContain('badgeLeftOffset(insets.left)');
-    expect(badgeSrc).toContain('badgeRightOffset(insets.right)');
-  });
-
-  test('refreshes immediately on reconcile results', () => {
-    expect(badgeSrc).toContain('onReconcileResult(');
-  });
-
-  test('opens Sync Status with the same filter the badge is counting', () => {
-    expect(badgeSrc).toContain('badgeOpenFilter');
-    expect(badgeSrc).toContain("pathname: '/sync-status'");
-    expect(badgeSrc).toContain('params: { filter }');
+// The 'badge — route-aware and immediately fresh' block was removed with the
+// tappable packet-status banner (Mike: code the tappable packet banners out).
+describe('packet-status tap banner removed', () => {
+  test('no SyncAttentionBadge component exists and the layout does not render one', () => {
+    expect(fs.existsSync(path.join(__dirname, '../../components/SyncAttentionBadge.tsx'))).toBe(false);
+    expect(layoutSrc).not.toContain('SyncAttentionBadge');
   });
 });
 

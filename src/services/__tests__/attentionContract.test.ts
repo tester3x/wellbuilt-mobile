@@ -30,7 +30,7 @@ import {
   selectDeliveryItems,
 } from '../deliveryStatus';
 import { SYNC_FAILED_THRESHOLD } from '../packetQueue';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const NOW = Date.parse('2026-08-22T16:00:00.000Z');
@@ -124,26 +124,18 @@ describe('attention-state contract', () => {
   });
 });
 
-describe('attention wiring', () => {
-  const badge = src('src/components/SyncAttentionBadge.tsx');
-  const toast = src('src/components/SyncToast.tsx');
-  const screen = src('app/sync-status.tsx');
-
-  it('badge reconciles before counting and shares selectDeliveryItems with Sync Status', () => {
-    expect(badge).toMatch(/reconcileSubmittedPulls\(\)/);
-    expect(badge).toMatch(/getDeliveryCounts\(\)/);
-    expect(screen).toMatch(/selectDeliveryItems\(items, filter\)/);
+// The 'attention wiring' block (badge onPress/reconcile source-assertions) was
+// removed with the tappable packet-status banner. The underlying delivery-count
+// contract above (computeDeliveryCounts / selectDeliveryItems parity) is retained.
+describe('packet-status tap banner is removed from the UI', () => {
+  it('no SyncAttentionBadge component file exists', () => {
+    expect(existsSync(join(__dirname, '../../components/SyncAttentionBadge.tsx'))).toBe(false);
   });
-
-  it('reconcile-result event counts only and does not re-enter reconcile', () => {
-    expect(badge).toMatch(/unsubReconcile = onReconcileResult\(\(\) => \{ loadCounts\(\); \}\)/);
-    const effect = badge.slice(badge.indexOf('useEffect(() => {'));
-    expect(effect).toMatch(/onReconcileResult\(\(\) => \{ loadCounts\(\); \}\)/);
-    expect(effect).not.toMatch(/onReconcileResult\(\(\) => \{ refresh\(\); \}\)/);
+  it('the root layout neither imports nor renders a packet-status banner', () => {
+    const layout = src('app/_layout.tsx');
+    expect(layout).not.toMatch(/SyncAttentionBadge/);
   });
-
-  it('removes the delivered-success badge', () => {
-    expect(toast).not.toMatch(/title: 'Delivered'/);
-    expect(badge).not.toMatch(/delivered/i);
+  it('the delivered-success toast is not shown', () => {
+    expect(src('src/components/SyncToast.tsx')).not.toMatch(/title: 'Delivered'/);
   });
 });

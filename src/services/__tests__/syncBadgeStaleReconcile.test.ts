@@ -1,11 +1,12 @@
-// The reported field bug: a "⚠ 28 need attention" badge that opens an EMPTY list.
-// Root cause: the badge showed a STALE snapshot of stuck-'submitted' pulls; when the
-// Sync Status screen opened it reconciled them to 'sent' first, so the fresh list was
-// empty. These pins prove the shared selector keeps count↔list in parity BEFORE and
-// AFTER reconcile, that a resolved record leaves BOTH, and that badgeOpenFilter yields
-// no destination once nothing is actionable (so the on-tap reconcile can never open an
-// empty list). Review/provenance tags (Late Entry/Anomaly/…) are server-side and are
-// NOT part of the client delivery model, so they can never inflate the transport count.
+// Delivery attention selector — count/list parity across reconcile. (The tappable
+// packet-status banner has since been removed from the UI per Mike's instruction;
+// these remain as UNDERLYING delivery-selector tests, not banner-onPress tests.)
+// They prove the shared selector keeps count↔list in parity before AND after a
+// reconcile, that a resolved record leaves BOTH count and list, and that
+// badgeOpenFilter yields no actionable filter once nothing remains. Review/provenance
+// tags (Late Entry/Anomaly/…) are server-side and are NOT part of the client delivery
+// model, so they can never inflate the transport count. The Sync Status screen (still
+// a route) uses these same selectors.
 const mockStore: Record<string, string> = {};
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,

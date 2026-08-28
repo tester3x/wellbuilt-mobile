@@ -15,7 +15,6 @@ import AppSwitcher from '../src/components/AppSwitcher';
 // (it still needs to know if Firebase is reachable to decide upload vs queue).
 import { WhatsNewModal } from '../components/WhatsNewModal';
 import { useWhatsNew } from '../hooks/use-whats-new';
-import { SyncAttentionBadge } from '../src/components/SyncAttentionBadge';
 import { SyncToastHost } from '../src/components/SyncToast';
 import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/services/wellHistory';
 import { startDeliveryReconciler } from '../src/services/deliveryStatus';
@@ -126,7 +125,6 @@ export default function RootLayout() {
       <DispatchProvider>
         <View style={styles.container}>
           <SyncToastHost />
-          <SyncAttentionBadge />
           <Stack
             screenOptions={{
               headerShown: false,

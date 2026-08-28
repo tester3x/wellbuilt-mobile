@@ -5,6 +5,7 @@
 import { getDriverId, getDriverName } from './driverAuth';
 import { loadWellConfig, getWellConfig, WellConfigMap } from './wellConfig';
 import { packetShowsEditBadge, selectVisibleHistoryPackets } from './editMarkers';
+import { reviewSignalsFromPacket } from '../utils/reviewSignals';
 
 // *** FIREBASE PROJECT CONFIG ***
 // WellBuilt Sync - Firebase Realtime Database
@@ -824,10 +825,7 @@ export const requestWellHistory = async (
         isEdit: isEditPacket,
         originalPacketId: p.originalPacketId || (isEditPacket ? p.packetId : undefined),
         originalData,
-        lateEntry: p.lateEntry === true,
-        anomaly: p.anomaly === true,
-        potentialDuplicate: p.potentialDuplicate === true,
-        needsReview: p.needsReview === true,
+        ...reviewSignalsFromPacket(p),
       });
     }
 

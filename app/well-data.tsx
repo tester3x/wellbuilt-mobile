@@ -40,6 +40,8 @@ import {
   WellHistoryResponse,
   WellHistoryRow,
 } from "../src/services/firebase";
+import { compareWellHistoryRowsCanonical, rowEventTimeMs } from "../src/utils/chronoOrder";
+import { hasReviewSignals } from "../src/utils/reviewSignals";
 import { getDriverName, isCurrentUserAdmin } from "../src/services/driverAuth";
 import { hp, spacing, wp } from "../src/ui/layout";
 
@@ -204,24 +206,18 @@ export default function WellDataScreen() {
     return 0;
   };
 
-  // Canonical event-time for a row: prefer the ISO dateTimeUTC (reliably parseable
-  // and the chronological authority — so a BACKDATED pull sorts into its true
-  // position), falling back to the display string only when UTC is missing.
-  const rowTimeMs = (row: WellHistoryRow): number => {
-    if (row.dateTimeUTC) {
-      const t = new Date(row.dateTimeUTC).getTime();
-      if (!isNaN(t)) return t;
-    }
-    return parseDateTimeToMs(row.dateTime);
-  };
+  // Canonical event-time for a row (dateTimeUTC authority, display fallback).
+  const rowTimeMs = (row: WellHistoryRow): number => rowEventTimeMs(row, parseDateTimeToMs);
 
   // Get the N most recent rows first, THEN sort those by selected column
   // This ensures 20/35/50 always shows the most recent pulls, just sorted differently
   const sortedRows = useMemo(() => {
     if (cachedRows.length === 0) return [];
 
-    // First: get the most recent N rows (sorted by canonical event time desc, sliced)
-    const byDateDesc = [...cachedRows].sort((a, b) => rowTimeMs(b) - rowTimeMs(a));
+    // First: get the most recent N rows by the CANONICAL order (event time, then
+    // packetId tie-break) descending, then slice. Equal-time rows order
+    // deterministically by packetId — matching the server.
+    const byDateDesc = [...cachedRows].sort((a, b) => compareWellHistoryRowsCanonical(b, a, parseDateTimeToMs));
     const recentRows = byDateDesc.slice(0, displayLimit);
 
     // Second: sort these recent rows by the selected column
@@ -229,7 +225,9 @@ export default function WellDataScreen() {
       let comparison = 0;
       switch (sortColumn) {
         case "dateTime":
-          comparison = rowTimeMs(a) - rowTimeMs(b);
+          // Full canonical comparison (time, then packetId) so equal-time rows are
+          // deterministic under the date column too.
+          comparison = compareWellHistoryRowsCanonical(a, b, parseDateTimeToMs);
           break;
         case "bbls24":
           comparison = (parseInt(a.bbls24hrs) || 0) - (parseInt(b.bbls24hrs) || 0);
@@ -299,7 +297,7 @@ export default function WellDataScreen() {
           )}
           {/* Chronological review signals — INFO only, never a rejection. The pull
               is accepted and shown; these badges just flag it for dispatch review. */}
-          {(item.lateEntry || item.anomaly || item.potentialDuplicate || item.needsReview) && (
+          {hasReviewSignals(item) && (
             <View style={styles.reviewBadgeRow}>
               {item.lateEntry && (
                 <View style={[styles.reviewBadge, styles.reviewBadgeLate]}>

@@ -671,6 +671,11 @@ export interface WellHistoryRow {
     bottomLevel?: string;
     dateTime?: string;
   };
+  // Chronological review signals (repaired pipeline) — REVIEW info, not errors.
+  lateEntry?: boolean;        // accepted behind an already-existing later pull
+  anomaly?: boolean;          // flow/continuity outside the well band (excluded from AFR)
+  potentialDuplicate?: boolean; // matching values, no shared lineage — accepted, flag for dispatch
+  needsReview?: boolean;      // same lineage, conflicting correction — accepted, flag for review
 }
 
 export interface WellHistoryResponse {
@@ -754,6 +759,13 @@ export const requestWellHistory = async (
         bottomLevel?: string;
         dateTime?: string;
       };
+      // Server-side chronological review signals (present on the repaired pipeline;
+      // absent on the current production server → simply not shown). REVIEW info,
+      // never a rejection — every such pull is still accepted and displayed.
+      lateEntry?: boolean;
+      anomaly?: boolean;
+      potentialDuplicate?: boolean;
+      needsReview?: boolean;
     }
     const rawPulls: RawPullData[] = [];
 
@@ -812,6 +824,10 @@ export const requestWellHistory = async (
         isEdit: isEditPacket,
         originalPacketId: p.originalPacketId || (isEditPacket ? p.packetId : undefined),
         originalData,
+        lateEntry: p.lateEntry === true,
+        anomaly: p.anomaly === true,
+        potentialDuplicate: p.potentialDuplicate === true,
+        needsReview: p.needsReview === true,
       });
     }
 
@@ -984,6 +1000,11 @@ export const requestWellHistory = async (
         isEdit: current.isEdit,
         originalPacketId: current.originalPacketId,
         originalData: current.originalData,
+        // Chronological review signals (info only)
+        lateEntry: current.lateEntry,
+        anomaly: current.anomaly,
+        potentialDuplicate: current.potentialDuplicate,
+        needsReview: current.needsReview,
       });
     }
 

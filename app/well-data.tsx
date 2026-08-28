@@ -204,15 +204,24 @@ export default function WellDataScreen() {
     return 0;
   };
 
+  // Canonical event-time for a row: prefer the ISO dateTimeUTC (reliably parseable
+  // and the chronological authority — so a BACKDATED pull sorts into its true
+  // position), falling back to the display string only when UTC is missing.
+  const rowTimeMs = (row: WellHistoryRow): number => {
+    if (row.dateTimeUTC) {
+      const t = new Date(row.dateTimeUTC).getTime();
+      if (!isNaN(t)) return t;
+    }
+    return parseDateTimeToMs(row.dateTime);
+  };
+
   // Get the N most recent rows first, THEN sort those by selected column
   // This ensures 20/35/50 always shows the most recent pulls, just sorted differently
   const sortedRows = useMemo(() => {
     if (cachedRows.length === 0) return [];
 
-    // First: get the most recent N rows (sorted by date descending, then sliced)
-    const byDateDesc = [...cachedRows].sort((a, b) =>
-      parseDateTimeToMs(b.dateTime) - parseDateTimeToMs(a.dateTime)
-    );
+    // First: get the most recent N rows (sorted by canonical event time desc, sliced)
+    const byDateDesc = [...cachedRows].sort((a, b) => rowTimeMs(b) - rowTimeMs(a));
     const recentRows = byDateDesc.slice(0, displayLimit);
 
     // Second: sort these recent rows by the selected column
@@ -220,7 +229,7 @@ export default function WellDataScreen() {
       let comparison = 0;
       switch (sortColumn) {
         case "dateTime":
-          comparison = parseDateTimeToMs(a.dateTime) - parseDateTimeToMs(b.dateTime);
+          comparison = rowTimeMs(a) - rowTimeMs(b);
           break;
         case "bbls24":
           comparison = (parseInt(a.bbls24hrs) || 0) - (parseInt(b.bbls24hrs) || 0);
@@ -286,6 +295,32 @@ export default function WellDataScreen() {
           {isEdited && (
             <View style={styles.editedBadge}>
               <Text style={styles.editedBadgeText}>{t("wellData.edited")}</Text>
+            </View>
+          )}
+          {/* Chronological review signals — INFO only, never a rejection. The pull
+              is accepted and shown; these badges just flag it for dispatch review. */}
+          {(item.lateEntry || item.anomaly || item.potentialDuplicate || item.needsReview) && (
+            <View style={styles.reviewBadgeRow}>
+              {item.lateEntry && (
+                <View style={[styles.reviewBadge, styles.reviewBadgeLate]}>
+                  <Text style={styles.reviewBadgeText}>{t("wellData.lateEntry")}</Text>
+                </View>
+              )}
+              {item.anomaly && (
+                <View style={[styles.reviewBadge, styles.reviewBadgeAnomaly]}>
+                  <Text style={styles.reviewBadgeText}>{t("wellData.anomaly")}</Text>
+                </View>
+              )}
+              {item.potentialDuplicate && (
+                <View style={[styles.reviewBadge, styles.reviewBadgeDup]}>
+                  <Text style={styles.reviewBadgeText}>{t("wellData.potentialDuplicate")}</Text>
+                </View>
+              )}
+              {item.needsReview && (
+                <View style={[styles.reviewBadge, styles.reviewBadgeReview]}>
+                  <Text style={styles.reviewBadgeText}>{t("wellData.needsReview")}</Text>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -800,6 +835,28 @@ const styles = StyleSheet.create({
     color: "#000",
     fontWeight: "600",
   },
+  // Review-signal badges — informational (muted, neutral), never error-red.
+  reviewBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 2,
+  },
+  reviewBadge: {
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+    marginRight: 3,
+    marginTop: 1,
+  },
+  reviewBadgeText: {
+    fontSize: hp("0.85%"),
+    color: "#0B1220",
+    fontWeight: "600",
+  },
+  reviewBadgeLate: { backgroundColor: "#93C5FD" },      // blue-300 (informational)
+  reviewBadgeAnomaly: { backgroundColor: "#FCD34D" },   // amber-300
+  reviewBadgeDup: { backgroundColor: "#C4B5FD" },       // violet-300
+  reviewBadgeReview: { backgroundColor: "#A7F3D0" },    // emerald-200
   dataCellBbls24: {
     flex: 1.2,
     textAlign: "center",

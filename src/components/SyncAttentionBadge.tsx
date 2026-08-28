@@ -23,6 +23,7 @@ export function SyncAttentionBadge() {
   // portrait and landscape.
   const insets = useSafeAreaInsets();
   const [counts, setCounts] = useState<DeliveryCounts | null>(null);
+  const [opening, setOpening] = useState(false);
 
   const loadCounts = useCallback(async () => {
     try {
@@ -74,13 +75,27 @@ export function SyncAttentionBadge() {
           ? { left: badgeLeftOffset(insets.left) }
           : { right: badgeRightOffset(insets.right) },
       ]}
-      onPress={() => {
-        const filter = counts ? badgeOpenFilter(counts) : null;
-        if (filter && filter !== 'all') {
+      disabled={opening}
+      onPress={async () => {
+        // Reconcile-then-recount ON TAP so the badge can NEVER open an empty list.
+        // The Sync Status screen reconciles stuck 'submitted' pulls to 'sent' the
+        // moment it opens; if we navigated on the pre-reconcile snapshot the count
+        // (e.g. 28) could open an already-resolved, empty attention list. Instead we
+        // run the SAME reconcile + the SAME shared selector (getDeliveryCounts →
+        // selectDeliveryItems) first, update the badge to the live truth, and route
+        // on THAT. If nothing is actionable any more, we don't open the list — the
+        // badge simply hides.
+        if (opening) return;
+        setOpening(true);
+        try { await reconcileSubmittedPulls(); } catch { /* offline — use local truth */ }
+        let fresh: DeliveryCounts | null = counts;
+        try { fresh = await getDeliveryCounts(); setCounts(fresh); } catch { /* keep last */ }
+        setOpening(false);
+        const filter = fresh ? badgeOpenFilter(fresh) : null;
+        if (filter) {
           router.push({ pathname: '/sync-status', params: { filter } });
-        } else {
-          router.push('/sync-status');
         }
+        // filter === null → nothing actionable remains → do not open an empty list.
       }}
       accessibilityRole="button"
       accessibilityLabel="Open sync status"

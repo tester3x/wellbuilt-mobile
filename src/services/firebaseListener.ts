@@ -21,6 +21,13 @@ import { getFirebaseDatabase, waitForAuthUser } from './firebaseAuthSession';
 import * as SecureStore from 'expo-secure-store';
 import { runCancellableAttach } from './listenerAttach';
 import { decideIncomingVersionEvent, loadAppliedIncomingVersion, peekAppliedIncomingVersion } from './incomingVersion';
+import {
+  INCOMING_REVISION_V2_PATH,
+  decideRevisionV2Event,
+  loadAppliedRevisionV2,
+  peekAppliedRevisionV2,
+  revisionV2TokenOf,
+} from './revisionV2';
 
 void waitForAuthUser();
 
@@ -400,5 +407,54 @@ export function watchIncomingVersion(
     unsubscribe();
     activeListeners.delete(listenerId);
     console.log('[FirebaseListener] Stopped watching incoming_version:', listenerId);
+  };
+}
+
+/**
+ * Watch the v2 refresh token (Phase 2 dual contract). Fires onChange when the
+ * TOKEN DIFFERS from the applied one — inequality, never numeric order. The
+ * legacy watchIncomingVersion stays attached during the migration; the
+ * caller's coalesced runner makes a double fire refresh once.
+ */
+export function watchIncomingRevisionV2(
+  onChange: (token: string) => void,
+  getApplied: () => string | null = peekAppliedRevisionV2,
+): () => void {
+  const db = getFirebaseDatabase();
+  const revisionRef = ref(db, INCOMING_REVISION_V2_PATH);
+
+  let seenThisAttach = false;
+  const listenerId = `incoming_revision_v2_${Date.now()}`;
+
+  const unsubscribe = onValue(revisionRef, (snapshot) => {
+    const incomingToken = revisionV2TokenOf(snapshot.val());
+    const isFirst = !seenThisAttach;
+    seenThisAttach = true;
+    const handle = async () => {
+      if (isFirst) {
+        await loadAppliedRevisionV2();
+      }
+      const applied = getApplied();
+      const decision = decideRevisionV2Event({
+        appliedToken: applied,
+        incomingToken,
+        seenThisAttach: !isFirst,
+      });
+      if (decision === 'sync' && incomingToken) {
+        console.log('[FirebaseListener] incoming_revision_v2 requires sync:', applied, '->', incomingToken);
+        onChange(incomingToken);
+      }
+    };
+    void handle();
+  }, (error) => {
+    console.error('[FirebaseListener] Error watching incoming_revision_v2:', error);
+  });
+
+  activeListeners.set(listenerId, unsubscribe);
+
+  return () => {
+    unsubscribe();
+    activeListeners.delete(listenerId);
+    console.log('[FirebaseListener] Stopped watching incoming_revision_v2:', listenerId);
   };
 }

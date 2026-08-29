@@ -133,6 +133,16 @@ export const fetchIncomingVersion = async (): Promise<number | null> => {
   }
 };
 
+/** v2 refresh token (Phase 2 dual contract) — inequality-compared, never ordered. */
+export const fetchIncomingRevisionV2 = async (): Promise<string | null> => {
+  try {
+    const { INCOMING_REVISION_V2_PATH, revisionV2TokenOf } = await import('./revisionV2');
+    return revisionV2TokenOf(await firebaseGet(INCOMING_REVISION_V2_PATH));
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Firebase GET with server-side query filtering.
  * Uses REST API query params: orderBy, equalTo, startAt, endAt.

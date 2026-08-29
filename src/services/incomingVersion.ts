@@ -165,26 +165,36 @@ export type OutgoingStatusSyncIo<T = unknown> = {
   saveResponses: (responses: T[]) => Promise<void>;
   saveUnavailable: (wells: string[]) => Promise<void>;
   markApplied: (version: number, expectedDriverId: string) => Promise<boolean>;
+  /** Phase-2 dual contract: capture + persist the v2 refresh token alongside
+   *  the legacy version. Optional so legacy call sites keep compiling. */
+  fetchRevisionV2?: () => Promise<string | null>;
+  markRevisionV2Applied?: (token: string, expectedDriverId: string) => Promise<boolean>;
 };
 
 export async function captureAndApplyOutgoingStatus<T>(
   io: OutgoingStatusSyncIo<T>,
-): Promise<{ count: number; markedVersion: number | null; fetched: boolean }> {
+): Promise<{ count: number; markedVersion: number | null; markedRevisionV2: string | null; fetched: boolean }> {
   let versionBeforeFetch: number | null = null;
   try {
     versionBeforeFetch = await io.fetchIncomingVersion();
   } catch {
     versionBeforeFetch = null;
   }
+  let tokenBeforeFetch: string | null = null;
+  try {
+    tokenBeforeFetch = io.fetchRevisionV2 ? await io.fetchRevisionV2() : null;
+  } catch {
+    tokenBeforeFetch = null;
+  }
 
   let result: OutgoingStatusCapture<T> | null = null;
   try {
     result = await io.fetchOutgoingStatus();
   } catch {
-    return { count: 0, markedVersion: null, fetched: false };
+    return { count: 0, markedVersion: null, markedRevisionV2: null, fetched: false };
   }
   if (!result) {
-    return { count: 0, markedVersion: null, fetched: false };
+    return { count: 0, markedVersion: null, markedRevisionV2: null, fetched: false };
   }
 
   const responses = Array.isArray(result.responses) ? result.responses : [];
@@ -193,27 +203,43 @@ export async function captureAndApplyOutgoingStatus<T>(
     await io.saveResponses(responses);
     await io.saveUnavailable(unavailable);
   } catch {
-    return { count: 0, markedVersion: null, fetched: true };
+    return { count: 0, markedVersion: null, markedRevisionV2: null, fetched: true };
   }
 
   const expected = verifiedDriverId(result.driverId);
   if (
-    versionBeforeFetch == null
-    || !expected
+    !expected
     || !shouldMarkIncomingVersionApplied({ fetchOk: true, snapshotsSaved: true })
   ) {
-    return { count: responses.length, markedVersion: null, fetched: true };
+    return { count: responses.length, markedVersion: null, markedRevisionV2: null, fetched: true };
+  }
+
+  // Persist the v2 token (independent of the legacy version outcome).
+  let markedRevisionV2: string | null = null;
+  if (tokenBeforeFetch != null && io.markRevisionV2Applied) {
+    try {
+      if (await io.markRevisionV2Applied(tokenBeforeFetch, expected)) {
+        markedRevisionV2 = tokenBeforeFetch;
+      }
+    } catch {
+      markedRevisionV2 = null;
+    }
+  }
+
+  if (versionBeforeFetch == null) {
+    return { count: responses.length, markedVersion: null, markedRevisionV2, fetched: true };
   }
 
   let appliedOk: boolean | null | undefined;
   try {
     appliedOk = await io.markApplied(versionBeforeFetch, expected);
   } catch {
-    return { count: responses.length, markedVersion: null, fetched: true };
+    return { count: responses.length, markedVersion: null, markedRevisionV2, fetched: true };
   }
   return {
     count: responses.length,
     markedVersion: appliedOk === true ? versionBeforeFetch : null,
+    markedRevisionV2,
     fetched: true,
   };
 }

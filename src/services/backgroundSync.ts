@@ -5,7 +5,7 @@
 // Instead of downloading ALL data every 5 seconds, we subscribe once
 // and Firebase pushes only CHANGES to us. ~99% bandwidth reduction.
 
-import { subscribeToOutgoing, unsubscribeAll, isListening, watchIncomingVersion } from "./firebaseListener";
+import { subscribeToOutgoing, unsubscribeAll, isListening, watchIncomingVersion, watchIncomingRevisionV2 } from "./firebaseListener";
 import { saveLevelSnapshot, getLevelSnapshotSync, clearPendingPull } from "./wellHistory";
 import {
   isDownLevelToken,
@@ -19,6 +19,7 @@ import {
   markIncomingVersionApplied,
   peekAppliedIncomingVersion,
 } from "./incomingVersion";
+import { loadAppliedRevisionV2, markRevisionV2Applied } from "./revisionV2";
 
 // Lazy import to avoid expo-notifications warning in Expo Go
 // Notifications only work in development builds anyway
@@ -42,6 +43,7 @@ let syncTimer: ReturnType<typeof setInterval> | null = null; // Keep for legacy,
 let isSyncing = false;
 let listenerUnsubscribe: (() => void) | null = null;
 let versionUnsubscribe: (() => void) | null = null; // For incoming_version watcher
+let revisionV2Unsubscribe: (() => void) | null = null; // For incoming_revision_v2 watcher (Phase 2)
 let justDidSync = false; // Skip initial load if we just synced via REST
 let versionRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -258,7 +260,7 @@ const runOutgoingStatusSync = createCoalescedRunner(async (): Promise<number> =>
 
   let count = 0;
   try {
-    const { fetchDriverOutgoingStatus, fetchIncomingVersion } = await import('./firebase');
+    const { fetchDriverOutgoingStatus, fetchIncomingVersion, fetchIncomingRevisionV2 } = await import('./firebase');
     const { markLevelUnavailable } = await import('./wellHistory');
     const applied = await captureAndApplyOutgoingStatus({
       fetchIncomingVersion,
@@ -274,6 +276,8 @@ const runOutgoingStatusSync = createCoalescedRunner(async (): Promise<number> =>
         }
       },
       markApplied: markIncomingVersionApplied,
+      fetchRevisionV2: fetchIncomingRevisionV2,
+      markRevisionV2Applied,
     });
     count = applied.count;
     if (!applied.fetched) {
@@ -296,6 +300,7 @@ export async function syncFromProcessedFolder(_retryCount: number = 0): Promise<
 /** Foreground wake: one coalesced authenticated status fetch. */
 export async function syncOnForeground(): Promise<number> {
   await loadAppliedIncomingVersion();
+  await loadAppliedRevisionV2();
   return runOutgoingStatusSync();
 }
 
@@ -373,6 +378,17 @@ export function startBackgroundSync(): void {
       scheduleVersionCompletionRetry();
     });
   }, peekAppliedIncomingVersion);
+
+  // METHOD 3 (Phase 2 dual contract): watch the v2 refresh token. Both
+  // watchers funnel into the SAME coalesced runner, so legacy + v2 firing for
+  // one mutation refresh exactly once.
+  void loadAppliedRevisionV2();
+  revisionV2Unsubscribe = watchIncomingRevisionV2((token) => {
+    console.log('[BackgroundSync] incoming_revision_v2 changed - fetching updated responses', token);
+    void runOutgoingStatusSync().then(() => {
+      scheduleVersionCompletionRetry();
+    });
+  });
 }
 
 /**
@@ -391,6 +407,13 @@ export function stopBackgroundSync(): void {
     listenerUnsubscribe();
     listenerUnsubscribe = null;
     console.log('[BackgroundSync] Stopped outgoing listener');
+  }
+
+  // Unsubscribe from v2 revision watcher
+  if (revisionV2Unsubscribe) {
+    revisionV2Unsubscribe();
+    revisionV2Unsubscribe = null;
+    console.log('[BackgroundSync] Stopped revision v2 watcher');
   }
 
   // Unsubscribe from version watcher

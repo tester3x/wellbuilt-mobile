@@ -18,9 +18,18 @@ export async function secureIngestPacket(packet: Record<string, unknown>) {
   if (requestType !== 'pull') {
     unsupportedFieldCommand(requestType);
   }
+  // clientMeta rides OUTSIDE the packet: refusal logs can attribute the
+  // request to a build without the metadata touching packet validation.
+  let clientMeta: Record<string, string> | undefined;
+  try {
+    const { governedClientBuildMeta } = await import('./clientBuildMeta');
+    clientMeta = await governedClientBuildMeta() as Record<string, string> | undefined;
+  } catch {
+    clientMeta = undefined;
+  }
   return authorizedCallable<{ ok: boolean; key?: string; packetId?: string; duplicate?: boolean }>(
     'ingestWbmPull',
-    { packet },
+    clientMeta ? { packet, clientMeta } : { packet },
   );
 }
 

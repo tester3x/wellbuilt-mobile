@@ -142,7 +142,14 @@ export async function authorizedCallable<T>(
   });
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok || body.error) {
-    throw new Error(body?.error?.message || `Callable ${name} failed (${resp.status})`);
+    // Carry the callable-protocol status + HTTP status so the queue can
+    // classify permanent refusals vs transient failures (Phase 4). The
+    // message is the server's STABLE reason code when one was thrown.
+    const err = new Error(body?.error?.message || `Callable ${name} failed (${resp.status})`);
+    (err as { callableStatus?: string }).callableStatus =
+      typeof body?.error?.status === 'string' ? body.error.status : undefined;
+    (err as { httpStatus?: number }).httpStatus = resp.status;
+    throw err;
   }
   return body.result as T;
 }

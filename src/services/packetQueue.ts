@@ -221,7 +221,7 @@ export async function isOnline(): Promise<boolean> {
 // Send a single queued packet. The payload carries its stable packetId, so
 // a replay is idempotent — uploadTankPacket honors the supplied id and the
 // server sees the SAME identity on every attempt.
-async function sendQueuedPacket(packet: QueuedPacket): Promise<{ ok: boolean; error?: string }> {
+async function sendQueuedPacket(packet: QueuedPacket): Promise<{ ok: boolean; error?: string; permanentReason?: string }> {
   try {
     if (packet.type === "pull") {
       await uploadTankPacket(packet.data);
@@ -231,7 +231,16 @@ async function sendQueuedPacket(packet: QueuedPacket): Promise<{ ok: boolean; er
     return { ok: true };
   } catch (error: any) {
     console.log("[PacketQueue] Send failed:", packet.id, error);
-    return { ok: false, error: String(error?.message || error || "unknown") };
+    // Phase 4: a structured PERMANENT refusal (invalid/unauthorized/
+    // precondition) can never succeed by retrying — surface its reason so
+    // the flush parks it as a retained rejected record instead of looping.
+    let permanentReason: string | undefined;
+    try {
+      const { classifyIngestFailure } = await import('./ingestRefusal');
+      const cls = classifyIngestFailure(error);
+      if (cls.kind === 'permanent') permanentReason = cls.reason;
+    } catch { /* classifier unavailable → stay transient */ }
+    return { ok: false, error: String(error?.message || error || "unknown"), permanentReason };
   }
 }
 
@@ -307,6 +316,22 @@ async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
         try { await rememberSubmittedPayload(packet.packetId, packet.data); } catch {}
       }
       console.log("[PacketQueue] Submitted:", packet.id, packet.packetId ?? "");
+    } else if (result.permanentReason && packet.type === "pull" && packet.packetId) {
+      // Phase 4: PERMANENT structured refusal — park as a retained rejected
+      // record with its exact reason. The payload copy is preserved first
+      // (same-ID recovery evidence), then the queue entry is removed so it
+      // stops retrying. User intent never silently disappears: the history
+      // row shows 'rejected' + the server's stable reason, and Sync Status
+      // keeps listing it through the governed route.
+      failed++;
+      try { await rememberSubmittedPayload(packet.packetId, packet.data); } catch {}
+      await removeFromQueue(packet.id);
+      try {
+        await setPullSyncStatus(packet.packetId, "rejected", {
+          rejectionReason: `ingest_refused: ${result.permanentReason}`,
+        });
+      } catch {}
+      console.log("[PacketQueue] Parked permanently-refused packet:", packet.packetId, result.permanentReason);
     } else {
       failed++;
       await persistAttemptFailure(packet.id, result.error || "unknown", nowMs);

@@ -57,6 +57,9 @@ describe('classifyIngestFailure', () => {
     expect(classifyIngestFailure(callableError('Callable ingestWbmPull failed (401)', undefined, 401)).kind).toBe('transient');
     expect(classifyIngestFailure(callableError('Callable ingestWbmPull failed (500)', undefined, 500)).kind).toBe('transient');
     expect(classifyIngestFailure(new TypeError('Network request failed')).kind).toBe('transient');
+    // Blocker-3: staged-rollout maintenance pause is a RETRYABLE class — the
+    // client must RETAIN the queued packet, not mark it sent/rejected.
+    expect(classifyIngestFailure(callableError('wbm_mutations_paused', 'UNAVAILABLE', 503)).kind).toBe('transient');
     expect(classifyIngestFailure(undefined).kind).toBe('transient'); // conservative default
   });
 

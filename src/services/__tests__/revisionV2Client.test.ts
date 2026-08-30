@@ -36,6 +36,9 @@ describe('token parsing (mirrors the server parser)', () => {
     expect(revisionV2TokenOf({ v: 2, token: 42 })).toBeNull();
     expect(revisionV2TokenOf(['x'])).toBeNull();
     expect(revisionV2TokenOf('  ')).toBeNull();
+    expect(revisionV2TokenOf('x'.repeat(129))).toBeNull();     // bound: nothing unbounded persists/logs
+    expect(revisionV2TokenOf({ v: 2, token: 'y'.repeat(4096) })).toBeNull();
+    expect(revisionV2TokenOf('z'.repeat(128))).toBe('z'.repeat(128));
   });
 });
 

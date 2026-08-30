@@ -24,12 +24,21 @@ import { verifiedDriverId } from './incomingVersion';
 
 export const INCOMING_REVISION_V2_PATH = 'packets/incoming_revision_v2';
 
-/** Defensive token extraction — mirrors the server parser exactly. */
+/** Defensive token extraction — mirrors the server parser exactly. Tokens are
+ *  minted operation ids (≤128 chars); over-long values from the world-writable
+ *  node are MALFORMED → null → ignored, so nothing unbounded is ever
+ *  persisted, compared, or logged on the device. */
+export const MAX_REVISION_TOKEN_LENGTH = 128;
+
 export function revisionV2TokenOf(raw: unknown): string | null {
-  if (typeof raw === 'string') return raw.trim() || null;
+  const bounded = (v: string): string | null => {
+    const t = v.trim();
+    return t && t.length <= MAX_REVISION_TOKEN_LENGTH ? t : null;
+  };
+  if (typeof raw === 'string') return bounded(raw);
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     const token = (raw as { token?: unknown }).token;
-    if (typeof token === 'string' && token.trim()) return token.trim();
+    if (typeof token === 'string') return bounded(token);
   }
   return null;
 }
@@ -127,7 +136,7 @@ export async function markRevisionV2Applied(
   expectedDriverId: unknown,
   readers?: RevisionV2Readers,
 ): Promise<boolean> {
-  if (typeof token !== 'string' || !token.trim()) return false;
+  if (typeof token !== 'string' || !token.trim() || token.trim().length > MAX_REVISION_TOKEN_LENGTH) return false;
   const expected = verifiedDriverId(expectedDriverId);
   if (!expected) return false;
   try {

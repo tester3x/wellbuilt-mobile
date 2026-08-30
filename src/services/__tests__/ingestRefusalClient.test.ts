@@ -21,9 +21,10 @@ jest.mock('@react-native-community/netinfo', () => ({
   },
 }));
 const uploadTankPacket = jest.fn();
+const uploadEditPacket = jest.fn();
 jest.mock('../firebase', () => ({
   uploadTankPacket: (...a: unknown[]) => uploadTankPacket(...a),
-  uploadEditPacket: jest.fn(),
+  uploadEditPacket: (...a: unknown[]) => uploadEditPacket(...a),
   mintPacketId: jest.fn(() => 'pid_mock'),
 }));
 jest.mock('../driverAuth', () => ({
@@ -103,6 +104,42 @@ describe('flush parking of permanent refusals', () => {
     expect(r.failed).toBe(1);
     const q = await getQueuedPackets();
     expect(q).toHaveLength(1);
+    expect(q[0].retryCount).toBe(1);
+  });
+
+  // Rev-4 final preflight item 5: the maintenance-pause response must retain a
+  // queued CREATE *and* a queued EDIT with their original packet id + payload.
+  test('maintenance pause (UNAVAILABLE/503) on a CREATE: retained, same id + payload preserved', async () => {
+    uploadEditPacket.mockReset();
+    await (await import('@react-native-async-storage/async-storage')).default.removeItem('@wellbuilt_packet_queue'); // isolate queue state
+    const PID = '20260828_051500_Gabriel5_cr8ate1';
+    await queuePacket('pull', { wellName: 'Gabriel 5', packetId: PID, bblsTaken: 12, tankLevelFeet: 9 });
+    uploadTankPacket.mockRejectedValue(callableError('wbm_mutations_paused', 'UNAVAILABLE', 503));
+
+    const r = await flushQueue();
+    expect(r.failed).toBe(1);
+    const q = await getQueuedPackets();
+    expect(q).toHaveLength(1);
+    expect(q[0].type).toBe('pull');
+    expect(q[0].data.packetId).toBe(PID);           // original id preserved
+    expect(q[0].data.bblsTaken).toBe(12);           // payload preserved
+    expect(q[0].retryCount).toBe(1);                // retained on backoff, not dropped/parked
+  });
+
+  test('maintenance pause (UNAVAILABLE/503) on an EDIT: retained, same id + payload preserved', async () => {
+    uploadTankPacket.mockReset();
+    await (await import('@react-native-async-storage/async-storage')).default.removeItem('@wellbuilt_packet_queue'); // isolate queue state
+    const EID = '20260828_052000_Gabriel5_ed1t99';
+    await queuePacket('edit', { wellName: 'Gabriel 5', packetId: EID, originalPacketId: EID, requestType: 'edit', bblsTaken: 45, editEventId: EID });
+    uploadEditPacket.mockRejectedValue(callableError('wbm_mutations_paused', 'UNAVAILABLE', 503));
+
+    const r = await flushQueue();
+    expect(r.failed).toBe(1);
+    const q = await getQueuedPackets();
+    expect(q).toHaveLength(1);
+    expect(q[0].type).toBe('edit');                 // EDIT path, not dropped/parked
+    expect(q[0].data.packetId).toBe(EID);           // original id preserved
+    expect(q[0].data.bblsTaken).toBe(45);           // payload preserved
     expect(q[0].retryCount).toBe(1);
   });
 });

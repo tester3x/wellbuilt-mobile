@@ -3,11 +3,18 @@
 // (buildWbmPullCommand / buildWbmEditCommand) and pinned to a committed golden
 // file with a sha256 digest. The server emulator consumes the SAME golden file
 // verbatim through the real ingest→processing pipeline (see
-// functions/emulator/governedContractFixture.mjs). If either builder drifts,
-// the regenerated digest stops matching the golden and THIS test fails loudly.
+// functions/emulator/governedContractFixture.mjs).
 //
-// Regenerate (after an intentional contract change): WB_WRITE_FIXTURE=1 jest
-// governedContractFixture, then copy the golden to the server repo fixtures.
+// THIS test detects BUILDER DRIFT within the CLIENT repo: if a builder changes
+// without regenerating the golden, the recomputed digest stops matching and this
+// fails loudly. It is NOT, on its own, a cross-repository divergence detector —
+// it only sees the client copy. Client-vs-server VERSION DIVERGENCE is caught by
+// two other mechanisms: the server harness's EXPECTED_CLIENT_CONTRACT pin, and
+// the authoritative byte-compare `scripts/checkGovernedContractFixtureSync.mjs`.
+//
+// Regenerate + sync both repo copies (client is authoritative) with ONE command:
+//   node scripts/syncGovernedContractFixture.mjs
+// then bump the server EXPECTED_CLIENT_CONTRACT pin to the printed {version,digest}.
 import { createHash } from 'crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';

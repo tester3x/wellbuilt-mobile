@@ -18,7 +18,7 @@ import { useWhatsNew } from '../hooks/use-whats-new';
 import { SyncToastHost } from '../src/components/SyncToast';
 import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/services/wellHistory';
 import { startDeliveryReconciler } from '../src/services/deliveryStatus';
-import { startEditDelivery } from '../src/services/editDelivery';
+import { startEditDelivery, setDeliveryForeground } from '../src/services/editDelivery';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
 import { performPermittedLogout } from '../src/services/driverAuth';
 import { checkCanonicalSsoLogout } from '../src/services/ssoLogout';
@@ -56,6 +56,8 @@ export default function RootLayout() {
     // Re-hide nav bar when app returns to foreground (deep links from WB S can re-show it)
     // Also check for RTDB logoutAt signal from WB S (silent cascade logout)
     const appStateSub = AppState.addEventListener('change', (state) => {
+      // Gate the active-only edit-delivery retry scheduler (foreground = active).
+      setDeliveryForeground(state === 'active');
       if (state === 'active') {
         hideNavBar();
         checkCanonicalSsoLogout().then((permit) => {

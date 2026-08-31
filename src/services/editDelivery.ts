@@ -543,21 +543,100 @@ export async function getPendingEditForWell(
   return op ? { opId: op.opId, state: op.state, originalPacketId: op.originalPacketId } : null;
 }
 
+// ─────────────────────── active-only delivery scheduler ───────────────────────
+// A SINGLE self-rescheduling deadline timer (never continuous polling). It fires
+// only at the earliest pending edit's next backoff deadline, does nothing when
+// the queue is empty, and runs only while foregrounded + online + authed.
 let _started = false;
+let _schedulerEnabled = false;
+let _deliveryTimer: ReturnType<typeof setTimeout> | null = null;
+let _fg = true, _online = true, _authed = true;
+let _deliveryFetch: typeof fetch | null = null;
+export function setDeliveryFetch(fn: typeof fetch | null): void { _deliveryFetch = fn; }
+const clearDeliveryTimer = (): void => { if (_deliveryTimer) { clearTimeout(_deliveryTimer); _deliveryTimer = null; } };
 
-/** Lifecycle wiring: a pass at startup (dependencies survive restart) and
- *  after every queue flush (originals may just have been processed). */
+/** True while an op should still be auto-retried at some future deadline. */
+function retriesEventually(op: EditOperation): boolean {
+  return op.state !== 'edit_blocked' && op.state !== 'edit_rejected' && op.state !== 'edited' && !isPermanentEditFailure(op.lastError);
+}
+
+/** Earliest next-attempt deadline (ms epoch) across eligible pending ops, or
+ *  null if nothing is pending. Serial ordering per original is preserved by
+ *  processEditOperations itself; this only decides WHEN to wake. */
+export async function nextEditDeadline(nowMs: number): Promise<number | null> {
+  const ops = await loadOps();
+  let min = Infinity;
+  for (const op of ops) {
+    if (!retriesEventually(op)) continue;
+    const firstAttempt = !op.lastAttemptAt && op.attempts === 0;
+    const base = op.lastAttemptAt ?? op.updatedAt ?? nowMs;
+    const wait = firstAttempt ? 0 : EDIT_AUTO_BACKOFF_MS[Math.min(op.attempts, EDIT_AUTO_BACKOFF_MS.length - 1)];
+    min = Math.min(min, base + wait);
+  }
+  return min === Infinity ? null : min;
+}
+
+/** Schedule the SINGLE next-deadline timer. Active-only + queue-gated: no timer
+ *  unless enabled, foregrounded, online, authed, AND ≥1 op is pending. */
+export async function scheduleEditDelivery(): Promise<void> {
+  clearDeliveryTimer();
+  if (!_schedulerEnabled || !_fg || !_online || !_authed) return;
+  const dl = await nextEditDeadline(Date.now());
+  if (dl == null) return; // empty queue → zero wakeups
+  const delay = Math.max(0, dl - Date.now());
+  _deliveryTimer = setTimeout(() => { void deliverAndSchedule(); }, delay);
+}
+
+/** One processing pass, then schedule ONLY the next required deadline. The
+ *  _inFlight guard in processEditOperations prevents overlapping processors. */
+async function deliverAndSchedule(): Promise<void> {
+  _deliveryTimer = null;
+  let attempted = 0;
+  if (_schedulerEnabled && _online && _authed) {
+    const r = await (_deliveryFetch ? processEditOperations(_deliveryFetch) : processEditOperations()).catch(() => null);
+    attempted = r?.attemptedOpIds?.length ?? 0;
+  }
+  // Anti-spin: reschedule ONLY when the pass actually attempted an op (its next
+  // backoff deadline is in the future). If every eligible op is held (waiting on
+  // its original), do NOT keep a 0-delay timer alive — the flush-complete /
+  // connectivity / foreground triggers release those without busy-looping.
+  if (attempted > 0) await scheduleEditDelivery();
+}
+
+export function setDeliveryForeground(fg: boolean): void {
+  _fg = fg;
+  if (!fg) { clearDeliveryTimer(); return; } // background → cancel
+  void deliverAndSchedule();                  // foreground → process overdue + reschedule
+}
+export function setDeliveryOnline(online: boolean): void {
+  _online = online;
+  if (!online) { clearDeliveryTimer(); return; } // offline → cancel/wait
+  void deliverAndSchedule();                      // reconnect → immediate retry
+}
+export function setDeliveryAuthed(authed: boolean): void {
+  _authed = authed;
+  if (!authed) { clearDeliveryTimer(); return; }
+  void deliverAndSchedule();
+}
+/** Test-only reset (and a clean shutdown hook). */
+export function stopEditDelivery(): void {
+  clearDeliveryTimer();
+  _started = false; _schedulerEnabled = false; _fg = true; _online = true; _authed = true; _deliveryFetch = null;
+}
+
+/** Lifecycle wiring: an immediate pass at startup (dependencies survive
+ *  restart), a pass after every queue flush (originals may just have processed),
+ *  connectivity/foreground/auth transitions, and the active-only deadline timer
+ *  for bounded automatic retry — no continuous polling. */
 export function startEditDelivery(): void {
   if (_started) return;
   _started = true;
-  onFlushComplete(() => {
-    processEditOperations().catch(() => {});
-  });
-  onConnectivityChange((online) => {
-    if (online) processEditOperations().catch(() => {});
-  });
-  setTimeout(() => {
-    processEditOperations().catch(() => {});
-  }, 5000);
-  console.log('[EditDelivery] Started');
+  _schedulerEnabled = true;
+  onFlushComplete(() => { void deliverAndSchedule(); });
+  onConnectivityChange((online) => { setDeliveryOnline(online); });
+  // Foreground gating is driven by the app root wiring AppState →
+  // setDeliveryForeground(state === 'active'). Kept out of this module so the
+  // scheduler stays pure/testable and never imports react-native directly.
+  void scheduleEditDelivery(); // schedule-only; an overdue/first op fires via its deadline (no concurrent pass)
+  console.log('[EditDelivery] Started (active-only scheduler)');
 }

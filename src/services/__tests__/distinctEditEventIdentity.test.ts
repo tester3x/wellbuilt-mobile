@@ -325,3 +325,48 @@ describe('WB-M governed edit — Thor 1 delivery/identity regressions (8/30/2026
     expect(ops[0].opId).not.toBe(ops[1].opId);
   });
 });
+
+describe('WB-M governed edit — immediate first-attempt delivery (Thor 1 requirement)', () => {
+  it('Submit against a PROCESSED original uploads IMMEDIATELY in the same flow (no AppState/foreground)', async () => {
+    // beforeEach set the original to 'sent'. No timers, no AppState — just Submit.
+    const out = await submit(140);
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1); // first attempt happened synchronously in submitPullEdit
+    expect(out.mode).toBe('uploading');
+  });
+
+  it('Submit against a locally-PENDING-but-server-PROCESSED original reconciles + delivers immediately (not held)', async () => {
+    await setPullSyncStatus(PID, 'submitted'); // stale local status (Thor 1: create confirm reconcile hadn’t run)
+    // The server actually HAS the original processed.
+    const out = await submitPullEdit(editParams(140), makeFetch(processedOriginal));
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);  // delivered right away — NOT held_dependent
+    expect(out.mode).toBe('uploading');
+    expect(rawOps()[0].state).toBe('edit_submitted');   // attempted (confirmation follows on receipt), not edit_pending
+  });
+
+  it('a genuinely-not-yet-landed original still holds the edit (no false immediate send)', async () => {
+    await setPullSyncStatus(PID, 'submitted');
+    const emptyServer = makeFetch({}); // server does NOT have the original processed
+    const out = await submitPullEdit(editParams(140), emptyServer);
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(0);  // correctly held — original not on server
+    expect(out.mode).toBe('held_dependent');
+    expect(rawOps()[0].state).toBe('edit_pending');
+  });
+
+  it('two rapid deliberate edits keep DISTINCT ids and both are eventually attempted (A now, B after A — never overwritten)', async () => {
+    // Same-original corrections deliver SERIALLY (apply A then B in order): A is
+    // attempted immediately, B is durably held (never woken-over or replaced).
+    await submit(140);
+    await submit(155);
+    const ops = rawOps();
+    expect(ops.length).toBe(2);                       // two durable ops, neither replaced
+    expect(new Set(ops.map((o) => o.editEventId)).size).toBe(2); // distinct ids
+    const [a, b] = ops.sort((x, y) => x.createdAt - y.createdAt || (x.opId < y.opId ? -1 : 1));
+    expect(a.state).toBe('edit_submitted');           // A attempted immediately
+    expect(b.state).toBe('edit_pending');             // B preserved behind A (not lost)
+    // After A confirms (server receipt), B is attempted with its OWN distinct id.
+    mockedUploadEdit.mockClear();
+    const appliedA = { [`packets/processed/${PID}`]: { packetId: PID, tankLevelFeet: 11.5, bblsTaken: 140, wellDown: false, editedAt: Date.now() + 1000 } };
+    await processEditOperations(makeFetch(appliedA));
+    expect(sentUploadIds()).toContain(b.editEventId); // B eventually attempted, distinct id
+  });
+});

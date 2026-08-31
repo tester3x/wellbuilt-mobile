@@ -32,7 +32,7 @@ import {
   onConnectivityChange,
   onFlushComplete,
 } from './packetQueue';
-import { getPullHistory, setPullEditStatus } from './pullHistory';
+import { getPullHistory, setPullEditStatus, setPullSyncStatus } from './pullHistory';
 
 const EDIT_OPS_KEY = '@wellbuilt_edit_ops';
 
@@ -250,11 +250,24 @@ export async function submitPullEdit(
     return { mode: 'blocked', reason };
   }
 
-  // 2. Original submitted/pending without server outcome → dependent hold.
+  // 2. Original submitted/pending by LOCAL status. Thor 1 (8/30/2026): the local
+  //    delivery status can be stale — the server may already have processed the
+  //    original CREATE (its confirmation reconcile hadn't run, e.g. because the
+  //    incoming_version watcher is saturated). Rather than passively hold the
+  //    edit until a later foreground/flush/auth event, reconcile the original
+  //    against the server RIGHT NOW: if packets/processed/<original> exists, the
+  //    create is landed → promote it to 'sent' and deliver the edit immediately.
   if (entry?.syncStatus === 'submitted' || entry?.syncStatus === 'pending_sync' || entry?.syncStatus === 'sync_failed') {
-    await upsertOp(newOp(payload, 'edit_pending'));
-    await setPullEditStatus(originalId, 'edit_pending');
-    return { mode: 'held_dependent' };
+    const processedOrig = await readPath(`packets/processed/${originalId}`, fetchFn);
+    if (!processedOrig.data) {
+      // Genuinely not on the server yet → dependent hold (the flush-complete /
+      // connectivity / auth passes will deliver it once the original lands).
+      await upsertOp(newOp(payload, 'edit_pending'));
+      await setPullEditStatus(originalId, 'edit_pending');
+      return { mode: 'held_dependent' };
+    }
+    // Reconciled: the original is on the server. Fall through to immediate delivery.
+    await setPullSyncStatus(originalId, 'sent');
   }
 
   // 3. Original processed (confirmed 'sent', a cross-app/legacy entry, or

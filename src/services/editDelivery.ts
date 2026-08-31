@@ -88,6 +88,15 @@ export interface EditOperation {
   attempts: number;
   lastAttemptAt?: number | null;
   lastError: string | null;
+  /** Receipt-recheck bookkeeping — SEPARATE from transport `attempts`. A
+   *  held-dependent edit (awaiting its original's server receipt) and an
+   *  uploaded-but-unconfirmed edit (awaiting confirmation) are not transport
+   *  attempts: they upload nothing. `receiptChecks` counts how many automatic
+   *  rechecks have found the awaited state still absent; it drives the bounded
+   *  recheck cadence (2s → 8s → 20s → 60s cap) so the single deadline timer
+   *  advances the dependent edit with NO external wake event, and never spins. */
+  receiptChecks?: number;
+  lastReceiptCheckAt?: number | null;
 }
 
 export type SubmitEditOutcome =
@@ -176,6 +185,8 @@ function newOp(payload: EditPacketParams, state: EditOpState, blockedReason?: st
     attempts: 0,
     lastAttemptAt: null,
     lastError: null,
+    receiptChecks: 0,
+    lastReceiptCheckAt: null,
   };
 }
 
@@ -203,6 +214,38 @@ export function shouldAutoAttemptEdit(op: EditOperation, nowMs: number): boolean
   if (!op.lastAttemptAt && op.attempts === 0) return true;
   const wait = EDIT_AUTO_BACKOFF_MS[Math.min(op.attempts, EDIT_AUTO_BACKOFF_MS.length - 1)];
   return nowMs - (op.lastAttemptAt ?? op.updatedAt) >= wait;
+}
+
+/** An op is in TRANSPORT-RETRY mode (a prior upload FAILED and is awaiting a
+ *  backed-off resend) iff it is edit_pending with ≥1 attempt — a *successful*
+ *  upload moves it to edit_submitted, so edit_pending+attempts≥1 is always a
+ *  failed transport. Every other eligible op (edit_pending awaiting its
+ *  original, or edit_submitted awaiting confirmation) is in RECHECK mode: it
+ *  uploads nothing, so its cadence is driven by receiptChecks, not attempts. */
+function isTransportRetry(op: EditOperation): boolean {
+  return op.state === 'edit_pending' && op.attempts >= 1;
+}
+
+/** Serial ordering per original: an op must not wake or send while an EARLIER
+ *  correction to the SAME original is still in flight (edit_pending/edit_submitted).
+ *  Terminal earlier corrections (edited/blocked/rejected) do NOT block it. */
+function hasEarlierInFlightSibling(ops: EditOperation[], op: EditOperation): boolean {
+  return ops.some(o =>
+    o.opId !== op.opId
+    && o.originalPacketId === op.originalPacketId
+    && (o.createdAt < op.createdAt || (o.createdAt === op.createdAt && o.opId < op.opId))
+    && (o.state === 'edit_pending' || o.state === 'edit_submitted'));
+}
+
+/** Record one automatic recheck that found the awaited state still absent, and
+ *  persist it. Advances the bounded recheck cadence (never a transport attempt),
+ *  so the very next scheduled deadline is strictly in the future — the anti-spin
+ *  guarantee for held-dependent and awaiting-confirmation edits. */
+async function stampReceiptCheck(op: EditOperation, nowMs: number): Promise<void> {
+  op.receiptChecks = (op.receiptChecks ?? 0) + 1;
+  op.lastReceiptCheckAt = nowMs;
+  op.updatedAt = nowMs;
+  await upsertOp(op);
 }
 
 /**
@@ -260,10 +303,15 @@ export async function submitPullEdit(
   if (entry?.syncStatus === 'submitted' || entry?.syncStatus === 'pending_sync' || entry?.syncStatus === 'sync_failed') {
     const processedOrig = await readPath(`packets/processed/${originalId}`, fetchFn);
     if (!processedOrig.data) {
-      // Genuinely not on the server yet → dependent hold (the flush-complete /
-      // connectivity / auth passes will deliver it once the original lands).
+      // Genuinely not on the server yet → dependent hold. Arm the active-only
+      // scheduler so its single deadline timer rechecks the original's receipt
+      // automatically (2s→8s→20s→60s) and delivers the edit the moment the
+      // CREATE lands — WITHOUT waiting for any flush/connectivity/foreground/auth
+      // event. (Those events still trigger an immediate extra pass when they do
+      // occur.)
       await upsertOp(newOp(payload, 'edit_pending'));
       await setPullEditStatus(originalId, 'edit_pending');
+      void scheduleEditDelivery();
       return { mode: 'held_dependent' };
     }
     // Reconciled: the original is on the server. Fall through to immediate delivery.
@@ -277,6 +325,9 @@ export async function submitPullEdit(
   await setPullEditStatus(originalId, 'edit_pending');
   const result = await processEditOperations(fetchFn);
   const op = (await loadOps()).find(o => o.originalPacketId === originalId);
+  // If it landed edit_submitted (awaiting confirmation) or transiently failed,
+  // arm the scheduler so confirmation/retry rechecks proceed automatically.
+  void scheduleEditDelivery();
   return { mode: 'uploading', submitted: op?.state === 'edit_submitted' || result.submitted > 0 };
 }
 
@@ -387,8 +438,7 @@ async function processEditOperationsInner(
       if (!processed.data) {
         if (processed.diagnosis && (processed.diagnosis.kind === 'auth_session' || processed.diagnosis.kind === 'permission')) {
           op.lastError = formatDiagnosis(processed.diagnosis);
-          op.updatedAt = Date.now();
-          await upsertOp(op);
+          await stampReceiptCheck(op, nowMs); // bounded recheck; auth-restore also fires an immediate pass
           held++;
           continue;
         }
@@ -402,7 +452,12 @@ async function processEditOperationsInner(
           held++;
           continue;
         }
-        held++; // original not resolved yet — keep waiting, keep the edit
+        // Original not resolved yet — keep waiting, keep the edit. Advance the
+        // bounded recheck cadence so the single deadline timer re-checks this
+        // dependent edit automatically (2s → 8s → 20s → 60s cap) with NO
+        // external wake event, and reschedules to a strictly-future deadline.
+        await stampReceiptCheck(op, nowMs);
+        held++;
         continue;
       }
       if (!forceOpId && !shouldAutoAttemptEdit(op, nowMs)) {
@@ -498,8 +553,7 @@ async function processEditOperationsInner(
         const d = diagnoseThrown(err);
         if (d.kind === 'auth_session' || d.kind === 'permission') {
           op.lastError = formatDiagnosis(d);
-          op.updatedAt = Date.now();
-          await upsertOp(op);
+          await stampReceiptCheck(op, nowMs);
           held++;
           continue;
         }
@@ -517,16 +571,13 @@ async function processEditOperationsInner(
       }
       if (processedOrig.diagnosis && (processedOrig.diagnosis.kind === 'auth_session' || processedOrig.diagnosis.kind === 'permission')) {
         op.lastError = formatDiagnosis(processedOrig.diagnosis);
-        op.updatedAt = Date.now();
-        await upsertOp(op);
       }
-      // Still in packets/incoming → in flight. Do NOT resubmit.
-      const incoming = await readPath(`packets/incoming/${editKey}`, fetchFn);
-      if (incoming.data) {
-        held++;
-        continue;
-      }
-      held++; // still awaiting the server — no duplicate upload
+      // Awaiting confirmation (still in packets/incoming, or not yet
+      // materialized) — advance the bounded recheck cadence and keep the single
+      // timer alive; NEVER resubmit an already-accepted edit (duplicate).
+      await stampReceiptCheck(op, nowMs);
+      held++;
+      continue;
     }
   }
   return { submitted, confirmed, rejected, held, attemptedOpIds };
@@ -560,18 +611,37 @@ function retriesEventually(op: EditOperation): boolean {
   return op.state !== 'edit_blocked' && op.state !== 'edit_rejected' && op.state !== 'edited' && !isPermanentEditFailure(op.lastError);
 }
 
-/** Earliest next-attempt deadline (ms epoch) across eligible pending ops, or
- *  null if nothing is pending. Serial ordering per original is preserved by
- *  processEditOperations itself; this only decides WHEN to wake. */
+/** This op's next automatic deadline (ms epoch). Two cadences, both bounded and
+ *  capped at 60s, both drawn from EDIT_AUTO_BACKOFF_MS:
+ *   • TRANSPORT-RETRY (a failed upload, edit_pending + attempts≥1): from the
+ *     last attempt, backoff[min(attempts,4)] → 2s,8s,20s,60s.
+ *   • RECHECK (held-dependent awaiting the original, OR uploaded awaiting
+ *     confirmation): from the last recheck, backoff[min(receiptChecks+1,4)]
+ *     → 2s,8s,20s,60s. ALWAYS nonzero, so a held-dependent edit is never
+ *     rescheduled at 0ms, and each recheck advances receiptChecks so the next
+ *     deadline is strictly in the future (no spin). */
+function opDeadline(op: EditOperation, nowMs: number): number {
+  if (isTransportRetry(op)) {
+    const base = op.lastAttemptAt ?? op.updatedAt ?? nowMs;
+    return base + EDIT_AUTO_BACKOFF_MS[Math.min(op.attempts, EDIT_AUTO_BACKOFF_MS.length - 1)];
+  }
+  const base = op.lastReceiptCheckAt ?? op.updatedAt ?? nowMs;
+  const idx = Math.min((op.receiptChecks ?? 0) + 1, EDIT_AUTO_BACKOFF_MS.length - 1);
+  return base + EDIT_AUTO_BACKOFF_MS[idx]; // idx≥1 ⇒ ≥2s, never 0
+}
+
+/** Earliest next-attempt deadline (ms epoch) across eligible ops, or null if
+ *  nothing is eligible (→ zero wakeups). An op with an EARLIER in-flight sibling
+ *  correction to the same original contributes NO deadline of its own — the
+ *  earlier sibling's activity drives the wake, and this op is re-included the
+ *  moment that sibling goes terminal (serial ordering, no sibling-polling). */
 export async function nextEditDeadline(nowMs: number): Promise<number | null> {
   const ops = await loadOps();
   let min = Infinity;
   for (const op of ops) {
     if (!retriesEventually(op)) continue;
-    const firstAttempt = !op.lastAttemptAt && op.attempts === 0;
-    const base = op.lastAttemptAt ?? op.updatedAt ?? nowMs;
-    const wait = firstAttempt ? 0 : EDIT_AUTO_BACKOFF_MS[Math.min(op.attempts, EDIT_AUTO_BACKOFF_MS.length - 1)];
-    min = Math.min(min, base + wait);
+    if (hasEarlierInFlightSibling(ops, op)) continue;
+    min = Math.min(min, opDeadline(op, nowMs));
   }
   return min === Infinity ? null : min;
 }
@@ -588,19 +658,21 @@ export async function scheduleEditDelivery(): Promise<void> {
 }
 
 /** One processing pass, then schedule ONLY the next required deadline. The
- *  _inFlight guard in processEditOperations prevents overlapping processors. */
+ *  _inFlight guard in processEditOperations prevents overlapping processors.
+ *
+ *  The pass ADVANCES every held op's cadence (a transport attempt bumps
+ *  `attempts`; an awaiting-original / awaiting-confirmation recheck bumps
+ *  `receiptChecks`), so scheduleEditDelivery's next deadline is always strictly
+ *  in the future for any op that remains eligible, and null once all ops are
+ *  terminal. Rescheduling is therefore UNCONDITIONAL and cannot spin: a
+ *  held-dependent edit re-checks itself automatically (2s→8s→20s→60s) with no
+ *  flush/connectivity/foreground/auth event required. */
 async function deliverAndSchedule(): Promise<void> {
   _deliveryTimer = null;
-  let attempted = 0;
   if (_schedulerEnabled && _online && _authed) {
-    const r = await (_deliveryFetch ? processEditOperations(_deliveryFetch) : processEditOperations()).catch(() => null);
-    attempted = r?.attemptedOpIds?.length ?? 0;
+    await (_deliveryFetch ? processEditOperations(_deliveryFetch) : processEditOperations()).catch(() => null);
   }
-  // Anti-spin: reschedule ONLY when the pass actually attempted an op (its next
-  // backoff deadline is in the future). If every eligible op is held (waiting on
-  // its original), do NOT keep a 0-delay timer alive — the flush-complete /
-  // connectivity / foreground triggers release those without busy-looping.
-  if (attempted > 0) await scheduleEditDelivery();
+  await scheduleEditDelivery();
 }
 
 export function setDeliveryForeground(fg: boolean): void {

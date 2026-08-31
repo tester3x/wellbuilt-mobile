@@ -307,19 +307,18 @@ export const uploadTankPacket = async (params: {
   const driverId = await getDriverId();
   const driverName = await getDriverName();
 
-  const packet: TankPacket = {
+  const { buildWbmPullCommand } = await import('./wbmPullCommand');
+  const packet = buildWbmPullCommand({
     packetId,
-    requestType: 'pull',
     wellName,
     dateTimeUTC,
     dateTime,
     timezone,
     tankLevelFeet,
     bblsTaken,
-    wellDown: wellDown || false,
-    wellDownIsAuthoritative: true,
+    wellDown: wellDown === true, // explicit final-state (was `wellDown || false`)
     predictedLevelInches: predictedLevelInches ?? undefined,
-  };
+  }) as unknown as TankPacket;
   void driverId;
   void driverName;
 

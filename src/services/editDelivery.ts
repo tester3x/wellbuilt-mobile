@@ -405,8 +405,15 @@ async function processEditOperationsInner(
       try {
         // Carry THIS correction's persisted editEventId as the command's
         // idempotency identity so retries are idempotent per-correction and a
-        // later correction to the same original is a distinct command.
-        const uploadResult = await uploadEditPacket({ ...op.payload, editEventId: op.editEventId });
+        // later correction to the same original is a distinct command. The
+        // correction's event time is derived from the op's persisted createdAt,
+        // so it is stamped ONCE and preserved verbatim across every retry and
+        // app restart (never a fresh device "now").
+        const uploadResult = await uploadEditPacket({
+          ...op.payload,
+          editEventId: op.editEventId,
+          correctionCreatedAtUTC: new Date(op.createdAt).toISOString(),
+        });
         if (confirmNewSecureEdit(uploadResult)) {
           await markConfirmed(op);
           confirmed++;

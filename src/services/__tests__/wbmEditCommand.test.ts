@@ -80,44 +80,50 @@ beforeEach(async () => {
 describe('edit command packet', () => {
   const EVID = 'editevt_00000000-0000-4000-8000-000000000001';
 
-  it('emits exactly the 36d37e5 allowlist with a literal editEventId and no v2 fields', () => {
-    const cmd = buildWbmEditCommand({ ...editParams(), editEventId: EVID });
-    // Exact allowlist fields (time omitted here); nothing else.
+  const CORR = '2026-08-23T16:45:00.000Z';
+
+  it('emits the governed v2 contract with an explicit editedFields mask + wellDown', () => {
+    const cmd = buildWbmEditCommand({ ...editParams(), editEventId: EVID, correctionCreatedAtUTC: CORR });
     expect(Object.keys(cmd).sort()).toEqual([
-      'bblsTaken', 'editEventId', 'idempotencyKey', 'originalPacketId',
-      'packetId', 'requestType', 'tankLevelFeet', 'wellDown', 'wellName',
+      'bblsTaken', 'correctionCreatedAtUTC', 'editEventId', 'editedFields', 'idempotencyKey',
+      'originalPacketId', 'packetId', 'requestType', 'schemaVersion', 'tankLevelFeet', 'wellDown', 'wellName',
     ]);
     expect(cmd.requestType).toBe('edit');
-    expect(cmd.editEventId).toBe(EVID);          // literal identity field
-    expect(cmd.idempotencyKey).toBe(EVID);       // idempotencyKey === editEventId
-    expect(cmd.originalPacketId).toBe(PID);
-    expect(cmd.packetId).toBe(PID);
-    // No rejected-engine fields ever serialized.
-    expect('schemaVersion' in cmd).toBe(false);
-    expect('editedFields' in cmd).toBe(false);
-    expect('correctionCreatedAtUTC' in cmd).toBe(false);
-    // Never the legacy deterministic key.
+    expect(cmd.schemaVersion).toBe(2);
+    expect(cmd.editEventId).toBe(EVID);
+    expect(cmd.idempotencyKey).toBe(EVID);       // idempotencyKey === editEventId (per-correction)
+    expect(cmd.correctionCreatedAtUTC).toBe(CORR);
+    // The Well Down control is an explicit final-state assertion → always in the mask.
+    expect(cmd.editedFields).toEqual(['tankLevelFeet', 'bblsTaken', 'wellDown']);
+    expect(cmd.wellDown).toBe(false);            // explicit final-state boolean, never omitted
     expect(cmd.idempotencyKey).not.toBe(wbmEditIdempotencyKey(PID.slice(0, 15), 'Gabriel 2'));
   });
 
-  it('omits operational time unless the user edited it and never uses now', () => {
-    const omitted = buildWbmEditCommand({ ...editParams(), editEventId: EVID });
-    expect(commandOmitsOperationalTime(omitted)).toBe(true);
-    expect(JSON.stringify(omitted)).not.toMatch(/2026-08-23T1[6-9]:/);
-    const timed = buildWbmEditCommand({
-      ...editParams(),
-      editEventId: EVID,
-      dateTimeUTC: '2026-08-23T16:40:00.000Z',
-      dateTime: '8/23/2026 11:40 AM',
-    });
-    expect(timed.dateTimeUTC).toBe('2026-08-23T16:40:00.000Z');
+  it('wellDown is asserted explicitly for BOTH true and false (Thor 1: bring-online must be sendable)', () => {
+    const online = buildWbmEditCommand({ ...editParams(), wellDown: false, editEventId: EVID, correctionCreatedAtUTC: CORR });
+    expect(online.wellDown).toBe(false);
+    expect(online.editedFields).toContain('wellDown');
+    const down = buildWbmEditCommand({ ...editParams(), wellDown: true, editEventId: EVID, correctionCreatedAtUTC: CORR });
+    expect(down.wellDown).toBe(true);
+    expect(down.editedFields).toContain('wellDown');
   });
 
-  it('fails closed for a missing / malformed / colliding editEventId (no legacy fallback)', () => {
-    expect(() => buildWbmEditCommand(editParams())).toThrow('edit_event_id_required');
-    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: 'short' })).toThrow('edit_event_id_required');
-    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: 'has/slash/unsafe' })).toThrow('edit_event_id_required');
-    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: PID })).toThrow('edit_event_id_collides_with_original');
+  it('operational time is declared in the mask only when the user set it', () => {
+    const omitted = buildWbmEditCommand({ ...editParams(), editEventId: EVID, correctionCreatedAtUTC: CORR });
+    expect(commandOmitsOperationalTime(omitted)).toBe(true);
+    expect(omitted.editedFields).not.toContain('dateTimeUTC');
+    const timed = buildWbmEditCommand({ ...editParams(), editEventId: EVID, correctionCreatedAtUTC: CORR, dateTimeUTC: '2026-08-23T16:40:00.000Z', dateTime: '8/23/2026 11:40 AM' });
+    expect(timed.dateTimeUTC).toBe('2026-08-23T16:40:00.000Z');
+    expect(timed.editedFields).toEqual(['tankLevelFeet', 'bblsTaken', 'wellDown', 'dateTimeUTC', 'dateTime']);
+  });
+
+  it('fails closed for a missing / malformed / colliding editEventId and a missing correction time', () => {
+    expect(() => buildWbmEditCommand({ ...editParams(), correctionCreatedAtUTC: CORR })).toThrow('edit_event_id_required');
+    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: 'short', correctionCreatedAtUTC: CORR })).toThrow('edit_event_id_required');
+    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: 'has/slash/unsafe', correctionCreatedAtUTC: CORR })).toThrow('edit_event_id_required');
+    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: PID, correctionCreatedAtUTC: CORR })).toThrow('edit_event_id_collides_with_original');
+    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: EVID })).toThrow('correction_created_at_required');
+    expect(() => buildWbmEditCommand({ ...editParams(), editEventId: EVID, correctionCreatedAtUTC: 'not-a-date' })).toThrow('correction_created_at_required');
   });
 });
 

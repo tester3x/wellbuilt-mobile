@@ -266,3 +266,62 @@ describe('WB-M governed edit client — identity, durability, serialization', ()
     }
   });
 });
+
+describe('WB-M governed edit — Thor 1 delivery/identity regressions (8/30/2026)', () => {
+  const uploadArg = (i = 0) => mockedUploadEdit.mock.calls[i][0] as any;
+
+  it('explicit wellDown:false round-trips queue → transport (bring-online is never dropped)', async () => {
+    await submit(140);
+    expect(uploadArg().wellDown).toBe(false); // the exact repair Mike needs reaches the transport
+    expect(uploadArg().editEventId).toBeTruthy();
+  });
+
+  it('correctionCreatedAtUTC is stamped once and IDENTICAL across retries and a restart', async () => {
+    mockedUploadEdit.mockRejectedValue(new Error('tower down'));
+    await submit(140);
+    const opId = rawOps()[0].opId;
+    const corr0 = uploadArg(0).correctionCreatedAtUTC;
+    expect(typeof corr0).toBe('string');
+    expect(Number.isNaN(Date.parse(corr0))).toBe(false);
+    // Force a retry — same correction time.
+    await processEditOperations(makeFetch(processedOriginal), { forceOpId: opId });
+    expect(uploadArg(1).correctionCreatedAtUTC).toBe(corr0);
+    // Simulate a restart: editDelivery reads ops from storage each pass, so a
+    // fresh process pass acts on the PERSISTED op. Its createdAt (hence the
+    // derived correction time) is unchanged.
+    await processEditOperations(makeFetch(processedOriginal), { forceOpId: opId });
+    expect(uploadArg(2).correctionCreatedAtUTC).toBe(corr0);
+  });
+
+  it('a pending edit is sent promptly on the next (foreground/restart) pass', async () => {
+    mockOnline.value = false;              // offline: submit queues without a send
+    await submit(140);
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(0);
+    expect(rawOps()[0].state).toBe('edit_pending');
+    mockOnline.value = true;               // foreground/restart with connectivity
+    await processEditOperations(makeFetch(processedOriginal), { forceOpId: rawOps()[0].opId });
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1); // delivered promptly, not left pending
+  });
+
+  it('receipt reconciliation confirms after server completion — NOT left pending, and independent of incoming_version', async () => {
+    await submit(140); // pending (no commit proof from transport)
+    expect(rawOps()[0].state).toBe('edit_submitted');
+    // Server completed the edit: processed shows the applied values + an editedAt
+    // AFTER the op was created. NO incoming_version is provided anywhere.
+    const applied = { [`packets/processed/${PID}`]: { packetId: PID, tankLevelFeet: 11.5, bblsTaken: 140, wellDown: false, editedAt: Date.now() + 1000 } };
+    const res = await processEditOperations(makeFetch(applied));
+    // Confirmation is proven by the op leaving the queue (state 'edited') — driven
+    // solely by the processed receipt reconciliation; no incoming_version anywhere.
+    expect(res.confirmed).toBe(1);
+    expect(rawOps().length).toBe(0); // NOT stuck pending after server completion
+  });
+
+  it('two deliberate corrections keep DISTINCT persisted editEventIds (neither overwrites the other)', async () => {
+    await submit(140);
+    await submit(155);
+    const ops = rawOps();
+    expect(ops.length).toBe(2);
+    expect(ops[0].editEventId).not.toBe(ops[1].editEventId);
+    expect(ops[0].opId).not.toBe(ops[1].opId);
+  });
+});

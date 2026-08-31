@@ -530,6 +530,7 @@ export const uploadEditPacket = async (params: {
   bblsTaken: number;
   wellDown: boolean;
   editEventId?: string;      // per-correction identity (idempotency key)
+  correctionCreatedAtUTC?: string; // immutable correction event time (retry-stable)
 }) => {
   const {
     originalPacketTimestamp,
@@ -541,6 +542,7 @@ export const uploadEditPacket = async (params: {
     bblsTaken,
     wellDown,
     editEventId,
+    correctionCreatedAtUTC,
   } = params;
 
   // Get device timezone (IANA format like "America/Chicago")
@@ -557,6 +559,7 @@ export const uploadEditPacket = async (params: {
     wellDown,
     timezone,
     editEventId,
+    correctionCreatedAtUTC,
   });
   // The command's own idempotency identity — per-correction when present.
   const editId = (packet.idempotencyKey as string) || wbmEditIdempotencyKey(originalPacketTimestamp, wellName);

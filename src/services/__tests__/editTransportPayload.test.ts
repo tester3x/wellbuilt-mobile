@@ -41,35 +41,39 @@ const params = {
 beforeEach(() => { captured = null; });
 
 describe('real edit transport payload', () => {
-  it('literal editEventId + exact 36d37e5 allowlist reach the callable; no v2 fields', async () => {
-    const res = await uploadEditPacket({ ...params, editEventId: EVID });
+  const CORR = '2026-07-21T17:10:00.000Z';
+
+  it('governed v2 contract (editedFields + explicit wellDown + correction time) reaches the callable', async () => {
+    const res = await uploadEditPacket({ ...params, editEventId: EVID, correctionCreatedAtUTC: CORR });
     expect(captured).toBeTruthy();
-    // timezone IS in the 36d37e5 allowlist; uploadEditPacket always sets it.
     expect(Object.keys(captured!).sort()).toEqual([
-      'bblsTaken', 'editEventId', 'idempotencyKey', 'originalPacketId',
-      'packetId', 'requestType', 'tankLevelFeet', 'timezone', 'wellDown', 'wellName',
+      'bblsTaken', 'correctionCreatedAtUTC', 'editEventId', 'editedFields', 'idempotencyKey',
+      'originalPacketId', 'packetId', 'requestType', 'schemaVersion', 'tankLevelFeet', 'timezone', 'wellDown', 'wellName',
     ]);
     expect(captured!.requestType).toBe('edit');
+    expect(captured!.schemaVersion).toBe(2);
     expect(captured!.editEventId).toBe(EVID);        // literal identity reached transport
     expect(captured!.idempotencyKey).toBe(EVID);     // idempotencyKey === editEventId
     expect(captured!.originalPacketId).toBe(PID);    // canonical original retained
-    expect('schemaVersion' in captured!).toBe(false);
-    expect('editedFields' in captured!).toBe(false);
-    expect('correctionCreatedAtUTC' in captured!).toBe(false);
-    // The pending callable response is NOT a commit proof.
-    expect(res.committed).toBe(false);
+    expect(captured!.editedFields).toEqual(['tankLevelFeet', 'bblsTaken', 'wellDown']);
+    expect(captured!.wellDown).toBe(false);          // explicit bring-online assertion reaches transport
+    expect(captured!.correctionCreatedAtUTC).toBe(CORR);
+    expect(res.committed).toBe(false);               // pending callable response is NOT a commit proof
   });
 
-  it('includes offset-aware operational time only when the driver edited it', async () => {
-    await uploadEditPacket({ ...params, editEventId: EVID, dateTimeUTC: '2026-07-21T17:06:00.000Z', dateTime: '7/21/2026 12:06 PM' });
+  it('includes offset-aware operational time (and declares it in the mask) only when the driver edited it', async () => {
+    await uploadEditPacket({ ...params, editEventId: EVID, correctionCreatedAtUTC: CORR, dateTimeUTC: '2026-07-21T17:06:00.000Z', dateTime: '7/21/2026 12:06 PM' });
     expect(captured!.dateTimeUTC).toBe('2026-07-21T17:06:00.000Z');
     expect(captured!.dateTime).toBe('7/21/2026 12:06 PM');
+    expect(captured!.editedFields).toEqual(['tankLevelFeet', 'bblsTaken', 'wellDown', 'dateTimeUTC', 'dateTime']);
   });
 
-  it('fails closed before the transport when editEventId is missing/malformed', async () => {
-    await expect(uploadEditPacket({ ...params, editEventId: undefined })).rejects.toThrow();
+  it('fails closed before the transport when editEventId or correction time is missing/malformed', async () => {
+    await expect(uploadEditPacket({ ...params, editEventId: undefined, correctionCreatedAtUTC: CORR })).rejects.toThrow();
     expect(captured).toBeNull(); // never reached the callable
-    await expect(uploadEditPacket({ ...params, editEventId: 'short' })).rejects.toThrow();
+    await expect(uploadEditPacket({ ...params, editEventId: 'short', correctionCreatedAtUTC: CORR })).rejects.toThrow();
+    expect(captured).toBeNull();
+    await expect(uploadEditPacket({ ...params, editEventId: EVID })).rejects.toThrow(); // no correction time
     expect(captured).toBeNull();
   });
 });

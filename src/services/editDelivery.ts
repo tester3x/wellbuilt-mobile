@@ -436,29 +436,49 @@ async function processEditOperationsInner(
       if (!online) { held++; continue; }
       const processed = await readPath(`packets/processed/${op.originalPacketId}`, fetchFn);
       if (!processed.data) {
-        if (processed.diagnosis && (processed.diagnosis.kind === 'auth_session' || processed.diagnosis.kind === 'permission')) {
-          op.lastError = formatDiagnosis(processed.diagnosis);
-          await stampReceiptCheck(op, nowMs); // bounded recheck; auth-restore also fires an immediate pass
+        const readBlocked = !!processed.diagnosis
+          && (processed.diagnosis.kind === 'auth_session' || processed.diagnosis.kind === 'permission');
+        if (!readBlocked) {
+          // The confirmation read itself was permitted (genuine not_found or a
+          // transient/other diagnosis). Distinguish a server rejection from a
+          // not-yet-landed original.
+          const rejectedOriginal = await readPath(`packets/rejected/${op.originalPacketId}`, fetchFn);
+          if (rejectedOriginal.data) {
+            op.state = 'edit_blocked';
+            op.blockedReason = `Original pull was rejected by the server (${rejectedOriginal.data.reason || 'unknown'}) — edit held for review.`;
+            op.updatedAt = Date.now();
+            await upsertOp(op);
+            await setPullEditStatus(op.originalPacketId, 'edit_pending', op.blockedReason);
+            held++;
+            continue;
+          }
+          // Original not resolved yet — keep waiting, keep the edit. Advance the
+          // bounded recheck cadence so the single deadline timer re-checks this
+          // dependent edit automatically (2s → 8s → 20s → 60s cap) with NO
+          // external wake event, and reschedules to a strictly-future deadline.
+          await stampReceiptCheck(op, nowMs);
           held++;
           continue;
         }
-        const rejectedOriginal = await readPath(`packets/rejected/${op.originalPacketId}`, fetchFn);
-        if (rejectedOriginal.data) {
-          op.state = 'edit_blocked';
-          op.blockedReason = `Original pull was rejected by the server (${rejectedOriginal.data.reason || 'unknown'}) — edit held for review.`;
-          op.updatedAt = Date.now();
-          await upsertOp(op);
-          await setPullEditStatus(op.originalPacketId, 'edit_pending', op.blockedReason);
-          held++;
-          continue;
-        }
-        // Original not resolved yet — keep waiting, keep the edit. Advance the
-        // bounded recheck cadence so the single deadline timer re-checks this
-        // dependent edit automatically (2s → 8s → 20s → 60s cap) with NO
-        // external wake event, and reschedules to a strictly-future deadline.
-        await stampReceiptCheck(op, nowMs);
-        held++;
-        continue;
+        // READ-BLOCKED (auth_session / permission): we CANNOT read the original's
+        // receipt, but we already proved (the local-queue guard above) that the
+        // original is no longer queued locally — i.e. it was UPLOADED and accepted
+        // by the governed ingest callable. A permission gap on the *read* is not
+        // the *edit's* fate: stranding it here left "(edit pending)" forever.
+        // Do NOT stamp a permanent 'permission' failure and do NOT hold — fall
+        // through to deliver via the governed, idempotent edit callable, which
+        // validates the original server-side. Ordering is preserved by the
+        // local-queue guard; duplicate retries collapse on op.editEventId; a
+        // not-yet-materialized original is retried (never permanently rejected)
+        // in the catch below.
+        //
+        // MIGRATION: a VC26-persisted op may already carry a STALE read-diagnosis
+        // lastError (the prior build stamped the permission/auth read right here).
+        // This op has never attempted delivery (attempts === 0), so that marker
+        // cannot be a governed rejection — clear it so isPermanentEditFailure()
+        // does not wrongly skip the repaired delivery. A delivered-then-rejected
+        // op (attempts >= 1) keeps its verdict untouched.
+        if (op.attempts === 0) op.lastError = null;
       }
       if (!forceOpId && !shouldAutoAttemptEdit(op, nowMs)) {
         held++;
@@ -505,6 +525,19 @@ async function processEditOperationsInner(
           op.lastError = op.blockedReason;
           await upsertOp(op);
           await setPullEditStatus(op.originalPacketId, 'edit_pending', op.blockedReason);
+          continue;
+        }
+        // A not-yet-materialized original (uploaded, but processIncomingPull has
+        // not landed packets/processed/<original> yet) must be RETRIED, never
+        // permanently rejected: it lands within seconds and the persisted
+        // editEventId keeps the retry idempotent. This matters on the read-blocked
+        // delivery path, where we could not pre-confirm the original by reading.
+        const errMsg = String(err?.message || err || '');
+        if (/missing[_ ]?original|original[_ ]?not[_ ]?found/i.test(errMsg)) {
+          op.lastError = null; // not a permanent-failure marker; stays edit_pending
+          await stampReceiptCheck(op, nowMs); // bounded recheck cadence, then retry
+          await upsertOp(op);
+          held++;
           continue;
         }
         op.lastError = formatDiagnosis(diagnosis, diagnosis.retryable ? undefined : String(err?.message || err || ''));

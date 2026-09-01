@@ -381,6 +381,181 @@ describe('legacy identity + snapshot metadata + ordering', () => {
   });
 });
 
+describe('read-blocked reconciliation (permission/auth) must not strand the edit', () => {
+  // makeFetch variant: `denied` paths answer HTTP 403 (→ permission diagnosis);
+  // everything else behaves like the normal makeFetch (200 + value/null).
+  const makeFetchDenied = (denied: string[], ok: Record<string, unknown> = {}) =>
+    jest.fn(async (url: string) => {
+      const m = String(url).match(/firebaseio\.com\/(.+)\.json/);
+      const path = m ? m[1] : '';
+      if (denied.includes(path)) return { ok: false, status: 403, json: async () => null } as any;
+      return { ok: true, json: async () => (path in ok ? ok[path] : null) } as any;
+    }) as unknown as typeof fetch;
+
+  test('T1 (regression): original UPLOADED but reconciliation read is permission-denied → edit DELIVERS, not stuck forever', async () => {
+    await seedHistory(PID, 'submitted');                 // original uploaded, NOT locally queued
+    const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
+    await submitPullEdit(editParams(PID), denied);       // read-blocked → held_dependent, armed
+    expect(rawOps()[0].state).toBe('edit_pending');
+    // The governed edit callable is the driver-obtainable server-side confirmation
+    // the read could not provide; it accepts and commits.
+    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    await processEditOperations(denied);
+    // Pre-fix: uploadEditPacket was never called; op stayed edit_pending forever.
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEdit.mock.calls[0][0].editEventId).toBe(
+      // idempotency key carried from the persisted op
+      JSON.parse(mockStore[EDIT_OPS_KEY] ?? '[]')[0]?.editEventId ?? mockedUploadEdit.mock.calls[0][0].editEventId,
+    );
+    expect(rawOps()).toHaveLength(0);                    // confirmed + cleared
+    const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.editStatus).toBe('edited');
+  });
+
+  test('T2: original genuinely NOT landed (permitted read, not_found) → edit stays safely dependent, no delivery', async () => {
+    await seedHistory(PID, 'submitted');
+    await submitPullEdit(editParams(PID), makeFetch({})); // permitted read, absent (no diagnosis)
+    await processEditOperations(makeFetch({}));
+    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(rawOps()[0].state).toBe('edit_pending');      // dependent, waiting for the original
+  });
+
+  test('T3: offline CREATE then EDIT preserves ordering — an edit cannot outrun an unsent CREATE', async () => {
+    mockOnline.value = false;
+    await smartUploadTankPacket(pullParams(PID));         // CREATE queued locally, not sent
+    await seedHistory(PID, 'pending_sync');
+    const denied = makeFetchDenied([`packets/processed/${PID}`]);
+    const outcome = await submitPullEdit(editParams(PID, 150), denied);
+    expect(outcome).toEqual({ mode: 'merged_into_queued' }); // merged in place, no separate op
+    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    // Even back online, nothing to deliver early (the edit lives inside the queued CREATE).
+    mockOnline.value = true;
+    await processEditOperations(denied);
+    expect(mockedUploadEdit).not.toHaveBeenCalled();
+  });
+
+  test('T4: duplicate retry on the read-blocked path retains ONE stable editEventId', async () => {
+    await seedHistory(PID, 'submitted');
+    const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
+    await submitPullEdit(editParams(PID), denied);
+    const eid = rawOps()[0].editEventId;
+    mockedUploadEdit.mockRejectedValueOnce(new Error('network timeout')); // 1st attempt fails
+    await processEditOperations(denied);
+    mockedUploadEdit.mockResolvedValueOnce({ committed: true, wellName: 'Gunslinger 3' }); // 2nd succeeds
+    await processEditOperations(denied, { nowMs: Date.now() + 120000 }); // past backoff
+    const calls = mockedUploadEdit.mock.calls;
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls.every((c: any[]) => c[0].editEventId === eid)).toBe(true); // ONE id across retries
+  });
+
+  test('T5: a not-yet-materialized original is RETRIED (bounded), never permanently rejected', async () => {
+    await seedHistory(PID, 'submitted');
+    const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
+    await submitPullEdit(editParams(PID), denied);
+    mockedUploadEdit.mockRejectedValueOnce(new Error('missing_original')); // original not processed yet
+    await processEditOperations(denied);
+    const op = rawOps()[0];
+    expect(op.state).toBe('edit_pending');               // retryable, still pending
+    expect(op.state).not.toBe('edit_rejected');
+    expect(op.state).not.toBe('edit_failed');
+    mockedUploadEdit.mockResolvedValueOnce({ committed: true, wellName: 'Gunslinger 3' }); // then it lands
+    await processEditOperations(denied, { nowMs: Date.now() + 120000 });
+    expect(rawOps()).toHaveLength(0);                     // committed + cleared
+  });
+
+  // arbitrary-status fetch: listed paths answer with the given HTTP status.
+  const makeFetchWithStatus = (statusByPath: Record<string, number>, ok: Record<string, unknown> = {}) =>
+    jest.fn(async (url: string) => {
+      const m = String(url).match(/firebaseio\.com\/(.+)\.json/);
+      const path = m ? m[1] : '';
+      if (path in statusByPath) return { ok: false, status: statusByPath[path], json: async () => null } as any;
+      return { ok: true, json: async () => (path in ok ? ok[path] : null) } as any;
+    }) as unknown as typeof fetch;
+
+  test('T6 (VC26 compat): a pre-existing VC26 op — stale permission lastError, receiptChecks, its editEventId — needs NO migration and delivers exactly once', async () => {
+    // Seed AsyncStorage EXACTLY as VC26 persisted the stranded op: the old build
+    // stamped op.lastError with the permission read diagnosis (isPermanentEditFailure
+    // matches 'permission') and advanced receiptChecks; attempts stayed 0 (it never
+    // reached delivery). No new field is added or required.
+    const vc26Op = {
+      opId: 'editop_vc26fixture',
+      editEventId: 'editevt_vc26_uuid_1234',
+      originalPacketId: PID,
+      wellName: 'Gunslinger 3',
+      payload: { ...editParams(PID, 165), editEventId: 'editevt_vc26_uuid_1234' },
+      state: 'edit_pending',
+      createdAt: 1756600000000,
+      updatedAt: 1756600100000,
+      attempts: 0,                          // never delivered under VC26
+      lastAttemptAt: null,
+      lastError: 'errors.permission',       // VC26 stamped the read diagnosis here
+      receiptChecks: 3,
+      lastReceiptCheckAt: 1756600100000,
+    };
+    mockStore[EDIT_OPS_KEY] = JSON.stringify([vc26Op]);   // as-is; no migration step runs
+    await seedHistory(PID, 'submitted');
+    const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
+    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    await processEditOperations(denied);
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);                       // exactly one logical submit
+    expect(mockedUploadEdit.mock.calls[0][0].editEventId).toBe('editevt_vc26_uuid_1234'); // SAME id retained
+    expect(rawOps()).toHaveLength(0);                                        // clears ONLY after governed ack
+  });
+
+  test('T7: read-blocked variant AUTH_SESSION (HTTP 401) is handled independently → edit delivers', async () => {
+    await seedHistory(PID, 'submitted');
+    const blocked401 = makeFetchWithStatus({ [`packets/processed/${PID}`]: 401, [`packets/rejected/${PID}`]: 401 });
+    await submitPullEdit(editParams(PID), blocked401);
+    expect(rawOps()[0].state).toBe('edit_pending');
+    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    await processEditOperations(blocked401);
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(rawOps()).toHaveLength(0);
+  });
+
+  test('T8: a transient read failure (HTTP 5xx / timeout) is NOT treated as permission → held with bounded retry, never delivered early', async () => {
+    await seedHistory(PID, 'submitted');
+    const transient = makeFetchWithStatus({ [`packets/processed/${PID}`]: 503, [`packets/rejected/${PID}`]: 503 });
+    await submitPullEdit(editParams(PID), transient);
+    await processEditOperations(transient);
+    expect(mockedUploadEdit).not.toHaveBeenCalled();     // must NOT deliver via the read-block path
+    expect(rawOps()[0].state).toBe('edit_pending');      // dependent hold, awaits the original (bounded recheck)
+    // and when the original genuinely lands (read now permitted), it delivers normally
+    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }),
+      { nowMs: Date.now() + 120000 });
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+  });
+
+  test('T9: missing_original stays retryable across MULTIPLE scheduler cycles — bounded backoff, no busy loop, one editEventId, then succeeds', async () => {
+    await seedHistory(PID, 'submitted');
+    const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
+    await submitPullEdit(editParams(PID), denied);
+    const eid = rawOps()[0].editEventId;
+    mockedUploadEdit.mockRejectedValue(new Error('missing_original')); // never materializes (yet)
+    let t = Date.now();
+    const attemptsSeen: number[] = [];
+    for (let cycle = 0; cycle < 4; cycle++) {
+      t += 120000; // advance past the 60s backoff cap → exactly one attempt per cycle
+      await processEditOperations(denied, { nowMs: t });
+      const op = rawOps()[0];
+      expect(op).toBeDefined();
+      expect(op.state).toBe('edit_pending');   // retryable across every cycle, never permanent
+      expect(op.editEventId).toBe(eid);        // ONE idempotency key throughout
+      attemptsSeen.push(op.attempts);
+    }
+    // one delivery attempt per cycle (bounded, not a busy loop), all with the same id
+    expect(mockedUploadEdit.mock.calls.length).toBe(4);
+    expect(attemptsSeen).toEqual([1, 2, 3, 4]);
+    expect(mockedUploadEdit.mock.calls.every((c: any[]) => c[0].editEventId === eid)).toBe(true);
+    // later materialization commits it
+    mockedUploadEdit.mockReset();
+    mockedUploadEdit.mockResolvedValueOnce({ committed: true, wellName: 'Gunslinger 3' });
+    await processEditOperations(denied, { nowMs: t + 120000 });
+    expect(rawOps()).toHaveLength(0);
+  });
+});
+
 describe('submitted-timeout same-ID recovery (§7)', () => {
   test('checks processed → rejected → incoming before any resubmission', async () => {
     await seedHistory(PID, 'submitted');

@@ -554,6 +554,37 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     await processEditOperations(denied, { nowMs: t + 120000 });
     expect(rawOps()).toHaveLength(0);
   });
+
+  test('T10 (VC26 compat, READ-SUCCESS path): a persisted op with a stale permanent lastError delivers when the read now SUCCEEDS, not only when blocked', async () => {
+    // The stranding this covers: the confirmation read SUCCEEDS (driver can read
+    // its own processed packet), but the VC26 op still carries lastError
+    // 'errors.permission' at attempts===0. isPermanentEditFailure() then makes
+    // shouldAutoAttemptEdit() skip it — so it must be cleared on the read-success
+    // path too, not only inside the read-blocked branch.
+    const vc26Op = {
+      opId: 'editop_vc26_readok',
+      editEventId: 'editevt_vc26_readok_1',
+      originalPacketId: PID,
+      wellName: 'Gunslinger 3',
+      payload: { ...editParams(PID, 165), editEventId: 'editevt_vc26_readok_1' },
+      state: 'edit_pending',
+      createdAt: 1756600000000,
+      updatedAt: 1756600100000,
+      attempts: 0,                       // never delivered under VC26
+      lastAttemptAt: null,
+      lastError: 'errors.permission',    // stale read-diagnosis stamp
+      receiptChecks: 4,
+      lastReceiptCheckAt: 1756600100000,
+    };
+    mockStore[EDIT_OPS_KEY] = JSON.stringify([vc26Op]);
+    await seedHistory(PID, 'submitted');
+    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    // reconciliation read SUCCEEDS (original present) — the previously-uncovered path
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);                       // delivered, not skipped
+    expect(mockedUploadEdit.mock.calls[0][0].editEventId).toBe('editevt_vc26_readok_1'); // same id
+    expect(rawOps()).toHaveLength(0);                                        // committed + cleared
+  });
 });
 
 describe('submitted-timeout same-ID recovery (§7)', () => {

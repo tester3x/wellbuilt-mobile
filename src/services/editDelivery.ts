@@ -471,15 +471,17 @@ async function processEditOperationsInner(
         // local-queue guard; duplicate retries collapse on op.editEventId; a
         // not-yet-materialized original is retried (never permanently rejected)
         // in the catch below.
-        //
-        // MIGRATION: a VC26-persisted op may already carry a STALE read-diagnosis
-        // lastError (the prior build stamped the permission/auth read right here).
-        // This op has never attempted delivery (attempts === 0), so that marker
-        // cannot be a governed rejection — clear it so isPermanentEditFailure()
-        // does not wrongly skip the repaired delivery. A delivered-then-rejected
-        // op (attempts >= 1) keeps its verdict untouched.
-        if (op.attempts === 0) op.lastError = null;
       }
+      // MIGRATION — applies whether the confirmation read SUCCEEDED or was
+      // permission/auth-blocked. A VC26-persisted op that has never attempted
+      // delivery (attempts === 0) may carry a STALE read-diagnosis lastError the
+      // prior build stamped here (e.g. 'errors.permission'/'errors.authSession').
+      // That marker predates any delivery, so it cannot be a governed rejection —
+      // clear it BEFORE the shouldAutoAttemptEdit gate so isPermanentEditFailure()
+      // does not wrongly skip the repaired delivery. A delivered-then-rejected op
+      // (attempts >= 1) keeps its verdict untouched. (The read-success path skips
+      // the block above, so the clear MUST live out here, not inside it.)
+      if (op.attempts === 0 && op.lastError) op.lastError = null;
       if (!forceOpId && !shouldAutoAttemptEdit(op, nowMs)) {
         held++;
         continue;

@@ -98,6 +98,12 @@ const formatChangeValue = (
   }
 };
 
+// Module-level cache so a fetched before→after display survives FlatList card
+// recycling / scheduler re-renders (a card-local state was being cancelled on
+// remount and stuck at 'loading'). Keyed by editEventId; fetch deduped.
+const editDisplayCache = new Map<string, WbmEditDisplay | 'error'>();
+const editDisplayFetching = new Set<string>();
+
 interface HistoryEntryProps {
   entry: PullHistoryEntry;
   onEdit: (entry: PullHistoryEntry) => void;
@@ -108,8 +114,10 @@ interface HistoryEntryProps {
 
 function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: HistoryEntryProps) {
   const swipeableRef = useRef<Swipeable>(null);
-  // Governed before→after edit detail (fetched on expand for an edited pull).
-  const [editDetail, setEditDetail] = useState<WbmEditDisplay | 'loading' | 'error' | null>(null);
+  // Re-render tick when a cached edit-display fetch completes for this card.
+  const [, forceEditTick] = useState(0);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const renderRightActions = (
     progress: Animated.AnimatedInterpolation<number>,
@@ -163,20 +171,26 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
   const failedEdit = presentation === 'rejected';
   const isEdited = presentation === 'edited';
 
-  // On expand of an edited pull, fetch the governed before→after detail once.
+  // On expand of an edited pull, fetch the governed before→after detail ONCE
+  // (deduped, cached module-level so it survives card remounts).
   const originalId = entry.packetId || entry.id;
   const editEventId = entry.editEventId;
   useEffect(() => {
-    if (!isExpanded || !isEdited || editDetail !== null) return;
-    if (!editEventId || !originalId) { setEditDetail('error'); return; }
-    let cancelled = false;
-    setEditDetail('loading');
+    if (!isExpanded || !isEdited || !editEventId || !originalId) return;
+    if (editDisplayCache.has(editEventId) || editDisplayFetching.has(editEventId)) return;
+    editDisplayFetching.add(editEventId);
     import('../src/services/secureOperationalApi')
       .then(({ getWbmEditStatus }) => getWbmEditStatus({ editEventId, originalPacketId: originalId }))
-      .then((r) => { if (!cancelled) setEditDetail(r.edit ?? 'error'); })
-      .catch(() => { if (!cancelled) setEditDetail('error'); });
-    return () => { cancelled = true; };
-  }, [isExpanded, isEdited, editEventId, originalId, editDetail]);
+      .then((r) => { editDisplayCache.set(editEventId, r.edit ?? 'error'); })
+      .catch(() => { editDisplayCache.set(editEventId, 'error'); })
+      .finally(() => {
+        editDisplayFetching.delete(editEventId);
+        if (mountedRef.current) forceEditTick((n) => n + 1);
+      });
+  }, [isExpanded, isEdited, editEventId, originalId]);
+  const editDetail: WbmEditDisplay | 'error' | 'loading' | null = editEventId
+    ? (editDisplayCache.get(editEventId) ?? (isExpanded && isEdited ? 'loading' : null))
+    : (isExpanded && isEdited ? 'error' : null);
   const editBadgeLabel = failedEdit
     ? t('history.editRejected')
     : presentation === 'failed'

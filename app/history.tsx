@@ -4,7 +4,8 @@
 // Enhanced with filtering, stats, and driver tracking
 
 import { useRouter } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { WbmEditDisplay, WbmEditChange } from "../src/services/secureOperationalApi";
 import { useFocusEffect } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
 import {
@@ -72,6 +73,31 @@ const getBottomLevel = (wellName: string, topLevel: number, bblsTaken: number): 
   return Math.max(topLevel - (bblsTaken / bblPerFoot), 0);
 };
 
+// Driver-facing label + value formatting for a before→after edit change.
+const changeFieldLabelKey = (field: WbmEditChange['field']): string => {
+  switch (field) {
+    case 'topLevelFeet': return 'history.topLevel';
+    case 'bblsTaken': return 'history.bblsTaken';
+    case 'wellDown': return 'history.wellStatus';
+    case 'dateTimeUTC': return 'history.sentAt';
+    default: return 'history.topLevel';
+  }
+};
+const formatChangeValue = (
+  field: WbmEditChange['field'],
+  v: string | number | boolean | null,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string => {
+  if (v === null || v === undefined) return '—'; // honest: value not recorded (never invented)
+  switch (field) {
+    case 'topLevelFeet': return typeof v === 'number' ? formatLevel(v) : String(v);
+    case 'bblsTaken': return `${v}`;
+    case 'wellDown': return v === true ? t('summary.down') : t('history.running');
+    case 'dateTimeUTC': return typeof v === 'string' ? formatAppDateTime(v) : String(v);
+    default: return String(v);
+  }
+};
+
 interface HistoryEntryProps {
   entry: PullHistoryEntry;
   onEdit: (entry: PullHistoryEntry) => void;
@@ -82,6 +108,8 @@ interface HistoryEntryProps {
 
 function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: HistoryEntryProps) {
   const swipeableRef = useRef<Swipeable>(null);
+  // Governed before→after edit detail (fetched on expand for an edited pull).
+  const [editDetail, setEditDetail] = useState<WbmEditDisplay | 'loading' | 'error' | null>(null);
 
   const renderRightActions = (
     progress: Animated.AnimatedInterpolation<number>,
@@ -134,6 +162,21 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
   const pendingEdit = presentation === 'pending' || presentation === 'failed';
   const failedEdit = presentation === 'rejected';
   const isEdited = presentation === 'edited';
+
+  // On expand of an edited pull, fetch the governed before→after detail once.
+  const originalId = entry.packetId || entry.id;
+  const editEventId = entry.editEventId;
+  useEffect(() => {
+    if (!isExpanded || !isEdited || editDetail !== null) return;
+    if (!editEventId || !originalId) { setEditDetail('error'); return; }
+    let cancelled = false;
+    setEditDetail('loading');
+    import('../src/services/secureOperationalApi')
+      .then(({ getWbmEditStatus }) => getWbmEditStatus({ editEventId, originalPacketId: originalId }))
+      .then((r) => { if (!cancelled) setEditDetail(r.edit ?? 'error'); })
+      .catch(() => { if (!cancelled) setEditDetail('error'); });
+    return () => { cancelled = true; };
+  }, [isExpanded, isEdited, editEventId, originalId, editDetail]);
   const editBadgeLabel = failedEdit
     ? t('history.editRejected')
     : presentation === 'failed'
@@ -170,18 +213,7 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
                 <Text style={[styles.editedBadge, (pendingEdit || failedEdit) && styles.pendingEditBadge]}> {editBadgeLabel}</Text>
               )}
             </Text>
-            {/* Review header under well name + date: historical fallback only (badge-only). */}
-            {isExpanded && isEdited && (
-              <View style={styles.editedHeaderNote}>
-                <Text style={styles.editedHeaderNoteText}>
-                  {entry.editedAt
-                    ? t('history.editedDetailWithTime', {
-                        when: formatAppDateTime(entry.editedAt),
-                      })
-                    : t('history.editedDetailNoTime')}
-                </Text>
-              </View>
-            )}
+            {/* Before→after detail is rendered in the expanded body (see below). */}
             {isExpanded && pendingEdit && (
               <View style={styles.editedHeaderNote}>
                 <Text style={styles.editedHeaderNoteText}>
@@ -248,6 +280,41 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
               <Text style={styles.detailLabel}>{t('history.packetId')}</Text>
               <Text style={styles.detailValueSmall}>{entry.packetId || entry.id}</Text>
             </View>
+
+            {isEdited && (
+              <View style={styles.editChangesBox}>
+                {editDetail && editDetail !== 'loading' && editDetail !== 'error'
+                  && editDetail.detailAvailable && editDetail.changes.length > 0 ? (
+                  <>
+                    {editDetail.changes.map((ch, i) => (
+                      <View key={`${ch.field}-${i}`} style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>{t(changeFieldLabelKey(ch.field))}</Text>
+                        <Text style={styles.detailValue}>
+                          {formatChangeValue(ch.field, ch.before, t)}
+                          {'  →  '}
+                          {formatChangeValue(ch.field, ch.after, t)}
+                        </Text>
+                      </View>
+                    ))}
+                    {editDetail.correctionCount > 1 && (
+                      <Text style={styles.editedHeaderNoteText}>
+                        {editDetail.correctionCount} corrections
+                      </Text>
+                    )}
+                  </>
+                ) : editDetail === 'loading' || editDetail === null ? (
+                  <Text style={styles.editedHeaderNoteText}>…</Text>
+                ) : (
+                  // Genuinely no recorded before/after for THIS record, or a
+                  // transient fetch error — honest, never a blanket excuse.
+                  <Text style={styles.editedHeaderNoteText}>
+                    {entry.editedAt
+                      ? t('history.editedDetailWithTime', { when: formatAppDateTime(entry.editedAt) })
+                      : t('history.editedDetailNoTime')}
+                  </Text>
+                )}
+              </View>
+            )}
 
             <TouchableOpacity
               style={styles.editButton}
@@ -1147,6 +1214,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 14,
     flexWrap: 'wrap',
+  },
+  editChangesBox: {
+    marginTop: 8,
+    marginBottom: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#92400E',
   },
   entryCardEdited: {
     borderColor: "#92400E",

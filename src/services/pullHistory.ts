@@ -70,6 +70,22 @@ const sleep = (ms: number) => new Promise<void>((resolve) => {
   (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
 });
 
+/** The latest applied correction's editEventId on a processed pull, from its
+ *  editCorrections map (keyed by editEventId; `e` = server-applied instant).
+ *  Returns undefined when the pull carries no correction. */
+function latestEditEventId(p: unknown): string | undefined {
+  const corr = (p as { editCorrections?: unknown })?.editCorrections;
+  if (!corr || typeof corr !== 'object') return undefined;
+  let best: string | undefined;
+  let bestT = -Infinity;
+  for (const [id, v] of Object.entries(corr as Record<string, unknown>)) {
+    const t = Date.parse(String((v as { e?: unknown })?.e ?? (v as { t?: unknown })?.t ?? ''));
+    const ms = Number.isFinite(t) ? t : 0;
+    if (ms >= bestT) { bestT = ms; best = id; }
+  }
+  return best;
+}
+
 function isAbortError(e: unknown): boolean {
   return !!e && typeof e === 'object' && (e as any).name === 'AbortError';
 }
@@ -145,6 +161,10 @@ export interface PullHistoryEntry {
   /** Server editedAt when known (backfill) — enables badge + historical fallback UI. */
   editedAt?: string;
   editCount?: number;
+  /** Latest applied correction's editEventId (from the processed pull's
+   *  editCorrections). Lets the History card fetch the governed before→after
+   *  display via getWbmEditStatus. */
+  editEventId?: string;
   syncStatus?: PullSyncStatus;   // server-delivery lifecycle (absent on legacy entries)
   sentConfirmedAt?: number;      // ms timestamp when packets/processed existence was CONFIRMED
   submittedAt?: number;          // ms timestamp of the successful PUT to incoming
@@ -321,6 +341,7 @@ async function backfillFromFirebase(): Promise<BackfillResult> {
             status: edited ? "edited" : "sent",
             editedAt: typeof p.editedAt === "string" ? p.editedAt : undefined,
             editCount: typeof p.editCount === "number" ? p.editCount : undefined,
+            editEventId: latestEditEventId(p),
           });
         }
       }
@@ -374,6 +395,7 @@ async function backfillFromFirebase(): Promise<BackfillResult> {
                 status: edited ? "edited" : "sent",
                 editedAt: typeof p.editedAt === "string" ? p.editedAt : undefined,
                 editCount: typeof p.editCount === "number" ? p.editCount : undefined,
+                editEventId: latestEditEventId(p),
               });
             }
           }
@@ -437,6 +459,7 @@ async function backfillAndMerge(): Promise<BackfillStatus> {
     if (typeof entry.wellDown === "boolean" && entry.wellDown !== existing.wellDown) { existing.wellDown = entry.wellDown; changed = true; }
     if (entry.status === "edited" && existing.status !== "edited") { existing.status = "edited"; changed = true; }
     if (entry.editedAt && entry.editedAt !== existing.editedAt) { existing.editedAt = entry.editedAt; changed = true; }
+    if (entry.editEventId && entry.editEventId !== existing.editEventId) { existing.editEventId = entry.editEventId; changed = true; }
     if (typeof entry.editCount === "number" && entry.editCount !== existing.editCount) {
       existing.editCount = entry.editCount;
       changed = true;

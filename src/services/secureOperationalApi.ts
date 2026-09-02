@@ -85,17 +85,35 @@ export async function getFieldCommandStatus(_query: {
 
 export type WbmEditStatus = 'pending' | 'applied' | 'rejected' | 'missing';
 
+/** Driver-facing changed field on an edit's before→after display. */
+export type WbmEditDisplayField = 'topLevelFeet' | 'bblsTaken' | 'wellDown' | 'dateTimeUTC';
+export type WbmEditChange = { field: WbmEditDisplayField; before: string | number | boolean | null; after: string | number | boolean | null };
+export type WbmEditCorrection = { editEventId: string | null; appliedAtUTC: string | null; correctionCreatedAtUTC: string | null; changes: WbmEditChange[] };
+export type WbmEditDisplay = {
+  editedAt: string | null;
+  /** NET change per field across all corrections (earliest before → latest after). */
+  changes: WbmEditChange[];
+  /** Every correction, chronological, preserved as evidence. */
+  corrections: WbmEditCorrection[];
+  /** Fields that changed but whose original before-value is unrecoverable. */
+  unavailableBeforeFields: WbmEditDisplayField[];
+  correctionCount: number;
+  /** false ⇒ no editHistory detail exists (legacy record) — show honestly, never invent. */
+  detailAvailable: boolean;
+};
+
 /**
- * Governed edit-status for ONE correction. Authenticated + ownership-scoped
- * server-side; returns only a minimal lifecycle verdict (no receipt bodies,
- * no payload). This is the authoritative confirmation source for an
- * edit_submitted operation — NOT a direct packets/processed read.
+ * Governed edit-status for ONE correction + the authoritative before→after
+ * DISPLAY for the whole original (all corrections, chronological). Ownership-
+ * scoped server-side; server derives BEFORE values from stored packets (never
+ * the client's claim). This is the confirmation source AND the History card's
+ * before→after data — NOT a direct packets/processed read.
  */
 export async function getWbmEditStatus(query: {
   editEventId: string;
   originalPacketId: string;
-}): Promise<{ status: WbmEditStatus; reason?: string }> {
-  return authorizedCallable<{ status: WbmEditStatus; reason?: string }>('getWbmEditStatus', {
+}): Promise<{ status: WbmEditStatus; reason?: string; edit?: WbmEditDisplay }> {
+  return authorizedCallable<{ status: WbmEditStatus; reason?: string; edit?: WbmEditDisplay }>('getWbmEditStatus', {
     editEventId: query.editEventId,
     originalPacketId: query.originalPacketId,
   });

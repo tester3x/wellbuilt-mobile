@@ -764,6 +764,9 @@ export async function scheduleEditDelivery(): Promise<void> {
   if (dl == null) return; // empty queue → zero wakeups
   const delay = Math.max(0, dl - Date.now());
   _deliveryTimer = setTimeout(() => { void deliverAndSchedule(); }, delay);
+  // Background scheduler must never keep the process (or a Jest worker) alive on
+  // its own. unref is a no-op on RN's numeric timers and a clean exit on Node.
+  (_deliveryTimer as { unref?: () => void } | null)?.unref?.();
 }
 
 /** One processing pass, then schedule ONLY the next required deadline. The

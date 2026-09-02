@@ -498,7 +498,8 @@ export function startDeliveryReconciler(): void {
     if (online) pass();
   });
   // Startup pass — catch outcomes that landed while the app was closed.
-  setTimeout(pass, 3000);
+  // unref so this background pass never keeps the process/Jest worker alive.
+  (setTimeout(pass, 3000) as { unref?: () => void }).unref?.();
   import('./firebaseAuthSession').then((m) => {
     m.subscribeAuthReady(() => { notifyAuthenticated(); });
   }).catch(() => {});

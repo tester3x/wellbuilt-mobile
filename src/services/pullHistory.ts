@@ -65,7 +65,10 @@ let lastBackfillStatus: BackfillStatus = 'idle';
 // SINGLE-FLIGHT guard: the one in-flight company scan, shared by all callers.
 let backfillInFlight: Promise<BackfillStatus> | null = null;
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise<void>((resolve) => {
+  // unref so a pending backoff sleep never keeps the process/Jest worker alive.
+  (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
+});
 
 function isAbortError(e: unknown): boolean {
   return !!e && typeof e === 'object' && (e as any).name === 'AbortError';
@@ -93,6 +96,7 @@ export function __resetBackfillStateForTests(): void {
 async function timedFetch(url: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), BACKFILL_TIMEOUT_MS);
+  (timer as { unref?: () => void }).unref?.(); // never keep the process/Jest worker alive
   try {
     return await fetch(url, {
       method: 'GET',

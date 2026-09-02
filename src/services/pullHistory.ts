@@ -18,7 +18,91 @@ const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.co
 const FIREBASE_API_KEY = "AIzaSyAGWXa-doFGzo7T5SxHVD_v5-SHXIc8wAI";
 
 let historyDays = DEFAULT_HISTORY_DAYS;
-let backfillAttempted = false; // Only try empty-history backfill once per session
+let backfillAttempted = false; // Only kick off the once-per-session backfill once
+
+/**
+ * PRODUCTION STARTUP-HANG FIX (packets/processed company-scan).
+ *
+ * The company-wide `packets/processed.json?orderBy="companyId"&equalTo=…` scan
+ * is large and, on a cold start, used to be `await`ed on the very path a screen
+ * needs for its first render (loadPullHistory → backfillAndMerge → backfillFrom
+ * Firebase → bare `await fetch(url)` with NO timeout). That hung Pull History and
+ * any startup caller for minutes.
+ *
+ * The rules now:
+ *  1. loadPullHistory()/getPullHistory() return LOCAL (pruned) history WITHOUT
+ *     waiting on the network backfill. The backfill is fire-and-forget.
+ *  2. The fetch has a bounded AbortController timeout; a timeout NEVER throws into
+ *     the caller and NEVER loses local history.
+ *  3. Single-flight: a module-level in-flight promise means only one company scan
+ *     runs at a time — concurrent callers share it (or skip via backfillAttempted).
+ *  4. Failure modes are classified DISTINCTLY (offline / auth / permission /
+ *     timeout / server / error) and bounded-backoff retried (retryable ones only);
+ *     local history is preserved on every one of them.
+ */
+export type BackfillStatus =
+  | 'idle'        // never attempted this session
+  | 'ok'          // scan completed (merged if any new/updated)
+  | 'offline'     // device reported no connectivity — scan not attempted
+  | 'auth'        // no/expired session token, missing companyId, or HTTP 401
+  | 'permission'  // HTTP 403 — server refused the read
+  | 'timeout'     // AbortController fired before the scan returned
+  | 'server'      // HTTP 5xx
+  | 'error';      // other network/transport error (retryable)
+
+interface BackfillResult {
+  status: BackfillStatus;
+  entries: PullHistoryEntry[]; // only meaningful when status === 'ok'
+}
+
+// Bounded timeout for the company-wide processed scan (abortable, never blocks render).
+let BACKFILL_TIMEOUT_MS = 12000; // 12s — inside the 10–15s band
+// Bounded backoff for RETRYABLE failures. NEVER a busy loop; empty = no retry.
+let BACKFILL_BACKOFF_MS = [3000, 8000, 15000];
+const RETRYABLE: BackfillStatus[] = ['offline', 'timeout', 'server', 'error'];
+
+let lastBackfillStatus: BackfillStatus = 'idle';
+// SINGLE-FLIGHT guard: the one in-flight company scan, shared by all callers.
+let backfillInFlight: Promise<BackfillStatus> | null = null;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function isAbortError(e: unknown): boolean {
+  return !!e && typeof e === 'object' && (e as any).name === 'AbortError';
+}
+
+/** Last classified outcome of the async backfill (for diagnostics/tests). */
+export function getLastBackfillStatus(): BackfillStatus {
+  return lastBackfillStatus;
+}
+
+/** Test-only knobs so retry/timeout stay deterministic and fast under jest. */
+export function __setBackfillTimingForTests(opts: { timeoutMs?: number; backoffMs?: number[] }): void {
+  if (typeof opts.timeoutMs === 'number') BACKFILL_TIMEOUT_MS = opts.timeoutMs;
+  if (Array.isArray(opts.backoffMs)) BACKFILL_BACKOFF_MS = opts.backoffMs;
+}
+
+/** Test-only reset of the module-level session/in-flight state. */
+export function __resetBackfillStateForTests(): void {
+  backfillAttempted = false;
+  backfillInFlight = null;
+  lastBackfillStatus = 'idle';
+}
+
+/** Fetch with a bounded AbortController timeout. Throws AbortError on timeout. */
+async function timedFetch(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BACKFILL_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** TRUTHFUL server-delivery lifecycle of an entry (GS3):
  *  pending_sync — still local/queued; nothing reached Firebase yet;
@@ -93,10 +177,14 @@ export async function setHistoryDays(days: number): Promise<void> {
   await AsyncStorage.setItem(SETTINGS_KEY, String(days));
 
   if (days > previousDays) {
-    // Expanding window — fetch older pulls from Firebase that we don't have locally
+    // Expanding window — fetch older pulls from Firebase that we don't have locally.
     console.log(`[PullHistory] Retention expanded ${previousDays} → ${days} days, backfilling from Firebase`);
-    backfillAttempted = false; // Allow backfill since window expanded
-    await loadPullHistory(); // Will detect expanded window and backfill
+    backfillAttempted = false; // Allow the once-per-session backfill to run again
+    await loadPullHistory();   // Returns local immediately AND kicks off the scan
+    // This is a deliberate settings action (not startup), so it's fine to WAIT for
+    // the expand scan to land before the settings screen refreshes. Shares the same
+    // single-flight promise; never throws (local history is preserved on failure).
+    await refreshFromServer();
   } else {
     // Shrinking or same — just re-prune
     await loadPullHistory();
@@ -115,31 +203,76 @@ export function getHistoryDays(): number {
  * Uses server-side orderBy("driverId") query — already indexed in RTDB.
  * Falls back to driverName query for older packets without driverId.
  */
-async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
+async function backfillFromFirebase(): Promise<BackfillResult> {
+  let driverId: string | null = null;
   try {
-    const driverId = await getDriverId();
-    if (!driverId) {
-      console.log("[PullHistory] No driverId — can't backfill");
-      return [];
+    driverId = await getDriverId();
+  } catch {
+    driverId = null;
+  }
+  if (!driverId) {
+    // No identity yet — nothing to scan for. NOT an error; local history stands.
+    console.log("[PullHistory] No driverId — skipping backfill");
+    return { status: 'ok', entries: [] };
+  }
+
+  // OFFLINE pre-check: never even open the large company scan while disconnected.
+  try {
+    const NetInfo = (await import('@react-native-community/netinfo')).default;
+    const net = await NetInfo.fetch();
+    if (net && net.isConnected === false) {
+      console.log('[PullHistory] Offline — backfill deferred');
+      return { status: 'offline', entries: [] };
+    }
+  } catch {
+    // NetInfo unavailable — proceed and let fetch/abort classify.
+  }
+
+  console.log("[PullHistory] Backfilling from packets/processed for driver:", driverId.slice(0, 8) + "...");
+
+  const cutoff = Date.now() - (historyDays * 24 * 60 * 60 * 1000);
+  const entries: PullHistoryEntry[] = [];
+
+  // AUTH: a missing/revoked session token or absent companyId is an auth-session
+  // failure, DISTINCT from offline/permission/server. Never throws into the caller.
+  let token: string;
+  let session: { companyId?: string } | null;
+  try {
+    const { getValidIdToken } = await import('./firebaseAuthSession');
+    token = await getValidIdToken();
+    session = await import('./driverAuth').then((m) => m.getDriverSession());
+  } catch (e) {
+    console.log('[PullHistory] Auth-session unavailable for backfill:', (e as any)?.message || e);
+    return { status: 'auth', entries: [] };
+  }
+  if (!session?.companyId) {
+    console.log('[PullHistory] No companyId in session — cannot scan');
+    return { status: 'auth', entries: [] };
+  }
+
+  try {
+    // Query packets/processed by companyId (server-side indexed), BOUNDED by timeout.
+    const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${encodeURIComponent(token)}&orderBy=${encodeURIComponent('"companyId"')}&equalTo=${encodeURIComponent(`"${session.companyId}"`)}`;
+    let response: Response;
+    try {
+      response = await timedFetch(url);
+    } catch (e) {
+      if (isAbortError(e)) {
+        console.log('[PullHistory] Backfill scan timed out (aborted) — local history preserved');
+        return { status: 'timeout', entries: [] };
+      }
+      console.log('[PullHistory] Backfill network error — local history preserved:', (e as any)?.message || e);
+      return { status: 'error', entries: [] };
     }
 
-    console.log("[PullHistory] Backfilling from packets/processed for driver:", driverId.slice(0, 8) + "...");
+    if (!response.ok) {
+      if (response.status === 401) return { status: 'auth', entries: [] };
+      if (response.status === 403) return { status: 'permission', entries: [] };
+      if (response.status >= 500) return { status: 'server', entries: [] };
+      return { status: 'error', entries: [] };
+    }
 
-    const cutoff = Date.now() - (historyDays * 24 * 60 * 60 * 1000);
-    const entries: PullHistoryEntry[] = [];
-
-    // Query packets/processed by driverId (server-side indexed)
-    const { getValidIdToken } = await import('./firebaseAuthSession');
-    const token = await getValidIdToken();
-    const session = await import('./driverAuth').then((m) => m.getDriverSession());
-    if (!session?.companyId) throw new Error('companyId required');
-    const url = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${encodeURIComponent(token)}&orderBy=${encodeURIComponent('"companyId"')}&equalTo=${encodeURIComponent(`"${session.companyId}"`)}`;
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    if (response.ok) {
+    {
       const data = await response.json();
       if (data && typeof data === "object") {
         const { getTrustedHistoryDriverIds } = await import("./wellConfig");
@@ -194,10 +327,7 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
       if (driverName) {
         console.log("[PullHistory] No driverId matches, trying nameless-packet fallback:", driverName);
         const nameUrl = `${FIREBASE_DATABASE_URL}/packets/processed.json?auth=${encodeURIComponent(token)}&orderBy=${encodeURIComponent('"companyId"')}&equalTo=${encodeURIComponent(`"${session.companyId}"`)}`;
-        const nameResponse = await fetch(nameUrl, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        });
+        const nameResponse = await timedFetch(nameUrl);
 
         if (nameResponse.ok) {
           const nameData = await nameResponse.json();
@@ -251,10 +381,12 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
     entries.sort((a, b) => b.sentAt - a.sentAt);
 
     console.log(`[PullHistory] Backfilled ${entries.length} pulls from Firebase (within ${historyDays} days)`);
-    return entries;
+    return { status: 'ok', entries };
   } catch (error) {
+    // A parse/abort during the fallback scan must never lose local history.
+    if (isAbortError(error)) return { status: 'timeout', entries: [] };
     console.error("[PullHistory] Backfill error:", error);
-    return [];
+    return { status: 'error', entries: [] };
   }
 }
 
@@ -263,9 +395,18 @@ async function backfillFromFirebase(): Promise<PullHistoryEntry[]> {
  * Deduplicates by packetId so we never get double entries.
  * Used when: (1) local history is empty, (2) retention window expanded.
  */
-async function backfillAndMerge(): Promise<void> {
-  const backfilled = await backfillFromFirebase();
-  if (backfilled.length === 0) return;
+async function backfillAndMerge(): Promise<BackfillStatus> {
+  const result = await backfillFromFirebase();
+  // On ANY non-ok classification (offline/auth/permission/timeout/server/error)
+  // the local history is left completely intact — the scan simply didn't land.
+  if (result.status !== 'ok') return result.status;
+
+  const backfilled = result.entries;
+  if (backfilled.length === 0) {
+    // Successful scan, nothing new to merge — still record the window we covered.
+    await AsyncStorage.setItem(BACKFILLED_DAYS_KEY, String(historyDays));
+    return 'ok';
+  }
 
   // Merge: existing local entries are the base. Add any Firebase entries we don't
   // have AND reconcile mutable fields of entries we DO have, so a stale local value
@@ -311,6 +452,48 @@ async function backfillAndMerge(): Promise<void> {
 
   // Track what we've backfilled so we know if it needs expanding later
   await AsyncStorage.setItem(BACKFILLED_DAYS_KEY, String(historyDays));
+  return 'ok';
+}
+
+/**
+ * ASYNC, single-flight, bounded-retry company scan. This is the ONLY place the
+ * network backfill is driven from. It is fire-and-forget from the render path:
+ *  - SINGLE-FLIGHT: while one scan is in flight, every caller shares that same
+ *    promise; a second scan is never started concurrently (so the large
+ *    packets/processed company scan runs at most once at a time).
+ *  - BOUNDED BACKOFF: retryable failures (offline/timeout/server/error) retry on
+ *    a fixed, finite schedule — never a busy loop. auth/permission never retry.
+ *  - LOCAL-SAFE: nothing here can throw into a caller, and a failure NEVER
+ *    mutates or drops local history.
+ */
+export function refreshFromServer(): Promise<BackfillStatus> {
+  if (backfillInFlight) return backfillInFlight; // share the in-flight scan
+  const run = (async (): Promise<BackfillStatus> => {
+    let status: BackfillStatus = 'idle';
+    const maxAttempts = 1 + BACKFILL_BACKOFF_MS.length;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        status = await backfillAndMerge();
+      } catch (e) {
+        // backfillAndMerge is written not to throw; this is a last-resort guard so
+        // an unexpected throw can never turn into lost local history.
+        console.warn('[PullHistory] backfill threw (non-fatal, local history kept):', e);
+        status = 'error';
+      }
+      lastBackfillStatus = status;
+      if (!RETRYABLE.includes(status)) break; // ok / auth / permission — done
+      const delay = BACKFILL_BACKOFF_MS[attempt];
+      if (delay === undefined) break; // bounded retries exhausted
+      console.log(`[PullHistory] backfill ${status}; retry in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`);
+      await sleep(delay);
+    }
+    return status;
+  })();
+  backfillInFlight = run;
+  // Clear the in-flight slot when done (success or failure) so a later session/
+  // expand can scan again. Identity-guarded against a racing reassignment.
+  void run.finally(() => { if (backfillInFlight === run) backfillInFlight = null; });
+  return run;
 }
 
 /**
@@ -346,11 +529,15 @@ export async function loadPullHistory(): Promise<PullHistoryEntry[]> {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
     }
 
-    // BACKFILL: Merge from Firebase every session to pick up cross-app pulls (WB T → WB M).
-    // Deduplicates by packetId so safe to run every time. Once per session to avoid hammering Firebase.
+    // BACKFILL: pick up cross-app pulls (WB T → WB M) from Firebase. This is
+    // FIRE-AND-FORGET — we NEVER await it here, so returning local history is not
+    // gated on the large packets/processed company scan (the startup-hang fix).
+    // Once per session (backfillAttempted) + single-flight inside refreshFromServer
+    // keeps us from hammering Firebase. When it lands, it merges and persists; a
+    // subsequent open/subscription tick renders the reconciled cache.
     if (!backfillAttempted) {
       backfillAttempted = true;
-      await backfillAndMerge();
+      void refreshFromServer();
     }
 
     return cachedHistory;

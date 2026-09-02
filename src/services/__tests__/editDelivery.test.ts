@@ -46,8 +46,12 @@ const mockGetFieldCommandStatus = jest.fn(async (..._args: unknown[]): Promise<{
 }> => {
   throw new Error('no_receipt');
 });
+const mockGetWbmEditStatus = jest.fn(async (..._a: unknown[]): Promise<{ status: string; reason?: string }> => ({ status: 'pending' }));
+const mockRecoverWbmEdit = jest.fn(async (..._a: unknown[]): Promise<{ ok: boolean; status: string; reason?: string; editEventId?: string; receiptWritten?: boolean; idempotent?: boolean }> => ({ ok: false, status: 'refused', reason: 'canary_disabled' }));
 jest.mock('../secureOperationalApi', () => ({
   getFieldCommandStatus: (query: unknown) => mockGetFieldCommandStatus(query),
+  getWbmEditStatus: (q: unknown) => mockGetWbmEditStatus(q),
+  recoverWbmEdit: (p: unknown) => mockRecoverWbmEdit(p),
 }));
 
 import { uploadEditPacket, uploadTankPacket } from '../firebase';
@@ -110,6 +114,10 @@ beforeEach(async () => {
   mockedUploadEdit.mockReset();
   mockGetFieldCommandStatus.mockReset();
   mockGetFieldCommandStatus.mockRejectedValue(new Error('no_receipt'));
+  mockGetWbmEditStatus.mockReset();
+  mockGetWbmEditStatus.mockResolvedValue({ status: 'pending' });
+  mockRecoverWbmEdit.mockReset();
+  mockRecoverWbmEdit.mockResolvedValue({ ok: false, status: 'refused', reason: 'canary_disabled' });
   await clearPullHistory();
 });
 
@@ -217,20 +225,19 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
     let entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.status).not.toBe('edited');          // not yet confirmed
 
-    // Legacy editedAt must NOT confirm a new secure edit.
+    // Governed status 'pending' does NOT confirm — legacy editedAt/wasEdited on
+    // the processed row can never override the authoritative verdict.
+    mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'pending' });
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID, editedAt: '2026-07-22T20:00:00.000Z', wasEdited: true },
     }));
     entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.status).not.toBe('edited');
 
-    // Server commit marker is the only confirmation for a new secure edit.
+    // The governed status is the ONLY confirmation authority.
+    mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'applied' });
     await processEditOperations(makeFetch({
-      [`packets/processed/${PID}`]: {
-        packetId: PID,
-        editCommitted: true,
-        editCommittedReceiptKey: 'receiptkey16gxxxx',
-      },
+      [`packets/processed/${PID}`]: { packetId: PID },
     }));
     entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edited');
@@ -263,10 +270,10 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted');
-    const editKey = rawOps()[0].editEventId!; // v2: receipts correlate by the op's unique editEventId
+    // Governed status reports the rejection with its stable reason.
+    mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'rejected', reason: 'ORIGINAL_PACKET_NOT_FOUND' });
     await processEditOperations(makeFetch({
-      [`packets/processed/${PID}`]: { packetId: PID }, // no editedAt
-      [`packets/rejected/${editKey}`]: { reason: 'ORIGINAL_PACKET_NOT_FOUND', readableReason: 'original missing' },
+      [`packets/processed/${PID}`]: { packetId: PID },
     }));
     const op = rawOps()[0];
     expect(op.state).toBe('edit_rejected');           // preserved, not deleted
@@ -306,14 +313,14 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
     expect(rawOps()[0].state).toBe('edit_submitted');
   });
 
-  test('getFieldCommandStatus receipt status committed confirms', async () => {
+  test('getWbmEditStatus applied confirms', async () => {
     await seedHistory(PID, 'sent');
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted');
-    mockGetFieldCommandStatus.mockResolvedValueOnce({ status: 'committed' });
+    mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'applied' });
     await processEditOperations(makeFetch({
-      [`packets/processed/${PID}`]: { packetId: PID, editedAt: '2026-07-22T20:00:00.000Z' },
+      [`packets/processed/${PID}`]: { packetId: PID },
     }));
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edited');
@@ -636,14 +643,14 @@ describe('submitted-timeout same-ID recovery (§7)', () => {
 });
 
 describe('edit acknowledgment + lost receipt + duplicates', () => {
-  test('lost acknowledgment is recovered from getFieldCommandStatus without a second upload', async () => {
+  test('lost acknowledgment is recovered via getWbmEditStatus applied without a second upload', async () => {
     await seedHistory(PID, 'sent');
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted');
     expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
 
-    mockGetFieldCommandStatus.mockResolvedValueOnce({ committed: true });
+    mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'applied' });
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()).toHaveLength(0);
     expect((await getPullHistory())[0].status).toBe('edited');
@@ -655,14 +662,10 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     await seedHistory(PID, 'sent');
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
-    const editKey = rawOps()[0].editEventId!; // v2: receipts correlate by the op's unique editEventId
+    // Governed status confirms 'applied' even when the original-row marker was lost.
+    mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'applied' });
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID },
-      [`packets/processed/${editKey}`]: {
-        committed: true,
-        editCommitted: true,
-        editCommittedReceiptKey: 'r-edit-row',
-      },
     }));
     expect(rawOps()).toHaveLength(0);
     expect((await getPullHistory())[0].editStatus).toBe('edited');
@@ -686,7 +689,7 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     await seedHistory(PID, 'sent');
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
-    mockGetFieldCommandStatus.mockRejectedValueOnce(Object.assign(new Error('missing'), { name: 'AuthSessionError' }));
+    mockGetWbmEditStatus.mockRejectedValueOnce(Object.assign(new Error('missing'), { name: 'AuthSessionError', httpStatus: 401 }));
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted');
     expect(rawOps()[0].lastError).toMatch(/auth_session/);
@@ -697,7 +700,7 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     await seedHistory(PID, 'sent');
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
-    mockGetFieldCommandStatus.mockResolvedValue({ status: 'committed' });
+    mockGetWbmEditStatus.mockResolvedValue({ status: 'applied' });
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()).toHaveLength(0);
     await processEditOperations(makeFetch({
@@ -716,23 +719,38 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     mockOnline.value = false;
-    await processEditOperations(makeFetch({
-      [`packets/processed/${PID}`]: {
-        packetId: PID,
-        editCommitted: true,
-        editCommittedReceiptKey: 'r-online',
-      },
-    }));
-    expect(rawOps()[0].state).toBe('edit_submitted');
+    mockGetWbmEditStatus.mockResolvedValue({ status: 'applied' });
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(rawOps()[0].state).toBe('edit_submitted'); // offline → held, no status call
     mockOnline.value = true;
-    await processEditOperations(makeFetch({
-      [`packets/processed/${PID}`]: {
-        packetId: PID,
-        editCommitted: true,
-        editCommittedReceiptKey: 'r-online',
-      },
-    }));
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()).toHaveLength(0);
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+  });
+
+  test('governed recovery of an accepted-but-MISSING edit reuses the same editEventId, never a duplicate ingest', async () => {
+    await seedHistory(PID, 'sent');
+    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    const editEventId = rawOps()[0].editEventId!;
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+
+    // Status MISSING + recovery refused (canary OFF) → stays edit_submitted; the
+    // recovery reused the SAME editEventId; no second ingest upload.
+    mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'missing' });
+    mockRecoverWbmEdit.mockResolvedValueOnce({ ok: false, status: 'refused', reason: 'canary_disabled' });
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(rawOps()[0].state).toBe('edit_submitted');
+    expect(mockRecoverWbmEdit).toHaveBeenCalledTimes(1);
+    expect((mockRecoverWbmEdit.mock.calls[0][0] as { editEventId?: string }).editEventId).toBe(editEventId);
+    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+
+    // Status MISSING + recovery APPLIED (canary enabled) → confirmed, no duplicate.
+    mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'missing' });
+    mockRecoverWbmEdit.mockResolvedValueOnce({ ok: true, status: 'applied', editEventId, receiptWritten: true });
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(rawOps()).toHaveLength(0);
+    expect((await getPullHistory())[0].editStatus).toBe('edited');
     expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
   });
 });

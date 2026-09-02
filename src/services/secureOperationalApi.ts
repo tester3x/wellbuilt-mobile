@@ -74,11 +74,50 @@ export async function secureSubmitFieldCommand(packet: Record<string, unknown>):
   unsupportedFieldCommand(requestType || 'unknown');
 }
 
-/** Receipt lookup is not a deployed production callable. */
+/** Legacy field-command receipt lookup is not a deployed production callable. */
 export async function getFieldCommandStatus(_query: {
   packetId?: string;
   idempotencyKey?: string;
   receiptKey?: string;
 }): Promise<never> {
   unsupportedFieldCommand('getFieldCommandStatus');
+}
+
+export type WbmEditStatus = 'pending' | 'applied' | 'rejected' | 'missing';
+
+/**
+ * Governed edit-status for ONE correction. Authenticated + ownership-scoped
+ * server-side; returns only a minimal lifecycle verdict (no receipt bodies,
+ * no payload). This is the authoritative confirmation source for an
+ * edit_submitted operation — NOT a direct packets/processed read.
+ */
+export async function getWbmEditStatus(query: {
+  editEventId: string;
+  originalPacketId: string;
+}): Promise<{ status: WbmEditStatus; reason?: string }> {
+  return authorizedCallable<{ status: WbmEditStatus; reason?: string }>('getWbmEditStatus', {
+    editEventId: query.editEventId,
+    originalPacketId: query.originalPacketId,
+  });
+}
+
+/**
+ * Governed recovery for an accepted-but-missing edit. Reuses the correction's
+ * EXISTING editEventId + preserved payload (never a new id). Server refuses
+ * unless the canary kill switch explicitly allow-lists this exact editEventId,
+ * and is idempotent (a claimed/applied edit returns its existing status).
+ */
+export async function recoverWbmEdit(packet: Record<string, unknown>): Promise<{
+  ok: boolean;
+  status: WbmEditStatus | 'claimed' | 'refused';
+  reason?: string;
+  editEventId?: string;
+  receiptWritten?: boolean;
+  idempotent?: boolean;
+}> {
+  const requestType = typeof packet.requestType === 'string' ? packet.requestType : '';
+  if (requestType !== 'edit') {
+    unsupportedFieldCommand(requestType || 'unknown');
+  }
+  return authorizedCallable('governedRecoverWbmEdit', { packet });
 }

@@ -97,6 +97,13 @@ export interface EditOperation {
    *  advances the dependent edit with NO external wake event, and never spins. */
   receiptChecks?: number;
   lastReceiptCheckAt?: number | null;
+  /** Last governed-recovery attempt timestamp (diagnostic). When the governed
+   *  status reports this accepted edit as MISSING (accepted-then-lost), a
+   *  governed recovery reusing the SAME editEventId + preserved payload is
+   *  invoked on the bounded recheck cadence (never a new id, never a duplicate
+   *  ingest; idempotent server-side) so the edit self-heals once the canary is
+   *  enabled. */
+  recoveryAttemptedAt?: number | null;
 }
 
 export type SubmitEditOutcome =
@@ -355,6 +362,46 @@ async function markConfirmed(op: EditOperation): Promise<void> {
   await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
 }
 
+/**
+ * Governed recovery for an accepted-but-MISSING edit (server accepted it as
+ * pending, then lost it before applying). Reuses the op's EXISTING editEventId
+ * and preserved payload — never mints a new id, never re-ingests. The server
+ * refuses unless the canary kill switch allow-lists this exact editEventId, and
+ * is idempotent (claimed/applied ⇒ existing status), so this may be re-attempted
+ * safely on the bounded recheck cadence until the canary is enabled. Returns
+ * 'applied' only on a proven terminal receipt; otherwise 'pending'.
+ */
+async function tryGovernedEditRecovery(op: EditOperation, nowMs: number): Promise<'applied' | 'pending'> {
+  if (!op.editEventId) return 'pending';
+  op.recoveryAttemptedAt = nowMs;
+  op.updatedAt = nowMs;
+  await upsertOp(op);
+  try {
+    const { buildWbmEditCommand } = await import('./wbmEditCommand');
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const packet = buildWbmEditCommand({
+      originalPacketTimestamp: op.payload.originalPacketTimestamp,
+      originalPacketId: op.originalPacketId,
+      wellName: op.wellName,
+      dateTime: op.payload.dateTime,
+      dateTimeUTC: op.payload.dateTimeUTC,
+      tankLevelFeet: op.payload.tankLevelFeet,
+      bblsTaken: op.payload.bblsTaken,
+      wellDown: op.payload.wellDown,
+      timezone,
+      editEventId: op.editEventId,
+      correctionCreatedAtUTC: new Date(op.createdAt).toISOString(),
+    });
+    const { recoverWbmEdit } = await import('./secureOperationalApi');
+    const res = await recoverWbmEdit(packet);
+    return res.status === 'applied' ? 'applied' : 'pending';
+  } catch {
+    // Recovery unavailable (undeployed / canary off / transient) — stay pending;
+    // the bounded recheck cadence retries, and status recheck confirms 'applied'.
+    return 'pending';
+  }
+}
+
 let _inFlight: Promise<{ submitted: number; confirmed: number; rejected: number; held: number; attemptedOpIds: string[] }> | null = null;
 
 export type ProcessEditOptions = { forceOpId?: string; nowMs?: number };
@@ -551,48 +598,76 @@ async function processEditOperationsInner(
       continue;
     }
 
-    // edit_submitted → confirm or detect rejection. Never re-uploads:
-    // a second submit of an already-accepted edit would be a duplicate.
+    // edit_submitted → confirm via the GOVERNED status, or recover an
+    // accepted-but-missing edit. Never re-uploads through ingest: a second
+    // submit of an already-accepted edit would be a duplicate.
     if (op.state === 'edit_submitted') {
       if (!online) { held++; continue; }
+
+      // Preferred path: the authoritative governed edit-status callable. It is
+      // the confirmation source — NOT a direct packets/processed/{editEventId}
+      // read (that path is auth-blocked and, for a v2 edit, wrong).
+      if (op.editEventId) {
+        try {
+          const { getWbmEditStatus } = await import('./secureOperationalApi');
+          const verdict = await getWbmEditStatus({
+            editEventId: op.editEventId,
+            originalPacketId: op.originalPacketId,
+          });
+          if (verdict.status === 'applied') { await markConfirmed(op); confirmed++; continue; }
+          if (verdict.status === 'rejected') {
+            op.state = 'edit_rejected';
+            op.rejectionReason = verdict.reason || 'rejected by server';
+            op.updatedAt = Date.now();
+            await upsertOp(op); // evidence PRESERVED — never deleted
+            await setPullEditStatus(op.originalPacketId, 'edit_rejected', op.rejectionReason);
+            rejected++;
+            continue;
+          }
+          if (verdict.status === 'missing') {
+            // Accepted by ingest, then LOST server-side. Governed recovery ONCE,
+            // reusing the SAME editEventId + preserved payload — never a new id,
+            // never a duplicate ingest. Repeats are idempotent server-side.
+            const recovered = await tryGovernedEditRecovery(op, nowMs);
+            if (recovered === 'applied') { await markConfirmed(op); confirmed++; continue; }
+            await stampReceiptCheck(op, nowMs); // refused (canary off) / pending → recheck
+            held++;
+            continue;
+          }
+          // pending → bounded recheck, no duplicate upload.
+          await stampReceiptCheck(op, nowMs);
+          held++;
+          continue;
+        } catch (err) {
+          const d = diagnoseThrown(err);
+          if (d.kind === 'auth_session' || d.kind === 'permission') {
+            // A real auth/permission failure is NOT awaiting-server silence:
+            // record it and recheck on cadence (never treat as confirmed).
+            op.lastError = formatDiagnosis(d);
+            await stampReceiptCheck(op, nowMs);
+            held++;
+            continue;
+          }
+          // dependency_blocked (callable undeployed) or a transient failure →
+          // fall through to the historical confirmation reads so behavior stays
+          // safe BEFORE the server canary is deployed.
+        }
+      }
+
+      // Fallback / legacy confirmation reads (no editEventId, or governed status
+      // unavailable). Never re-uploads.
       const processedOrig = await readPath(`packets/processed/${op.originalPacketId}`, fetchFn);
-      // New secure edits confirm ONLY via confirmNewSecureEdit proofs.
-      // Legacy editedAt / wasEdited / editedByPacketId / isEdit do not confirm.
       if (confirmAppliedEdit(processedOrig.data, op) || confirmNewSecureEdit(processedOrig.data)) {
         await markConfirmed(op);
         confirmed++;
         continue;
       }
-      // Correlate ONLY this correction's own receipt/records (v2: its unique
-      // editEventId; legacy: the historical deterministic key). A receipt for a
-      // different correction can never terminate this operation.
       const editKey = editCorrelationKey(op);
       const processedEdit = await readPath(`packets/processed/${editKey}`, fetchFn);
       if (confirmNewSecureEdit(processedEdit.data)) {
         await markConfirmed(op);
         confirmed++;
         continue;
-      }
-      try {
-        const { getFieldCommandStatus } = await import('./secureOperationalApi');
-        const receipt = await getFieldCommandStatus({
-          packetId: op.originalPacketId,
-          idempotencyKey: editKey,
-        });
-        if (confirmNewSecureEdit(receipt)) {
-          await markConfirmed(op);
-          confirmed++;
-          continue;
-        }
-      } catch (err) {
-        const d = diagnoseThrown(err);
-        if (d.kind === 'auth_session' || d.kind === 'permission') {
-          op.lastError = formatDiagnosis(d);
-          await stampReceiptCheck(op, nowMs);
-          held++;
-          continue;
-        }
-        /* other receipt lookup failures are not confirmation */
       }
       const rejectedEdit = await readPath(`packets/rejected/${editKey}`, fetchFn);
       if (rejectedEdit.data) {
@@ -607,9 +682,8 @@ async function processEditOperationsInner(
       if (processedOrig.diagnosis && (processedOrig.diagnosis.kind === 'auth_session' || processedOrig.diagnosis.kind === 'permission')) {
         op.lastError = formatDiagnosis(processedOrig.diagnosis);
       }
-      // Awaiting confirmation (still in packets/incoming, or not yet
-      // materialized) — advance the bounded recheck cadence and keep the single
-      // timer alive; NEVER resubmit an already-accepted edit (duplicate).
+      // Awaiting confirmation — advance the bounded recheck cadence; NEVER
+      // resubmit an already-accepted edit (duplicate).
       await stampReceiptCheck(op, nowMs);
       held++;
       continue;

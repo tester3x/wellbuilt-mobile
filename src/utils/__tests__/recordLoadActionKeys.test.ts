@@ -250,7 +250,11 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
 
   describe('18. submit path rejects the same invalid cases via the same authority', () => {
     it('handleSubmit routes rejection alerts through getRecordLoadBlockReason', () => {
-      expect(record).toMatch(/const blocked = getRecordLoadBlockReason\(\{\s*wellName,\s*level: levelValue,\s*barrels: barrelsValue,\s*wellDown,\s*\}\)/);
+      // wellDown is the RESOLVED value (wellDownFinal): submit reads the live
+      // Well Down assertion from refs, not a stale keypad-Done closure, but it
+      // still routes rejection through the one shared getRecordLoadBlockReason
+      // authority — so the Done gate and the submit path can never disagree.
+      expect(record).toMatch(/const blocked = getRecordLoadBlockReason\(\{\s*wellName,\s*level: levelValue,\s*barrels: barrelsValue,\s*wellDown: wellDownFinal,\s*\}\)/);
       expect(record).toMatch(/blocked === 'no_well'/);
       expect(record).toMatch(/blocked === 'missing_level'/);
       expect(record).toMatch(/blocked === 'missing_barrels'/);

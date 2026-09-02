@@ -25,6 +25,7 @@ import { addPullToHistory, updatePullHistoryEntry } from '../src/services/pullHi
 import { getBblPerFoot, getWellConfig, loadWellConfig } from '../src/services/wellConfig';
 import { getLevelSnapshot, savePendingPull, saveWellPull, saveLevelSnapshot } from '../src/services/wellHistory';
 import { hp, spacing, wp } from '../src/ui/layout';
+import { resolveWellDownForSubmit } from '../src/utils/wellDownAuthority';
 import {
   MeasurementKeypadDismissOverlay,
   MeasurementKeypadProvider,
@@ -117,6 +118,11 @@ interface DraftData {
   level: string;
   barrels: string;
   wellDown: boolean;
+  // Whether the driver explicitly toggled Well Down in this draft. Persisted so
+  // an explicit online/down assertion survives a draft restore (an untouched
+  // draft must NOT resurrect as a manufactured status command). Optional for
+  // backward-compat with drafts written before this field existed.
+  wellDownTouched?: boolean;
   savedAt: number; // timestamp
 }
 
@@ -173,6 +179,19 @@ function RecordScreenInner() {
   const wellIsDownRef = useRef<boolean>(false);
 
   const barrelsFieldRef = useRef<LevelFieldInputHandle>(null);
+  // Live Well Down state, readable synchronously at submit time. THE fix for
+  // the lost down->online transition: the custom keypad's Done handler is a
+  // closure captured when the measurement field was ACTIVATED — before the
+  // driver unchecks Well Down — so reading `wellDown` from React state there
+  // yields the pre-toggle value. handleSubmit reads these refs instead, so the
+  // driver's explicit toggle (including an explicit `false`) always wins.
+  const wellDownRef = useRef(false);
+  // True once the driver explicitly taps the checkbox. Seeding from canonical
+  // status is NOT a touch — an untouched submit preserves canonical status.
+  const wellDownTouchedRef = useRef(false);
+  // Canonical well status at form open (snapshot.isDown). An untouched submit
+  // sends this value so the backend computes a non-transition.
+  const canonicalWellDownRef = useRef(false);
   const committedBarrelsRef = useRef('');
   // Committed tank level, readable synchronously at submit time (mirror of
   // committedBarrelsRef): a level flushed from the active keypad draft must
@@ -207,6 +226,7 @@ function RecordScreenInner() {
       level,
       barrels,
       wellDown,
+      wellDownTouched: wellDownTouchedRef.current,
       savedAt: Date.now(),
     };
 
@@ -245,6 +265,12 @@ function RecordScreenInner() {
             setLevel('');
             setBarrels('');
             setDateTime(new Date());
+            // Clear returns Well Down to canonical status — an untouched state,
+            // NOT an explicit assertion. Reset the touch flag + ref so a later
+            // untouched submit preserves canonical rather than manufacturing a
+            // transition from a leftover toggle.
+            wellDownTouchedRef.current = false;
+            wellDownRef.current = isAlreadyDown;
             setWellDown(isAlreadyDown); // Keep well down if it was already down
             await clearDraft();
           }
@@ -275,7 +301,20 @@ function RecordScreenInner() {
           if (draft.level) setLevel(draft.level);
           if (draft.barrels) setBarrels(draft.barrels);
           if (draft.dateTime) setDateTime(new Date(draft.dateTime));
-          if (draft.wellDown) setWellDown(draft.wellDown);
+          // Restore Well Down by EXPLICIT boolean presence — never truthiness
+          // (an explicit `false` must survive a draft restore). The seed in
+          // loadWellData is guarded by wellDownTouchedRef, so restoring touch
+          // here prevents the async canonical seed from clobbering it.
+          if (typeof draft.wellDown === 'boolean') {
+            const touched =
+              draft.wellDownTouched === true ||
+              // Legacy drafts (no touch flag): a checked box the driver could
+              // see is treated as an explicit down assertion; unchecked is not.
+              (draft.wellDownTouched === undefined && draft.wellDown === true);
+            wellDownTouchedRef.current = touched;
+            wellDownRef.current = draft.wellDown;
+            setWellDown(draft.wellDown);
+          }
         } else {
           // Draft too old
           console.log('[Record] Draft expired for', wellName, ', clearing');
@@ -350,10 +389,20 @@ function RecordScreenInner() {
       // Skip status display for edit mode - we're editing existing data
       if (isEditMode) return;
 
-      // Check if well is already down
+      // Canonical status at form open — an untouched submit preserves this
+      // exact value (so the backend computes a non-transition).
+      canonicalWellDownRef.current = !!snapshot?.isDown;
+
+      // Seed the checkbox from canonical status. This async load can resolve
+      // AFTER the driver has already interacted, so it must never clobber an
+      // explicit toggle (e.g. a driver who unchecked a down well before the
+      // snapshot arrived). Seeding is not itself an authoritative command.
       if (snapshot?.isDown) {
-        setWellDown(true);
         setIsAlreadyDown(true);
+        if (!wellDownTouchedRef.current) {
+          wellDownRef.current = true;
+          setWellDown(true);
+        }
       }
 
       // Get flow rate from snapshot (now stored with level, not separately cached)
@@ -485,6 +534,11 @@ function RecordScreenInner() {
   const resetFormAfterDurableSave = () => {
     setLevel('');
     setBarrels('');
+    // The submitted pull is durably stored; reset Well Down to an untouched,
+    // non-asserting baseline so a subsequent pull on this screen instance does
+    // not inherit the just-submitted toggle as a fresh explicit command.
+    wellDownTouchedRef.current = false;
+    wellDownRef.current = false;
     setWellDown(false);
     const now = new Date();
     setDateTime(now);
@@ -495,13 +549,32 @@ function RecordScreenInner() {
     const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
     const levelValue = committed?.level ?? committedLevelRef.current ?? level;
 
+    // Resolve Well Down from LIVE refs, not from this closure's captured state.
+    // The keypad Done handler is a closure frozen at field-activation time
+    // (before the driver toggles the box), so reading `wellDown` state here
+    // loses an explicit down->online (or online->down) transition. New pulls
+    // resolve through the authority helper: a touched box sends the driver's
+    // value; an untouched box sends canonical (a deliberate non-transition).
+    // Edit mode carries exactly the checkbox value the driver sees (the edit
+    // contract handles authority server-side); still read from the ref so it
+    // is never stale.
+    const wellDownFinal = isEditMode
+      ? wellDownRef.current === true
+      : resolveWellDownForSubmit({
+          canonicalIsDown: canonicalWellDownRef.current,
+          checkboxWellDown: wellDownRef.current,
+          touched: wellDownTouchedRef.current,
+        }).wellDown;
+
     // ONE required-field validation authority, shared with the keypad's Done
     // gate (getRecordLoadBlockReason) — same checks, same order as always.
+    // Uses the resolved value so submit and the Done gate agree on whether a
+    // down well may skip level/barrels.
     const blocked = getRecordLoadBlockReason({
       wellName,
       level: levelValue,
       barrels: barrelsValue,
-      wellDown,
+      wellDown: wellDownFinal,
     });
     if (blocked === 'no_well') {
       alert.show("Error", "No well selected");
@@ -593,7 +666,7 @@ function RecordScreenInner() {
           dateTimeUTC: minuteChanged ? dateTimeUTCString : '',     // UTC for calculations
           tankLevelFeet: topLevel,
           bblsTaken: bblsTakenNum,
-          wellDown,
+          wellDown: wellDownFinal,
         });
 
         // Update the entry's VALUES locally — but never claim '(edited)'
@@ -604,7 +677,7 @@ function RecordScreenInner() {
           dateTimeString,
           topLevel,
           bblsTakenNum,
-          wellDown,
+          wellDownFinal,
           { markEdited: false }
         );
 
@@ -622,7 +695,7 @@ function RecordScreenInner() {
           wellName,
           bottomLevelEdit,
           dateTimeUTCString,
-          wellDown,
+          wellDownFinal,
           dateTimeString,           // lastPullDateTime
           bblsTakenNum,             // lastPullBbls
           lastPullTopLevelEdit,     // lastPullTopLevel (tank level before pull)
@@ -642,7 +715,7 @@ function RecordScreenInner() {
             packetTimestamp: editPacketTimestamp,
             packetId: editId,
             timestamp: Date.now(),
-            wellDown,
+            wellDown: wellDownFinal,
             isEdit: true,
           });
         }
@@ -712,7 +785,7 @@ function RecordScreenInner() {
           dateTimeUTC: dateTimeUTCString,     // UTC for calculations
           tankLevelFeet: topLevel,
           bblsTaken: bblsTakenNum,
-          wellDown,
+          wellDown: wellDownFinal,
           predictedLevelInches,               // What driver saw - for performance tracking
         });
 
@@ -726,7 +799,7 @@ function RecordScreenInner() {
           dateTimeString,
           topLevel,
           bblsTakenNum,
-          wellDown,
+          wellDownFinal,
           packetTimestamp,
           packetId,
           // Truthful status: an accepted upload is only 'submitted' — the
@@ -746,7 +819,7 @@ function RecordScreenInner() {
           wellName,
           levelAfterPull,
           dateTimeUTCString,
-          wellDown,
+          wellDownFinal,
           dateTimeString,      // lastPullDateTime
           bblsTakenNum,        // lastPullBbls
           lastPullTopLevel,    // lastPullTopLevel (tank level before pull)
@@ -765,7 +838,7 @@ function RecordScreenInner() {
             packetTimestamp: uploadResult.packetTimestamp,
             packetId: uploadResult.packetId,
             timestamp: Date.now(),
-            wellDown,
+            wellDown: wellDownFinal,
           });
         }
 
@@ -841,6 +914,10 @@ function RecordScreenInner() {
 
   useEffect(() => { committedBarrelsRef.current = barrels; }, [barrels]);
   useEffect(() => { committedLevelRef.current = level; }, [level]);
+  // Mirror Well Down state into a ref so submit reads the LIVE value, not a
+  // value frozen inside the keypad Done closure. Every setWellDown (checkbox
+  // tap, seed, draft restore, clear, reset) flows through here.
+  useEffect(() => { wellDownRef.current = wellDown; }, [wellDown]);
 
   return (
     <MeasurementKeypadDismissOverlay>
@@ -922,7 +999,15 @@ function RecordScreenInner() {
           {/* Well Down checkbox on right */}
           <TouchableOpacity
             style={styles.wellDownCorner}
-            onPress={() => setWellDown(!wellDown)}
+            onPress={() => {
+              // Explicit driver assertion. Record the touch + the new value
+              // synchronously in refs so a keypad Done fired immediately after
+              // reads the toggled value (not a stale pre-toggle closure).
+              const next = !wellDownRef.current;
+              wellDownTouchedRef.current = true;
+              wellDownRef.current = next;
+              setWellDown(next);
+            }}
             activeOpacity={0.7}
           >
             <Text style={styles.wellDownLabel}>{t('record.wellIsDown') || 'Well Down'}</Text>

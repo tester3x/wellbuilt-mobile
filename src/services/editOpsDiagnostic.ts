@@ -53,6 +53,19 @@ async function fp(s: string | undefined | null): Promise<string> {
   return (await sha256(s)).slice(0, 12);
 }
 
+/** Bound any read so a hanging network call (e.g. the un-timed packets/processed
+ *  company-scan behind getPullHistory) degrades to a sentinel instead of blocking
+ *  the whole snapshot. Read-only: a timeout abandons the read, never mutates. */
+async function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: T): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  const timer = new Promise<T>((resolve) => { t = setTimeout(() => resolve(onTimeout), ms); });
+  try {
+    return await Promise.race([p, timer]);
+  } finally {
+    if (t) clearTimeout(t);
+  }
+}
+
 /** UTF-8 byte length without Buffer (RN has no global Buffer). */
 function byteLen(s: string): number {
   let n = 0;
@@ -214,18 +227,10 @@ export async function logEditOpsDiagnostic(fetchFn: typeof fetch = fetch): Promi
     const ops = await getEditOperations();
     console.log(`${TAG} getEditOperations count:`, ops.length);
 
-    // 3. Pull-history marker (separate storage object).
-    const history = await getPullHistory();
-    const markedEntries = history.filter((e: any) => e.editStatus && e.editStatus !== 'edited');
-    console.log(`${TAG} pullHistory entries:`, history.length,
-      'with pending edit marker:', markedEntries.length);
-    for (const e of markedEntries) {
-      console.log(`${TAG} MARKER packetId=${e.packetId} id=${e.id} editStatus=${e.editStatus}`
-        + ` reason=${JSON.stringify(e.editStatusReason || null)}`
-        + ` top=${e.tankLevelFeet ?? '?'} bbls=${e.bblsTaken ?? '?'}`);
-    }
-
-    // 4. Per-op detail + server fate + reproduced hold reason.
+    // 3. Per-op detail + server fate + reproduced hold reason FIRST. All local
+    //    fields + fast single-key server reads — deliberately BEFORE the marker
+    //    section, whose getPullHistory triggers the un-timed packets/processed
+    //    company-scan that can hang. This is the data that actually matters.
     for (let i = 0; i < ops.length; i++) {
       const op = ops[i];
       const permanent = isPermanentEditFailure(op.lastError);
@@ -244,16 +249,14 @@ export async function logEditOpsDiagnostic(fetchFn: typeof fetch = fetch): Promi
         console.log(`${TAG} payload.sha256=${await sha256(JSON.stringify(op.payload ?? null))}`);
       } catch {}
 
-      // marker ↔ op identity correlation
-      const markerForOp = markedEntries.find((e: any) => e.packetId === op.originalPacketId || e.id === op.originalPacketId);
-      console.log(`${TAG} op<->marker sameOriginal=${!!markerForOp}${markerForOp ? ` markerStatus=${markerForOp.editStatus}` : ''}`);
-
-      // Server fate of THIS correction's event (read-only). The correlation key
-      // IS the editEventId — never printed raw; only its fingerprint.
+      // Server fate of THIS correction's event (read-only, single-key = fast).
+      // The correlation key IS the editEventId — never printed raw; fingerprint
+      // only. Timeout-guarded so a stalled read can't hang the snapshot.
       const keyFp = await fp(key);
+      const NF = { found: false, diagnosis: null } as any;
       try {
-        const procEdit = await readJsonPath(`packets/processed/${key}`, fetchFn);
-        const rejEdit = await readJsonPath(`packets/rejected/${key}`, fetchFn);
+        const procEdit = await withTimeout(readJsonPath(`packets/processed/${key}`, fetchFn), 6000, NF);
+        const rejEdit = await withTimeout(readJsonPath(`packets/rejected/${key}`, fetchFn), 6000, NF);
         console.log(`${TAG} server editReceipt key.fp=${keyFp} processed.found=${procEdit.found} rejected.found=${rejEdit.found} procDiag=${procEdit.diagnosis?.kind ?? null}`);
       } catch (e: any) {
         console.log(`${TAG} server editReceipt lookup threw:`, String(e?.message || e));
@@ -263,12 +266,35 @@ export async function logEditOpsDiagnostic(fetchFn: typeof fetch = fetch): Promi
       // it (it throws unsupported_field_command by design).
       console.log(`${TAG} getFieldCommandStatus=UNAVAILABLE (client stub throws unsupported_field_command)`);
 
-      // Reproduced this-pass branch.
+      // Reproduced this-pass branch (single-key reads; timeout-guarded).
       try {
-        const reason = await reproduceHoldReason(op, ops, nowMs, fetchFn);
+        const reason = await withTimeout(
+          reproduceHoldReason(op, ops, nowMs, fetchFn),
+          8000,
+          { branch: 'REPRO timed out (read stalled)' } as Record<string, unknown>,
+        );
         console.log(`${TAG} REPRO ${JSON.stringify(reason)}`);
       } catch (e: any) {
         console.log(`${TAG} REPRO threw:`, String(e?.message || e));
+      }
+    }
+
+    // 4. Pull-history marker (separate storage object) — LAST and timeout-guarded,
+    //    because getPullHistory triggers the un-timed packets/processed company-scan
+    //    backfill that can hang for minutes. A timeout here still yields the full
+    //    per-op picture above.
+    const history = await withTimeout(getPullHistory(), 8000, null as any);
+    if (!history) {
+      console.log(`${TAG} MARKER section SKIPPED: getPullHistory timed out (packets/processed company-scan backfill hang)`);
+    } else {
+      const markedEntries = history.filter((e: any) => e.editStatus && e.editStatus !== 'edited');
+      console.log(`${TAG} pullHistory entries:`, history.length, 'with pending edit marker:', markedEntries.length);
+      for (const e of markedEntries) {
+        const opForMarker = ops.find(o => o.originalPacketId === e.packetId || o.originalPacketId === e.id);
+        console.log(`${TAG} MARKER packetId=${e.packetId} id=${e.id} editStatus=${e.editStatus}`
+          + ` reason=${JSON.stringify(e.editStatusReason || null)}`
+          + ` top=${e.tankLevelFeet ?? '?'} bbls=${e.bblsTaken ?? '?'}`
+          + ` marker<->op sameOriginal=${!!opForMarker}`);
       }
     }
 

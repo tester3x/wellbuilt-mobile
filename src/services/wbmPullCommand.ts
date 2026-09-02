@@ -4,10 +4,17 @@
  * so the cross-repo contract fixture is generated from the REAL builder. The
  * driver identity is NOT part of the client packet (the server stamps it).
  *
- * wellDown is sent as an EXPLICIT boolean with wellDownIsAuthoritative:true — a
- * WB-M pull is an authoritative statement of the well's down/up state (the same
- * reason the Thor 1 edit fix asserts authority). Explicit false brings a well
- * online; explicit true marks it down; the value is never dropped.
+ * wellDown is sent as an EXPLICIT boolean. `wellDownIsAuthoritative` says whether
+ * THIS pull asserts the well's down/up state:
+ *   • true  — the driver explicitly set the checkbox (or a caller asserts status).
+ *             The server flips wells/{name}/status/isDown to `wellDown`.
+ *   • false — the checkbox was never touched (seeded display state only). The
+ *             server PRESERVES its current canonical status regardless of the
+ *             seeded `wellDown` carried for display — so a status change made
+ *             while the form was open is never overwritten by a stale seed.
+ * Defaults to true for back-compat (an unspecified caller is asserting status).
+ * The server accepts the flag as an optional boolean (wbmPullAuthorize) and
+ * changes status ONLY when it is true AND wellDown is an explicit boolean.
  */
 export type WbmPullCommandInput = {
   packetId: string;
@@ -17,6 +24,10 @@ export type WbmPullCommandInput = {
   tankLevelFeet: number;
   bblsTaken: number;
   wellDown: boolean;
+  /** Whether this pull asserts well-status authority. Omitted ⇒ true. An
+   *  untouched Record-Load checkbox passes false so the seeded value is display
+   *  only and the server preserves canonical status. */
+  wellDownIsAuthoritative?: boolean;
   timezone: string;
   predictedLevelInches?: number;
 };
@@ -33,7 +44,9 @@ export function buildWbmPullCommand(input: WbmPullCommandInput): Record<string, 
     tankLevelFeet: input.tankLevelFeet,
     bblsTaken: input.bblsTaken,
     wellDown: input.wellDown === true, // explicit final-state boolean, never omitted
-    wellDownIsAuthoritative: true,     // a WB-M pull is an authoritative well-status assertion
+    // Explicit authority: true unless the caller passes false (untouched box).
+    // Never truthiness — false is a load-bearing explicit value.
+    wellDownIsAuthoritative: input.wellDownIsAuthoritative !== false,
   };
   if (input.predictedLevelInches !== undefined) packet.predictedLevelInches = input.predictedLevelInches;
   return packet;

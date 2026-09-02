@@ -558,13 +558,20 @@ function RecordScreenInner() {
     // Edit mode carries exactly the checkbox value the driver sees (the edit
     // contract handles authority server-side); still read from the ref so it
     // is never stale.
-    const wellDownFinal = isEditMode
-      ? wellDownRef.current === true
+    // Pull path: resolve BOTH the explicit boolean and whether this pull asserts
+    // authority. An UNTOUCHED box asserts NO authority (wellDownIsAuthoritative
+    // false) so the server preserves canonical status even if it changed while
+    // the form was open. Edit mode carries the checkbox value; authority is
+    // handled by the edit contract server-side.
+    const wellDownResolution = isEditMode
+      ? { wellDown: wellDownRef.current === true, wellDownIsAuthoritative: true }
       : resolveWellDownForSubmit({
           canonicalIsDown: canonicalWellDownRef.current,
           checkboxWellDown: wellDownRef.current,
           touched: wellDownTouchedRef.current,
-        }).wellDown;
+        });
+    const wellDownFinal = wellDownResolution.wellDown;
+    const wellDownAuthoritativeFinal = wellDownResolution.wellDownIsAuthoritative;
 
     // ONE required-field validation authority, shared with the keypad's Done
     // gate (getRecordLoadBlockReason) — same checks, same order as always.
@@ -786,6 +793,7 @@ function RecordScreenInner() {
           tankLevelFeet: topLevel,
           bblsTaken: bblsTakenNum,
           wellDown: wellDownFinal,
+          wellDownIsAuthoritative: wellDownAuthoritativeFinal, // false when untouched → server preserves canonical
           predictedLevelInches,               // What driver saw - for performance tracking
         });
 

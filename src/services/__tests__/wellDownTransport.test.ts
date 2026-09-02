@@ -98,6 +98,44 @@ describe('explicit wellDown:false survives the offline queue', () => {
   });
 });
 
+describe('5. queue persistence/restart preserves touched intent WITHOUT converting untouched into authority', () => {
+  const pullWithAuthority = (packetId: string, wellDown: boolean, wellDownIsAuthoritative: boolean) => ({
+    packetId, wellName: 'Thor 1', dateTime: '8/30/2026 3:00 PM', dateTimeUTC: '2026-08-30T20:00:00.000Z',
+    tankLevelFeet: 11.333333, bblsTaken: 140, wellDown, wellDownIsAuthoritative,
+  });
+
+  test('a TOUCHED pull keeps wellDownIsAuthoritative:true across serialize -> restart -> replay', async () => {
+    mockOnline.value = false;
+    const pid = '20260830_120000_Thor1_touch1';
+    await smartUploadTankPacket(pullWithAuthority(pid, false, true)); // explicit down->online
+    // restart: only AsyncStorage survives
+    const restored = await getQueuedPackets();
+    expect(restored[0].data.wellDownIsAuthoritative).toBe(true);
+    expect(rawQueue()[0].data.wellDownIsAuthoritative).toBe(true);
+    // replay delivers the asserted authority
+    mockOnline.value = true;
+    mockedUploadTank.mockResolvedValue({ packetId: pid });
+    await flushQueue();
+    expect(mockedUploadTank.mock.calls[0][0].wellDownIsAuthoritative).toBe(true);
+    expect(mockedUploadTank.mock.calls[0][0].wellDown).toBe(false);
+  });
+
+  test('an UNTOUCHED pull keeps wellDownIsAuthoritative:false — never promoted to authority by the queue', async () => {
+    mockOnline.value = false;
+    const pid = '20260830_120000_Thor1_untch1';
+    // untouched box on a down-seeded well: wellDown carries the seed, authority is false
+    await smartUploadTankPacket(pullWithAuthority(pid, true, false));
+    const restored = await getQueuedPackets();
+    expect(restored[0].data.wellDownIsAuthoritative).toBe(false); // NOT converted to true
+    expect(typeof restored[0].data.wellDownIsAuthoritative).toBe('boolean');
+    expect(rawQueue()[0].data.wellDownIsAuthoritative).toBe(false);
+    mockOnline.value = true;
+    mockedUploadTank.mockResolvedValue({ packetId: pid });
+    await flushQueue();
+    expect(mockedUploadTank.mock.calls[0][0].wellDownIsAuthoritative).toBe(false); // still not asserted after replay
+  });
+});
+
 describe('retry / idempotency', () => {
   test('a timeout-after-landing retry re-sends the SAME identity (server dedupes; no duplicate pull/status)', async () => {
     mockOnline.value = false;

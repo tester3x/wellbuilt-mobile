@@ -482,6 +482,10 @@ export async function smartUploadTankPacket(params: {
   tankLevelFeet: number;
   bblsTaken: number;
   wellDown?: boolean;
+  /** Whether this pull asserts well-status authority (false when the Record-Load
+   *  checkbox was untouched). Serialized with the queued packet so an explicit
+   *  false survives offline persistence and idempotent replay. */
+  wellDownIsAuthoritative?: boolean;
   predictedLevelInches?: number; // What driver saw on pull form card - for performance tracking
 }): Promise<UploadResult> {
   // Guarantee the stable identity BEFORE any branch, so online success,

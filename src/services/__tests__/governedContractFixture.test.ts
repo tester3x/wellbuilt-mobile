@@ -40,6 +40,9 @@ const editBase = { originalPacketTimestamp: PID.slice(0, 15), originalPacketId: 
 function generate() {
   const createFalse = buildWbmPullCommand({ packetId: '20260830_200000_Thor1_crt001', wellName: WELL, dateTime: '8/30/2026 3PM', dateTimeUTC: '2026-08-30T20:00:00.000Z', tankLevelFeet: TOP, bblsTaken: BBL, wellDown: false, timezone: TZ });
   const createTrue = buildWbmPullCommand({ packetId: '20260830_210000_Thor1_crt002', wellName: WELL, dateTime: '8/30/2026 4PM', dateTimeUTC: '2026-08-30T21:00:00.000Z', tankLevelFeet: TOP, bblsTaken: BBL, wellDown: true, timezone: TZ });
+  // Untouched checkbox: the seeded value is carried for display but NOT asserted
+  // (wellDownIsAuthoritative:false) so the server preserves canonical status.
+  const createUntouched = buildWbmPullCommand({ packetId: '20260830_220000_Thor1_crt003', wellName: WELL, dateTime: '8/30/2026 5PM', dateTimeUTC: '2026-08-30T22:00:00.000Z', tankLevelFeet: TOP, bblsTaken: BBL, wellDown: true, wellDownIsAuthoritative: false, timezone: TZ });
   const editFalse = buildWbmEditCommand({ ...editBase, wellDown: false, timezone: TZ, editEventId: EVID_A, correctionCreatedAtUTC: CORR });
   const editTrue = buildWbmEditCommand({ ...editBase, wellDown: true, timezone: TZ, editEventId: EVID_B, correctionCreatedAtUTC: CORR });
   // Retry of editFalse: identical editEventId + material → byte-identical command.
@@ -49,7 +52,7 @@ function generate() {
   // API-style edit with wellDown OMITTED from editedFields (a non-UI caller). The
   // WB-M builder always includes wellDown, so this is constructed directly.
   const editOmitted = { ...(editFalse as Record<string, unknown>), editedFields: ['tankLevelFeet', 'bblsTaken'], editEventId: 'editevt_00000000-0000-4000-8000-0000000000ff', idempotencyKey: 'editevt_00000000-0000-4000-8000-0000000000ff' };
-  return { createFalse, createTrue, editFalse, editTrue, editRetry, editSecond, editOmitted };
+  return { createFalse, createTrue, createUntouched, editFalse, editTrue, editRetry, editSecond, editOmitted };
 }
 
 const digestOf = (fixtures: unknown) => createHash('sha256').update(JSON.stringify(fixtures)).digest('hex');
@@ -81,6 +84,9 @@ describe('governed CREATE/EDIT contract fixture (client ↔ server)', () => {
     expect(fixtures.createFalse.wellDownIsAuthoritative).toBe(true);
     expect(fixtures.createTrue.wellDown).toBe(true);
     expect(fixtures.createTrue.wellDownIsAuthoritative).toBe(true);
+    // Untouched box carries the seeded value but does NOT assert authority.
+    expect(fixtures.createUntouched.wellDown).toBe(true);
+    expect(fixtures.createUntouched.wellDownIsAuthoritative).toBe(false);
   });
 
   it('EDIT is governed v2 with wellDown explicit in the mask; retry is byte-identical; second is distinct', () => {

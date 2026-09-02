@@ -291,9 +291,12 @@ export const uploadTankPacket = async (params: {
   tankLevelFeet: number;
   bblsTaken: number;
   wellDown?: boolean;
+  /** Whether this pull asserts well-status authority. Omitted ⇒ true; false when
+   *  the Record-Load checkbox was untouched (server preserves canonical status). */
+  wellDownIsAuthoritative?: boolean;
   predictedLevelInches?: number;  // What driver saw on pull form card - for performance tracking
 }) => {
-  const { wellName, dateTime, dateTimeUTC, tankLevelFeet, bblsTaken, wellDown, predictedLevelInches } = params;
+  const { wellName, dateTime, dateTimeUTC, tankLevelFeet, bblsTaken, wellDown, wellDownIsAuthoritative, predictedLevelInches } = params;
 
   const wellNameClean = wellName.replace(/\s+/g, "");
   const packetId = params.packetId || mintPacketId(wellName);
@@ -317,6 +320,9 @@ export const uploadTankPacket = async (params: {
     tankLevelFeet,
     bblsTaken,
     wellDown: wellDown === true, // explicit final-state (was `wellDown || false`)
+    // Explicit authority (never truthiness): only false when the caller passes
+    // false (untouched checkbox); undefined/true both assert authority.
+    wellDownIsAuthoritative: wellDownIsAuthoritative === false ? false : true,
     predictedLevelInches: predictedLevelInches ?? undefined,
   }) as unknown as TankPacket;
   void driverId;

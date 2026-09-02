@@ -107,6 +107,16 @@ export default function RootLayout() {
     // the flush-complete event triggers a reconcile pass.
     startDeliveryReconciler();
 
+    // VC29 read-only diagnostic (temporary production observability): emit a
+    // sanitized snapshot of the preserved edit-ops queue + marker + server fate
+    // to logcat BEFORE any delivery pass, so an opaque release build's persisted
+    // operation can be inspected without run-as/uninstall. Zero writes, no
+    // scheduler effect (proven by editOpsDiagnostic.test.ts). Fire-and-forget so
+    // it cannot delay or gate startup; runs before the scheduler's first pass.
+    void import('../src/services/editOpsDiagnostic')
+      .then(m => m.logEditOpsDiagnostic())
+      .catch(() => {});
+
     // Ordered edit delivery (GS3): dependent edits survive restart and
     // release only after their original pull is confirmed processed.
     startEditDelivery();

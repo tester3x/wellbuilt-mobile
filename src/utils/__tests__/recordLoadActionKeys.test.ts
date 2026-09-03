@@ -176,8 +176,8 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
 
   describe('14. gating uses LIVE keypad drafts, same derivation as the hints', () => {
     it('record feeds liveLevel/liveBarrels into the readiness predicate', () => {
-      expect(record).toMatch(/const liveLevel = liveMeasurementValue\(LEVEL_FIELD_KEY, level, keypad\.activeFieldKey, keypad\.draft\)/);
-      expect(record).toMatch(/const liveBarrels = liveMeasurementValue\(BBLS_FIELD_KEY, barrels, keypad\.activeFieldKey, keypad\.draft\)/);
+      expect(record).toMatch(/const liveLevel = keypad\.isActiveField\(LEVEL_FIELD_KEY\) \? keypad\.draft : level/);
+      expect(record).toMatch(/const liveBarrels = keypad\.isActiveField\(BBLS_FIELD_KEY\) \? keypad\.draft : barrels/);
       expect(record).toMatch(/isRecordLoadSubmitReady\(\{ wellName, level: liveLevel, barrels: liveBarrels, wellDown \}\)/);
       expect(record).toMatch(/<MeasurementKeypadSlot doneEnabled=\{keypadDoneEnabled\} \/>/);
       // slot hands the gate to the keypad

@@ -490,10 +490,49 @@ async function processEditOperationsInner(
   const nowMs = opts.nowMs ?? Date.now();
   const forceOpId = opts.forceOpId;
 
+  // [G5DIAG] Temporary: dump op inventory so a production build reveals the exact
+  // stuck-op shape (AsyncStorage is unreadable on a release APK). Remove before final.
+  try {
+    console.log('[G5DIAG] processEditOperations ops=' + ops.length + ' online=' + online + ' force=' + (forceOpId || '-'));
+    for (const o of ops) {
+      console.log('[G5DIAG] op ' + o.wellName + ' orig=' + o.originalPacketId + ' state=' + o.state
+        + ' lane=' + (o.lane || '-') + ' attempts=' + o.attempts + ' recheck=' + (o.receiptChecks ?? 0)
+        + ' blockedCode=' + (o.blockedCode || '-') + ' evt=' + (o.editEventId ? o.editEventId.slice(0, 16) : '-')
+        + ' lastErr=' + (o.lastError ? String(o.lastError).slice(0, 60) : '-'));
+    }
+  } catch { /* diag only */ }
+
   for (const op of ops) {
     if (forceOpId && op.opId !== forceOpId && op.originalPacketId !== forceOpId) continue;
     if (op.state === 'edit_blocked' || op.state === 'edit_rejected' || op.state === 'edited') {
-      if (op.state === 'edit_blocked') held++;
+      if (op.state === 'edit_blocked') {
+        held++;
+        // A previously-BLOCKED op may carry a stale non-terminal PULL marker
+        // ("edit pending") from before the backend could adjudicate it. Consult
+        // the governed status (rules-UNblocked) ONCE per pass and reconcile the
+        // marker to the authoritative terminal verdict — a rejected/un-appliable
+        // original becomes a clear edit_rejected; an applied edit becomes edited.
+        // Never re-uploads; never deletes evidence.
+        if (online && op.editEventId) {
+          try {
+            const { getWbmEditStatus } = await import('./secureOperationalApi');
+            const verdict = await getWbmEditStatus({ editEventId: op.editEventId, originalPacketId: op.originalPacketId });
+            if (verdict.status === 'rejected') {
+              const raw = verdict.reason || '';
+              const detail = raw.replace(/^original_rejected:\s*/i, '').trim();
+              const reason = /original_rejected/i.test(raw)
+                ? `This edit can’t be applied — the original pull was rejected by the server${detail ? ` (${detail})` : ''}.`
+                : (op.blockedReason || raw || 'This edit can’t be applied.');
+              op.blockedReason = reason; op.blockedCode = 'edit_unappliable';
+              op.updatedAt = Date.now(); await upsertOp(op);
+              await setPullEditStatus(op.originalPacketId, 'edit_rejected', reason);
+              rejected++;
+            } else if (verdict.status === 'applied') {
+              await markConfirmed(op); confirmed++;
+            }
+          } catch { /* transient/unavailable → leave the block untouched */ }
+        }
+      }
       continue;
     }
 

@@ -702,7 +702,26 @@ async function processEditOperationsInner(
                 await stampReceiptCheck(op, nowMs);
                 held++;
                 continue;
-              } catch {
+              } catch (e) {
+                // A PERMANENT submit-validation failure (e.g. the original pull is
+                // missing/rejected, cross-driver/company, malformed) can never
+                // succeed on retry — mark the edit blocked with an honest reason
+                // instead of re-driving forever. Transient/undeployed errors fall
+                // through to the governed-recovery / recheck path below.
+                const em = String((e as { message?: string })?.message || e || '');
+                if (/edit_invalid|missing_original|original_missing|cross_driver|cross_company|forged_well|permission-denied|not_owner/i.test(em)) {
+                  op.state = 'edit_blocked';
+                  op.blockedReason = /missing_original|original_missing/i.test(em)
+                    ? 'This edit cannot be applied — the original pull is missing or was rejected by the server.'
+                    : `This edit cannot be applied (${em.replace(/^[a-z-]+:/i, '') || 'not permitted'}).`;
+                  op.blockedCode = 'edit_unappliable';
+                  op.lastError = op.blockedReason;
+                  op.updatedAt = Date.now();
+                  await upsertOp(op); // evidence preserved — never deleted, never looped
+                  await setPullEditStatus(op.originalPacketId, 'edit_pending', op.blockedReason);
+                  held++;
+                  continue;
+                }
                 // v3 undeployed / transient → fall back to the governed recovery.
               }
             }

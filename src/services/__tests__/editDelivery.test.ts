@@ -758,4 +758,31 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     expect((await getPullHistory())[0].editStatus).toBe('edited');
     expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
   });
+
+  test('legacy edit_submitted whose original was REJECTED → edit_blocked, never re-driven forever', async () => {
+    const editEventId = 'editevt_legacy-rejected';
+    const now = Date.now();
+    // A LEGACY op (no lane) uploaded via the old route, server reports MISSING.
+    mockStore[EDIT_OPS_KEY] = JSON.stringify([{
+      opId: 'editop_legacy', editEventId,
+      originalPacketId: PID, wellName: 'Gunslinger 3',
+      payload: { ...editParams(PID), editEventId },
+      state: 'edit_submitted', createdAt: now - 5000, updatedAt: now - 5000,
+      attempts: 1, lastAttemptAt: now - 5000, lastError: null, receiptChecks: 5,
+    }]);
+    mockGetWbmEditStatus.mockResolvedValue({ status: 'missing' });
+    // Re-drive into the durable lane rejects PERMANENTLY (original was rejected).
+    mockedUploadEditV3.mockRejectedValue(new Error('edit_invalid:missing_original'));
+
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    const op = rawOps()[0];
+    expect(op.state).toBe('edit_blocked');            // durable, honest — not looping
+    expect(op.blockedCode).toBe('edit_unappliable');
+    const callsAfterBlock = mockedUploadEditV3.mock.calls.length;
+
+    // A subsequent pass does NOT re-drive a blocked op (no infinite retry).
+    await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
+    expect(mockedUploadEditV3.mock.calls.length).toBe(callsAfterBlock);
+    expect(rawOps()[0].state).toBe('edit_blocked');   // evidence preserved
+  });
 });

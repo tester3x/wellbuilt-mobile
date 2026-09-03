@@ -1278,7 +1278,7 @@ function RecordScreenInner() {
       {keypad.isOpen && (keypad.isActiveField(BBLS_FIELD_KEY) || keypad.isActiveField(LEVEL_FIELD_KEY)) && (
         <View style={styles.keypadBottomHintBar}>
           <Text style={styles.keypadBottomHintText}>
-            {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : `Bottom: — [B=${liveBarrels}|bpf=${bblPerFoot}]`}
+            {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : ' '}
           </Text>
         </View>
       )}

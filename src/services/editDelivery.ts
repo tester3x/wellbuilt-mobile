@@ -391,7 +391,9 @@ async function markConfirmed(op: EditOperation): Promise<void> {
   op.state = 'edited';
   op.updatedAt = Date.now();
   await upsertOp(op);
-  await setPullEditStatus(op.originalPacketId, 'edited');
+  // Pass the correction's editEventId so the History card can render the
+  // before→after immediately (no backfill wait, no cold restart needed).
+  await setPullEditStatus(op.originalPacketId, 'edited', undefined, op.editEventId);
   await saveOps((await loadOps()).filter(o => o.opId !== op.opId));
 }
 

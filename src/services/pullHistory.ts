@@ -803,6 +803,7 @@ export async function setPullEditStatus(
   packetId: string,
   editStatus: PullEditStatus,
   reason?: string,
+  editEventId?: string,
 ): Promise<boolean> {
   if (cachedHistory.length === 0) {
     await loadPullHistory();
@@ -811,9 +812,15 @@ export async function setPullEditStatus(
   if (!entry) return false;
   entry.editStatus = editStatus;
   if (reason !== undefined) entry.editStatusReason = reason;
+  // Carry the correction's editEventId onto the marker at confirmation time so
+  // the History card can fetch the governed before→after IMMEDIATELY, without
+  // waiting for the next packets/processed backfill (which is the only other
+  // source of the marker's editEventId).
+  if (editEventId) entry.editEventId = editEventId;
   if (editStatus === 'edited') {
     entry.status = 'edited'; // server-confirmed — legacy marker may appear
     if (!entry.editedAt) entry.editedAt = new Date().toISOString();
+    entry.editCount = (entry.editCount ?? 0) + 1; // bump so the before→after cache re-fetches
   }
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
   console.log('[PullHistory] editStatus:', packetId, '→', editStatus);

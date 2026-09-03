@@ -953,8 +953,13 @@ function RecordScreenInner() {
   // Live values: while a field owns the active custom-keypad session its
   // visible value is the keypad DRAFT — hints must derive from that so they
   // update on every number/backspace, not only after Done/commit.
-  const liveLevel = liveMeasurementValue(LEVEL_FIELD_KEY, level, keypad.activeFieldKey, keypad.draft);
-  const liveBarrels = liveMeasurementValue(BBLS_FIELD_KEY, barrels, keypad.activeFieldKey, keypad.draft);
+  // Use the SAME active-field check the field itself uses to show the draft
+  // (isActiveField, ref-based), so the derived-bottom hint reads the live keypad
+  // draft on EVERY keystroke — matching LevelFieldInput's displayValue exactly.
+  // (Previously compared keypad.activeFieldKey, which could diverge and make the
+  // Bottom hint read a stale/empty committed value and disappear mid-entry.)
+  const liveLevel = keypad.isActiveField(LEVEL_FIELD_KEY) ? keypad.draft : level;
+  const liveBarrels = keypad.isActiveField(BBLS_FIELD_KEY) ? keypad.draft : barrels;
 
   const levelHint = getLevelHint(liveLevel, t('record.tankLevelHint'), t('record.invalidFormat'));
 
@@ -1170,7 +1175,9 @@ function RecordScreenInner() {
             }}
           />
           <Text style={styles.bottomLevelHint}>
-            {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : ' '}
+            {bottomLevelHint
+              ? `Bottom: ${bottomLevelHint}`
+              : `DBG L=[${liveLevel}] B=[${liveBarrels}] bpf=${bblPerFoot} act=${keypad.isActiveField(BBLS_FIELD_KEY)}`}
           </Text>
         </View>
       </ScrollView>

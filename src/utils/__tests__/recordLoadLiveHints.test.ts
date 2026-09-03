@@ -107,12 +107,15 @@ describe('Record Load live hints (2026-08-26 field regressions)', () => {
       expect(getLevelHint("10'8", DEFAULT_HINT, INVALID_HINT)).toBe('= 10\'8"');
     });
 
-    it('record.tsx derives BOTH hints from live keypad values', () => {
+    it('record.tsx derives BOTH hints from the live keypad draft via isActiveField', () => {
+      // The hint MUST read the draft the same way the field decides to show it
+      // (isActiveField, ref-based) so it updates on every keystroke and never
+      // reads a stale committed value while the keypad is open.
       expect(record).toMatch(
-        /const liveLevel = liveMeasurementValue\(LEVEL_FIELD_KEY, level, keypad\.activeFieldKey, keypad\.draft\)/,
+        /const liveLevel = keypad\.isActiveField\(LEVEL_FIELD_KEY\) \? keypad\.draft : level/,
       );
       expect(record).toMatch(
-        /const liveBarrels = liveMeasurementValue\(BBLS_FIELD_KEY, barrels, keypad\.activeFieldKey, keypad\.draft\)/,
+        /const liveBarrels = keypad\.isActiveField\(BBLS_FIELD_KEY\) \? keypad\.draft : barrels/,
       );
       expect(record).toMatch(/getLevelHint\(liveLevel,/);
       expect(record).toMatch(/computeBottomLevelHint\(liveLevel, liveBarrels, bblPerFoot\)/);

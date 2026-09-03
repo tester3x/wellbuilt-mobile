@@ -520,6 +520,45 @@ async function processEditOperationsInner(
         continue;
       }
       if (!online) { held++; continue; }
+
+      // AUTHORITATIVE terminal check via the governed callable, BEFORE the direct
+      // REST reads (which the RTDB rules DENY the client — so they can never
+      // observe that the original was rejected) and BEFORE the auto-attempt gate
+      // (so an op parked with a permanent lastError is still reconciled, not left
+      // showing "edit pending" forever). getWbmEditStatus reports a rejected/
+      // un-appliable original as a TERMINAL 'rejected'; that closes the edit with
+      // a clear reason. 'applied' (rare here) also resolves. Any other verdict —
+      // 'missing' (original not yet landed) or 'pending' — falls through to the
+      // existing dependent-hold / delivery logic unchanged. Best-effort: a
+      // callable/transient failure just falls through.
+      if (op.editEventId) {
+        try {
+          const { getWbmEditStatus } = await import('./secureOperationalApi');
+          const verdict = await getWbmEditStatus({
+            editEventId: op.editEventId,
+            originalPacketId: op.originalPacketId,
+          });
+          if (verdict.status === 'rejected') {
+            const raw = verdict.reason || '';
+            const detail = raw.replace(/^original_rejected:\s*/i, '').trim();
+            op.state = 'edit_blocked';
+            op.blockedReason = /original_rejected/i.test(raw)
+              ? `This edit can’t be applied — the original pull was rejected by the server${detail ? ` (${detail})` : ''}.`
+              : (raw || 'This edit can’t be applied — its original pull is not on the server.');
+            op.blockedCode = 'edit_unappliable';
+            op.lastError = op.blockedReason;
+            op.updatedAt = Date.now();
+            await upsertOp(op); // evidence preserved — never deleted, never looped
+            await setPullEditStatus(op.originalPacketId, 'edit_rejected', op.blockedReason);
+            rejected++;
+            continue;
+          }
+          if (verdict.status === 'applied') { await markConfirmed(op); confirmed++; continue; }
+        } catch {
+          // governed status unavailable / transient → fall through to REST logic.
+        }
+      }
+
       const processed = await readPath(`packets/processed/${op.originalPacketId}`, fetchFn);
       if (!processed.data) {
         const readBlocked = !!processed.diagnosis

@@ -254,6 +254,39 @@ describe('case 2 — original submitted but unresolved', () => {
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edit_rejected');
   });
+
+  test('Gate 5: a PARKED edit_pending dependent heals via getWbmEditStatus:rejected — no blocked REST read needed', async () => {
+    const editEventId = 'editevt_g5-pending-parked';
+    const now = Date.now();
+    await seedHistory(PID, 'submitted');
+    // The real-device case: a dependent edit_pending op whose original was
+    // REJECTED. The direct REST reads of packets/rejected are DENIED by rules
+    // (readBlocked), and the op is parked (permanent lastError) so it never
+    // auto-attempts. It must still heal by consulting the governed callable,
+    // which reports the un-appliable original as a TERMINAL 'rejected'.
+    mockStore[EDIT_OPS_KEY] = JSON.stringify([{
+      opId: 'editop_g5p', editEventId,
+      originalPacketId: PID, wellName: 'Gunslinger 3',
+      payload: { ...editParams(PID), editEventId },
+      state: 'edit_pending', createdAt: now - 90000, updatedAt: now - 90000,
+      attempts: 3, lastAttemptAt: now - 90000, lastError: 'invalid-argument',
+      receiptChecks: 40,
+    }]);
+    mockGetWbmEditStatus.mockResolvedValue({ status: 'rejected', reason: 'original_rejected: STALE_PULL_TIME' });
+
+    // The governed callable resolves it BEFORE any direct REST read is attempted,
+    // so the heal does not depend on reads the deployed rules deny.
+    const r = await processEditOperations(makeFetch({}));
+    expect(r.rejected).toBe(1);
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();  // never re-uploads an un-appliable edit
+    const op = rawOps()[0];
+    expect(op.state).toBe('edit_blocked');
+    expect(op.blockedCode).toBe('edit_unappliable');
+    const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.editStatus).toBe('edit_rejected');       // clear rejection, NOT "edit pending"
+    expect(entry.editStatusReason).toContain('can’t be applied');
+    expect(entry.editStatusReason).toContain('STALE_PULL_TIME');
+  });
 });
 
 describe('case 3 — original processed: normal upload + confirmation', () => {

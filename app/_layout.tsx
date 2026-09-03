@@ -107,15 +107,6 @@ export default function RootLayout() {
     // the flush-complete event triggers a reconcile pass.
     startDeliveryReconciler();
 
-    // VC35 read-only diagnostic (temporary production observability): emit a
-    // sanitized snapshot of the preserved edit-ops queue + marker + server fate
-    // to logcat BEFORE any delivery pass, so an opaque release build's persisted
-    // Gabriel 4 edit operation can be inspected without run-as/uninstall. Zero
-    // writes, no scheduler effect (proven by editOpsDiagnostic.test.ts).
-    void import('../src/services/editOpsDiagnostic')
-      .then(m => m.logEditOpsDiagnostic())
-      .catch(() => {});
-
     // Ordered edit delivery (GS3): dependent edits survive restart and
     // release only after their original pull is confirmed processed.
     startEditDelivery();

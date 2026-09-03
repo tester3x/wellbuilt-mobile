@@ -7,6 +7,8 @@
  * derive from the draft to update key-by-key. The math itself is unchanged.
  */
 
+import { deriveBottomInches } from '../domain/wbmEditForm';
+
 // Parse level input - handles multiple formats:
 // "6.4" → 6.4 feet (decimal feet - for quick entry)
 // "6 4" → 6' 4" (space separated, integer inches)
@@ -93,8 +95,11 @@ export const computeBottomLevelHint = (
   const bblsTaken = parseFloat(barrelsInput);
   if (tankLevel === null || isNaN(bblsTaken) || bblsTaken <= 0) return null;
 
-  const feetPulled = bblsTaken / bblPerFoot;
-  const bottomLevel = Math.max(tankLevel - feetPulled, 0);
+  // THE shared domain calc (mirrors the server): work in canonical inches, then
+  // to feet, clamped for display. Identical result to the historical
+  // tankLevel - bbls/bblPerFoot, now single-sourced.
+  const bottomInches = deriveBottomInches(tankLevel * 12, bblsTaken, bblPerFoot);
+  const bottomLevel = Math.max(bottomInches / 12, 0);
   return formatFeetInches(bottomLevel);
 };
 

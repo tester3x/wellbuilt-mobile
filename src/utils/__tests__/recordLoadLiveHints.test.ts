@@ -155,11 +155,16 @@ describe('Record Load live hints (2026-08-26 field regressions)', () => {
   });
 
   describe('6. getBblPerFoot() math is unchanged', () => {
-    it('submit paths still compute bottom = topLevel - (bblsTaken / getBblPerFoot())', () => {
+    it('submit paths compute bottom from the well bblPerFoot via the shared calc', () => {
+      // NEW-PULL path keeps the inline formula.
       expect(record).toMatch(/const bblPerFt = await getBblPerFoot\(wellName\)/);
-      expect(record).toMatch(/const bblPerFootEdit = await getBblPerFoot\(wellName\)/);
       expect(record).toMatch(/Math\.max\(topLevel - \(bblsTakenNum \/ bblPerFoot\), 0\)/);
-      expect(record).toMatch(/Math\.max\(topLevel - \(bblsTakenNum \/ bblPerFootEdit\), 0\)/);
+      // EDIT path routes the SAME math through finalizeEdit's shared derived
+      // bottom (deriveBottomInches, unit-proven to mirror the server formula):
+      // the well's bblPerFoot is fed into finalize, and the bottom comes from it.
+      expect(record).toMatch(/const bblPerFootEdit = await getBblPerFoot\(wellName\)/);
+      expect(record).toMatch(/bblPerFoot: bblPerFootEdit/);
+      expect(record).toMatch(/finalized\.bottomInches \/ 12/);
     });
 
     it('hint math matches: bottom = tankLevel - (bblsTaken / bblPerFoot)', () => {

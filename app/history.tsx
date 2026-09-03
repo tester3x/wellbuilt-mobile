@@ -39,6 +39,7 @@ import {
   PullHistoryEntry,
 } from "../src/services/pullHistory";
 import { getBblPerFootSync, getAllWellNames, loadWellConfig } from "../src/services/wellConfig";
+import { deriveBottomInches } from "../src/domain/wbmEditForm";
 import { isCurrentUserViewer } from "../src/services/driverAuth";
 import { hp, spacing, wp } from "../src/ui/layout";
 import { historyEditPresentation } from "../src/services/editMarkers";
@@ -67,10 +68,11 @@ const formatFullDateTime = (timestamp: number): string => {
   });
 };
 
-// Calculate bottom level after pull using well config
+// Calculate bottom level after pull — THE shared domain calc (mirrors the
+// server + the live preview + the edit Save), in canonical inches then to feet.
 const getBottomLevel = (wellName: string, topLevel: number, bblsTaken: number): number => {
   const bblPerFoot = getBblPerFootSync(wellName);
-  return Math.max(topLevel - (bblsTaken / bblPerFoot), 0);
+  return Math.max(deriveBottomInches(topLevel * 12, bblsTaken, bblPerFoot) / 12, 0);
 };
 
 // Driver-facing label + value formatting for a before→after edit change.

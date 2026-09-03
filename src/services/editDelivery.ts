@@ -58,6 +58,16 @@ export interface EditPacketParams {
   /** Well-Down authority: false only when the driver left the checkbox untouched
    *  (server preserves canonical). Absent → treated as authoritative. */
   wellDownIsAuthoritative?: boolean;
+  /** Immutable original snapshot captured at Save (before→after evidence base).
+   *  Lifted onto the op; never sent on the wire (server derives before-values). */
+  originalSnapshot?: {
+    tankLevelFeet: number;
+    bblsTaken: number;
+    wellDown: boolean;
+    dateTimeUTC: string;
+  } | null;
+  /** Deterministic content fingerprint of the finalized edit (op immutability). */
+  payloadDigest?: string | null;
 }
 
 export type EditOpState =
@@ -214,6 +224,9 @@ function newOp(payload: EditPacketParams, state: EditOpState, blockedReason?: st
     lastError: null,
     receiptChecks: 0,
     lastReceiptCheckAt: null,
+    // Immutable Save-time evidence lifted onto the op (never re-derived on retry).
+    originalSnapshot: payload.originalSnapshot ?? null,
+    payloadDigest: payload.payloadDigest ?? null,
   };
 }
 

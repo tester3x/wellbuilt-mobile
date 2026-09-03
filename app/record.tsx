@@ -26,6 +26,7 @@ import { getBblPerFoot, getWellConfig, loadWellConfig } from '../src/services/we
 import { getLevelSnapshot, savePendingPull, saveWellPull, saveLevelSnapshot } from '../src/services/wellHistory';
 import { hp, spacing, wp } from '../src/ui/layout';
 import { resolveWellDownForSubmit } from '../src/utils/wellDownAuthority';
+import { finalizeEdit } from '../src/domain/wbmEditForm';
 import {
   MeasurementKeypadDismissOverlay,
   MeasurementKeypadProvider,
@@ -564,7 +565,16 @@ function RecordScreenInner() {
     // the form was open. Edit mode carries the checkbox value; authority is
     // handled by the edit contract server-side.
     const wellDownResolution = isEditMode
-      ? { wellDown: wellDownRef.current === true, wellDownIsAuthoritative: true }
+      // Edit path: an UNTOUCHED checkbox must NOT assert authority — it carries
+      // the ORIGINAL value non-authoritatively so the server preserves canonical.
+      // Only an explicit change (incl. to false) is authoritative. Toggling away
+      // and back to the original is not a change.
+      ? (() => {
+          const original = editWellDown === true;
+          const next = wellDownRef.current === true;
+          const changed = wellDownTouchedRef.current && next !== original;
+          return { wellDown: changed ? next : original, wellDownIsAuthoritative: changed };
+        })()
       : resolveWellDownForSubmit({
           canonicalIsDown: canonicalWellDownRef.current,
           checkboxWellDown: wellDownRef.current,
@@ -661,10 +671,53 @@ function RecordScreenInner() {
         const minuteChanged =
           formatMinuteKey(dateTime) !== originalEditMinuteRef.current;
 
+        // The well's authoritative total-bank bblPerFoot (same helper the save
+        // path + live preview use), for finalize's derived bottom.
+        const bblPerFootEdit = await getBblPerFoot(wellName);
+
+        // Immutable original snapshot — the values the edit form opened with.
+        const originalSnapshot = {
+          tankLevelFeet: parseFloat(editLevel) || 0,
+          bblsTaken: parseFloat(editBbls) || 0,
+          wellDown: editWellDown === true,
+          dateTimeUTC: (() => { try { return parseDateTimeString(editDateTime).toISOString(); } catch { return ''; } })(),
+        };
+
+        // ONE finalize authority: normalize, diff changed-only vs the immutable
+        // original, resolve Well-Down authority, and derive the bottom with the
+        // shared calc. `topLevel` is already decimal feet → topInches 0.
+        const finalized = finalizeEdit({
+          draft: {
+            topFeet: topLevel,
+            topInches: 0,
+            bbls: bblsTakenNum,
+            dateTimeUTC: minuteChanged ? dateTimeUTCString : originalSnapshot.dateTimeUTC,
+            dateTime: minuteChanged ? dateTimeString : '',
+            wellDown: wellDownFinal,
+            wellDownTouched: wellDownAuthoritativeFinal, // authoritative ⇒ genuinely changed
+          },
+          original: originalSnapshot,
+          bblPerFoot: bblPerFootEdit,
+          editEventId: '',
+        });
+
+        // No-change Save creates NO op, marker, or request.
+        if (!finalized.hasChanges) {
+          setIsSending(false);
+          alert.show(
+            t('record.noChangesTitle', { defaultValue: 'No changes' }),
+            t('record.noChangesBody', { defaultValue: 'Nothing was changed, so there is nothing to save.' }),
+            [{ text: 'OK', onPress: () => router.back() }],
+          );
+          return;
+        }
+
         // GS3 ordered edits: submitPullEdit decides the safe path — merge
         // into a still-queued pull (no edit packet), hold as a dependent
         // operation until the original is processed, upload now, or block
-        // for attention (rejected original / legacy identity).
+        // for attention (rejected original / legacy identity). Carries the
+        // deterministic CHANGED-ONLY mask + Well-Down authority + immutable
+        // original snapshot + content digest from finalize.
         const editOutcome = await submitPullEdit({
           originalPacketTimestamp: editPacketTimestamp,
           originalPacketId: editId,
@@ -674,6 +727,10 @@ function RecordScreenInner() {
           tankLevelFeet: topLevel,
           bblsTaken: bblsTakenNum,
           wellDown: wellDownFinal,
+          editedFields: finalized.editedFields,
+          wellDownIsAuthoritative: finalized.wellDownIsAuthoritative,
+          originalSnapshot,
+          payloadDigest: finalized.canonicalString,
         });
 
         // Update the entry's VALUES locally — but never claim '(edited)'
@@ -688,9 +745,9 @@ function RecordScreenInner() {
           { markEdited: false }
         );
 
-        // Calculate bottom level after pull (same as new pull logic)
-        const bblPerFootEdit = await getBblPerFoot(wellName);
-        const bottomLevelEdit = Math.max(topLevel - (bblsTakenNum / bblPerFootEdit), 0);
+        // Bottom level after pull — the SAME shared calc as the live preview,
+        // the wire payload, and the server row (finalize.bottomInches, in feet).
+        const bottomLevelEdit = Math.max(finalized.bottomInches / 12, 0);
 
         // CRITICAL: Save level snapshot immediately for instant UI update
         // This is what the original pull does - the edit needs it too!

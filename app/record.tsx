@@ -1175,9 +1175,7 @@ function RecordScreenInner() {
             }}
           />
           <Text style={styles.bottomLevelHint}>
-            {bottomLevelHint
-              ? `Bottom: ${bottomLevelHint}`
-              : `DBG L=[${liveLevel}] B=[${liveBarrels}] bpf=${bblPerFoot} act=${keypad.isActiveField(BBLS_FIELD_KEY)}`}
+            {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : ' '}
           </Text>
         </View>
       </ScrollView>
@@ -1270,6 +1268,19 @@ function RecordScreenInner() {
       )}
       {Platform.OS === 'android' && showTimePicker && (
         <DateTimePicker value={dateTime} mode="time" display="clock" onChange={handleChangeTime} />
+      )}
+
+      {/* Live derived-Bottom, pinned directly above the keypad while a
+          measurement field is being entered. The in-scroll hint under BBLs is
+          clipped when the keypad reserves the lower screen, so this always-
+          visible bar keeps the Bottom Level shown and updating from the LIVE
+          keypad draft on every digit/backspace — BEFORE Done. */}
+      {keypad.isOpen && (keypad.isActiveField(BBLS_FIELD_KEY) || keypad.isActiveField(LEVEL_FIELD_KEY)) && (
+        <View style={styles.keypadBottomHintBar}>
+          <Text style={styles.keypadBottomHintText}>
+            {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : `Bottom: — [B=${liveBarrels}|bpf=${bblPerFoot}]`}
+          </Text>
+        </View>
       )}
 
       {/* Custom Alert Modal */}
@@ -1421,6 +1432,19 @@ const styles = StyleSheet.create({
     color: '#10B981',
     marginTop: spacing.xs / 2,
     marginLeft: spacing.sm,
+  },
+  keypadBottomHintBar: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    backgroundColor: 'rgba(16,185,129,0.08)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(16,185,129,0.25)',
+    alignItems: 'center',
+  },
+  keypadBottomHintText: {
+    fontSize: hp('1.9%'),
+    color: '#10B981',
+    fontWeight: '600',
   },
   button: {
     backgroundColor: '#2563EB',

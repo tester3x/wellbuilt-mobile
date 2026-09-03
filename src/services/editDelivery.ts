@@ -712,14 +712,17 @@ async function processEditOperationsInner(
                 if (/edit_invalid|missing_original|original_missing|cross_driver|cross_company|forged_well|permission-denied|not_owner/i.test(em)) {
                   op.state = 'edit_blocked';
                   op.blockedReason = /missing_original|original_missing/i.test(em)
-                    ? 'This edit cannot be applied — the original pull is missing or was rejected by the server.'
-                    : `This edit cannot be applied (${em.replace(/^[a-z-]+:/i, '') || 'not permitted'}).`;
+                    ? 'This edit can’t be applied — its original pull was rejected/never accepted by the server.'
+                    : `This edit can’t be applied (${em.replace(/^[a-z-]+:/i, '') || 'not permitted'}).`;
                   op.blockedCode = 'edit_unappliable';
                   op.lastError = op.blockedReason;
                   op.updatedAt = Date.now();
                   await upsertOp(op); // evidence preserved — never deleted, never looped
-                  await setPullEditStatus(op.originalPacketId, 'edit_pending', op.blockedReason);
-                  held++;
+                  // Render as a clear, permanent failure WITH the reason (never
+                  // "edit pending"): edit_rejected shows editStatusReason + a
+                  // rejected badge, and stops the recheck cadence.
+                  await setPullEditStatus(op.originalPacketId, 'edit_rejected', op.blockedReason);
+                  rejected++;
                   continue;
                 }
                 // v3 undeployed / transient → fall back to the governed recovery.

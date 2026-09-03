@@ -177,21 +177,25 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
   // (deduped, cached module-level so it survives card remounts).
   const originalId = entry.packetId || entry.id;
   const editEventId = entry.editEventId;
+  // Cache key includes the correction count + editedAt so a NEW correction to the
+  // same original busts the cached before→after display (the net changes even
+  // when the marker's editEventId lags behind the latest correction).
+  const cacheKey = editEventId ? `${editEventId}:${entry.editCount ?? 0}:${entry.editedAt ?? ''}` : null;
   useEffect(() => {
-    if (!isExpanded || !isEdited || !editEventId || !originalId) return;
-    if (editDisplayCache.has(editEventId) || editDisplayFetching.has(editEventId)) return;
-    editDisplayFetching.add(editEventId);
+    if (!isExpanded || !isEdited || !editEventId || !originalId || !cacheKey) return;
+    if (editDisplayCache.has(cacheKey) || editDisplayFetching.has(cacheKey)) return;
+    editDisplayFetching.add(cacheKey);
     import('../src/services/secureOperationalApi')
       .then(({ getWbmEditStatus }) => getWbmEditStatus({ editEventId, originalPacketId: originalId }))
-      .then((r) => { editDisplayCache.set(editEventId, r.edit ?? 'error'); })
-      .catch(() => { editDisplayCache.set(editEventId, 'error'); })
+      .then((r) => { editDisplayCache.set(cacheKey, r.edit ?? 'error'); })
+      .catch(() => { editDisplayCache.set(cacheKey, 'error'); })
       .finally(() => {
-        editDisplayFetching.delete(editEventId);
+        editDisplayFetching.delete(cacheKey);
         if (mountedRef.current) forceEditTick((n) => n + 1);
       });
-  }, [isExpanded, isEdited, editEventId, originalId]);
-  const editDetail: WbmEditDisplay | 'error' | 'loading' | null = editEventId
-    ? (editDisplayCache.get(editEventId) ?? (isExpanded && isEdited ? 'loading' : null))
+  }, [isExpanded, isEdited, editEventId, originalId, cacheKey]);
+  const editDetail: WbmEditDisplay | 'error' | 'loading' | null = cacheKey
+    ? (editDisplayCache.get(cacheKey) ?? (isExpanded && isEdited ? 'loading' : null))
     : (isExpanded && isEdited ? 'error' : null);
   const editBadgeLabel = failedEdit
     ? t('history.editRejected')

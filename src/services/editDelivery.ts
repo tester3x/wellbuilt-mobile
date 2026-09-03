@@ -299,11 +299,13 @@ export async function submitPullEdit(
 ): Promise<SubmitEditOutcome> {
   const originalId = payload.originalPacketId;
 
-  // 5. Legacy invented identity — never guess what it maps to.
+  // 5. Legacy invented identity — never guess what it maps to. The edit cannot
+  //    be delivered as-is, so surface a clear TERMINAL state (never a perpetual
+  //    "edit pending"): edit_rejected renders the reason + stops the recheck.
   if (!originalId || originalId.startsWith('queued_')) {
-    const reason = 'Original pull has a legacy local identity — needs manual review before the edit can be delivered.';
+    const reason = "This edit can’t be applied — its original pull has a legacy local identity that needs manual review.";
     await upsertOp(newOp(payload, 'edit_blocked', reason));
-    await setPullEditStatus(originalId, 'edit_pending', reason);
+    await setPullEditStatus(originalId, 'edit_rejected', reason);
     return { mode: 'blocked', reason };
   }
 
@@ -325,11 +327,13 @@ export async function submitPullEdit(
   const history = await getPullHistory();
   const entry = history.find(e => e.packetId === originalId || e.id === originalId);
 
-  // 4. Original rejected → hold for attention; never send, never delete.
+  // 4. Original rejected → the edit can never apply (no server original to
+  //    correct). Surface a clear TERMINAL rejection (never "edit pending");
+  //    evidence is preserved, never sent, never deleted.
   if (entry?.syncStatus === 'rejected') {
-    const reason = `Original pull was rejected by the server (${entry.rejectionReason || 'no reason recorded'}) — edit held for review.`;
+    const reason = `This edit can’t be applied — the original pull was rejected by the server (${entry.rejectionReason || 'no reason recorded'}).`;
     await upsertOp(newOp(payload, 'edit_blocked', reason));
-    await setPullEditStatus(originalId, 'edit_pending', reason);
+    await setPullEditStatus(originalId, 'edit_rejected', reason);
     return { mode: 'blocked', reason };
   }
 
@@ -526,12 +530,18 @@ async function processEditOperationsInner(
           // not-yet-landed original.
           const rejectedOriginal = await readPath(`packets/rejected/${op.originalPacketId}`, fetchFn);
           if (rejectedOriginal.data) {
+            // The original was REJECTED server-side → this edit can never apply.
+            // Terminal, driver-clear rejection (never a perpetual "edit pending");
+            // evidence preserved, recheck cadence stops. blockedCode marks it
+            // un-appliable so it is not mistaken for a transient block.
             op.state = 'edit_blocked';
-            op.blockedReason = `Original pull was rejected by the server (${rejectedOriginal.data.reason || 'unknown'}) — edit held for review.`;
+            op.blockedReason = `This edit can’t be applied — the original pull was rejected by the server (${rejectedOriginal.data.reason || 'unknown'}).`;
+            op.blockedCode = 'edit_unappliable';
+            op.lastError = op.blockedReason;
             op.updatedAt = Date.now();
             await upsertOp(op);
-            await setPullEditStatus(op.originalPacketId, 'edit_pending', op.blockedReason);
-            held++;
+            await setPullEditStatus(op.originalPacketId, 'edit_rejected', op.blockedReason);
+            rejected++;
             continue;
           }
           // Original not resolved yet — keep waiting, keep the edit. Advance the
@@ -674,6 +684,23 @@ async function processEditOperationsInner(
             continue;
           }
           if (verdict.status === 'missing') {
+            // FIRST distinguish "never applicable" from "lost". The server reports
+            // `missing` both when the original was never accepted AND when it was
+            // REJECTED. If the original is in packets/rejected, this edit can never
+            // apply — terminate with a clear rejection (never re-drive/recover in a
+            // loop), regardless of op.lane. This closes Gate 5's un-appliable case.
+            const rejOrig = await readPath(`packets/rejected/${op.originalPacketId}`, fetchFn);
+            if (rejOrig.data) {
+              op.state = 'edit_blocked';
+              op.blockedReason = `This edit can’t be applied — the original pull was rejected by the server (${rejOrig.data.reason || 'unknown'}).`;
+              op.blockedCode = 'edit_unappliable';
+              op.lastError = op.blockedReason;
+              op.updatedAt = Date.now();
+              await upsertOp(op); // evidence preserved — never deleted, never looped
+              await setPullEditStatus(op.originalPacketId, 'edit_rejected', op.blockedReason);
+              rejected++;
+              continue;
+            }
             // Accepted by the OLD ingest route, then LOST server-side (zero trace).
             // Re-drive into the DURABLE LANE (submitWbmEditV3), idempotent on the
             // same editEventId + preserved payload — never a new id. This recovers

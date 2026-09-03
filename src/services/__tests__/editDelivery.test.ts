@@ -203,18 +203,56 @@ describe('case 2 — original submitted but unresolved', () => {
     expect(entry.status).not.toBe('edited');          // still not confirmed
   });
 
-  test('rejected original blocks the edit with attention — never sent, never deleted', async () => {
+  test('rejected original → TERMINAL rejection (clear reason, never "edit pending"), never sent/deleted', async () => {
     await seedHistory(PID, 'submitted');
     await submitPullEdit(editParams(PID));
     const r = await processEditOperations(makeFetch({
       [`packets/rejected/${PID}`]: { reason: 'STALE_PULL_TIME' },
     }));
-    expect(r.held).toBe(1);
+    // Terminal, not held: the edit can never apply (no server original).
+    expect(r.rejected).toBe(1);
+    expect(r.held).toBe(0);
     expect(mockedUploadEditV3).not.toHaveBeenCalled();
     const op = rawOps()[0];
     expect(op.state).toBe('edit_blocked');
+    expect(op.blockedCode).toBe('edit_unappliable');
     expect(op.blockedReason).toContain('STALE_PULL_TIME');
     expect(op.payload.bblsTaken).toBe(165);           // payload preserved
+    // The PULL marker is edit_rejected (renders a clear failure + reason), NOT
+    // the perpetual "edit pending" that Gate 5 forbids.
+    const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.editStatus).toBe('edit_rejected');
+    expect(entry.editStatusReason).toContain('can’t be applied');
+    expect(entry.status).not.toBe('edited');
+  });
+
+  test('Gate 5: edit_submitted whose original is REJECTED → terminal edit_rejected regardless of lane (no recovery loop)', async () => {
+    const editEventId = 'editevt_g5-rejected';
+    const now = Date.now();
+    await seedHistory(PID, 'submitted');
+    // An op already re-driven into the durable lane (lane:'v3') but the server
+    // reports the status as MISSING because the ORIGINAL was rejected. Without
+    // the rejected-original guard this loops in governed-recovery forever.
+    mockStore[EDIT_OPS_KEY] = JSON.stringify([{
+      opId: 'editop_g5', editEventId, lane: 'v3',
+      originalPacketId: PID, wellName: 'Gunslinger 3',
+      payload: { ...editParams(PID), editEventId },
+      state: 'edit_submitted', createdAt: now - 5000, updatedAt: now - 5000,
+      attempts: 1, lastAttemptAt: now - 5000, lastError: null, receiptChecks: 8,
+    }]);
+    mockGetWbmEditStatus.mockResolvedValue({ status: 'missing' });
+
+    const r = await processEditOperations(makeFetch({
+      [`packets/rejected/${PID}`]: { reason: 'STALE_PULL_TIME' },
+    }));
+    expect(r.rejected).toBe(1);
+    // Never re-drove and never invoked governed recovery for an un-appliable edit.
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
+    const op = rawOps()[0];
+    expect(op.state).toBe('edit_blocked');
+    expect(op.blockedCode).toBe('edit_unappliable');
+    const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.editStatus).toBe('edit_rejected');
   });
 });
 

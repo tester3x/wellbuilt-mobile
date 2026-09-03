@@ -67,7 +67,7 @@ import {
 } from '../editDelivery';
 import { computeDeliveryCounts, recoverStuckSubmission } from '../deliveryStatus';
 import { flushQueue, smartUploadTankPacket } from '../packetQueue';
-import { addPullToHistory, clearPullHistory, getPullHistory, setPullSyncStatus } from '../pullHistory';
+import { addPullToHistory, clearPullHistory, getPullHistory, setPullSyncStatus, setPullEditStatus } from '../pullHistory';
 
 const QUEUE_KEY = '@wellbuilt_packet_queue';
 const EDIT_OPS_KEY = '@wellbuilt_edit_ops';
@@ -286,6 +286,37 @@ describe('case 2 — original submitted but unresolved', () => {
     expect(entry.editStatus).toBe('edit_rejected');       // clear rejection, NOT "edit pending"
     expect(entry.editStatusReason).toContain('can’t be applied');
     expect(entry.editStatusReason).toContain('STALE_PULL_TIME');
+  });
+
+  test('Gate 5: an already-BLOCKED op with a STALE "edit pending" marker heals via governed status — once', async () => {
+    const editEventId = 'editevt_g5-blocked-stalemarker';
+    const now = Date.now();
+    // The real Gabriel 5 shape: op is edit_blocked/edit_unappliable (set by an
+    // earlier build) but its pull marker is still edit_pending. Seed both.
+    await seedHistory(PID, 'submitted');
+    await setPullEditStatus(PID, 'edit_pending'); // stale non-terminal marker
+    mockStore[EDIT_OPS_KEY] = JSON.stringify([{
+      opId: 'editop_g5b', editEventId,
+      originalPacketId: PID, wellName: 'Gunslinger 3',
+      payload: { ...editParams(PID), editEventId },
+      state: 'edit_blocked', blockedCode: 'edit_unappliable',
+      createdAt: now - 100000, updatedAt: now - 100000,
+      attempts: 1, lastAttemptAt: now - 100000, lastError: 'edit_unappliable', receiptChecks: 279,
+    }]);
+    mockGetWbmEditStatus.mockResolvedValue({ status: 'rejected', reason: 'original_rejected: STALE_PULL_TIME' });
+
+    const r = await processEditOperations(makeFetch({}));
+    expect(r.rejected).toBe(1);
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();       // never re-uploads a blocked op
+    const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
+    expect(entry.editStatus).toBe('edit_rejected');          // stale "edit pending" → clear rejection
+    expect(entry.editStatusReason).toContain('STALE_PULL_TIME');
+    expect(rawOps()[0].markerReconciled).toBe(true);         // gated: won't re-consult
+
+    // A SECOND pass does NOT consult the server again (one-shot gate).
+    mockGetWbmEditStatus.mockClear();
+    await processEditOperations(makeFetch({}));
+    expect(mockGetWbmEditStatus).not.toHaveBeenCalled();
   });
 });
 

@@ -134,6 +134,10 @@ export interface EditOperation {
   } | null;
   /** Deterministic digest of the finalized edit (op immutability + local dedupe). */
   payloadDigest?: string | null;
+  /** Set once a BLOCKED op's stale pull marker has been reconciled against the
+   *  governed status (edit_rejected/edited), so the reconciliation consults the
+   *  server at most once per op rather than on every foreground pass. */
+  markerReconciled?: boolean;
 }
 
 export type SubmitEditOutcome =
@@ -490,18 +494,6 @@ async function processEditOperationsInner(
   const nowMs = opts.nowMs ?? Date.now();
   const forceOpId = opts.forceOpId;
 
-  // [G5DIAG] Temporary: dump op inventory so a production build reveals the exact
-  // stuck-op shape (AsyncStorage is unreadable on a release APK). Remove before final.
-  try {
-    console.log('[G5DIAG] processEditOperations ops=' + ops.length + ' online=' + online + ' force=' + (forceOpId || '-'));
-    for (const o of ops) {
-      console.log('[G5DIAG] op ' + o.wellName + ' orig=' + o.originalPacketId + ' state=' + o.state
-        + ' lane=' + (o.lane || '-') + ' attempts=' + o.attempts + ' recheck=' + (o.receiptChecks ?? 0)
-        + ' blockedCode=' + (o.blockedCode || '-') + ' evt=' + (o.editEventId ? o.editEventId.slice(0, 16) : '-')
-        + ' lastErr=' + (o.lastError ? String(o.lastError).slice(0, 60) : '-'));
-    }
-  } catch { /* diag only */ }
-
   for (const op of ops) {
     if (forceOpId && op.opId !== forceOpId && op.originalPacketId !== forceOpId) continue;
     if (op.state === 'edit_blocked' || op.state === 'edit_rejected' || op.state === 'edited') {
@@ -509,11 +501,12 @@ async function processEditOperationsInner(
         held++;
         // A previously-BLOCKED op may carry a stale non-terminal PULL marker
         // ("edit pending") from before the backend could adjudicate it. Consult
-        // the governed status (rules-UNblocked) ONCE per pass and reconcile the
-        // marker to the authoritative terminal verdict — a rejected/un-appliable
-        // original becomes a clear edit_rejected; an applied edit becomes edited.
-        // Never re-uploads; never deletes evidence.
-        if (online && op.editEventId) {
+        // the governed status (rules-UNblocked) ONCE (markerReconciled gate — no
+        // per-pass hammering) and reconcile the marker to the authoritative
+        // terminal verdict: a rejected/un-appliable original becomes a clear
+        // edit_rejected; an applied edit becomes edited. Never re-uploads, never
+        // deletes evidence.
+        if (online && op.editEventId && !op.markerReconciled) {
           try {
             const { getWbmEditStatus } = await import('./secureOperationalApi');
             const verdict = await getWbmEditStatus({ editEventId: op.editEventId, originalPacketId: op.originalPacketId });
@@ -524,13 +517,20 @@ async function processEditOperationsInner(
                 ? `This edit can’t be applied — the original pull was rejected by the server${detail ? ` (${detail})` : ''}.`
                 : (op.blockedReason || raw || 'This edit can’t be applied.');
               op.blockedReason = reason; op.blockedCode = 'edit_unappliable';
+              op.markerReconciled = true;
               op.updatedAt = Date.now(); await upsertOp(op);
               await setPullEditStatus(op.originalPacketId, 'edit_rejected', reason);
               rejected++;
             } else if (verdict.status === 'applied') {
+              op.markerReconciled = true;
               await markConfirmed(op); confirmed++;
+            } else {
+              // Non-terminal verdict for a blocked op is unusual; record the
+              // consult so we don't re-query every pass (marker left as-is).
+              op.markerReconciled = true;
+              op.updatedAt = Date.now(); await upsertOp(op);
             }
-          } catch { /* transient/unavailable → leave the block untouched */ }
+          } catch { /* transient/unavailable → leave the block; retry next session */ }
         }
       }
       continue;

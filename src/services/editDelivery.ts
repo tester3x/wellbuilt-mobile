@@ -483,6 +483,7 @@ async function processEditOperationsInner(
   const online = await isOnline();
   const nowMs = opts.nowMs ?? Date.now();
   const forceOpId = opts.forceOpId;
+  console.log(`[V3DIAG] pass start: ${ops.length} ops online=${online} states=${ops.map(o => `${o.wellName}:${o.state}:${o.lane ?? 'none'}`).join(',')}`);
 
   for (const op of ops) {
     if (forceOpId && op.opId !== forceOpId && op.originalPacketId !== forceOpId) continue;
@@ -661,6 +662,7 @@ async function processEditOperationsInner(
             editEventId: op.editEventId,
             originalPacketId: op.originalPacketId,
           });
+          console.log(`[V3DIAG] confirm ${op.wellName} eid=${String(op.editEventId).slice(-6)} lane=${op.lane ?? 'none'} verdict=${verdict.status} reason=${verdict.reason ?? ''}`);
           if (verdict.status === 'applied') { await markConfirmed(op); confirmed++; continue; }
           if (verdict.status === 'rejected') {
             op.state = 'edit_rejected';
@@ -679,6 +681,7 @@ async function processEditOperationsInner(
             // the trail before it reports `applied`.
             if (op.lane !== 'v3') {
               try {
+                console.log(`[V3DIAG] re-drive ${op.wellName} eid=${String(op.editEventId).slice(-6)} -> submitWbmEditV3`);
                 const res = await uploadEditPacketV3({
                   ...op.payload,
                   editEventId: op.editEventId,
@@ -686,6 +689,7 @@ async function processEditOperationsInner(
                   editedFieldsOverride: op.payload.editedFields,
                   wellDownIsAuthoritative: op.payload.wellDownIsAuthoritative,
                 });
+                console.log(`[V3DIAG] re-drive result ${op.wellName} ok=${res.ok} status=${res.status} reason=${res.reason ?? ''}`);
                 op.lane = 'v3';
                 op.recoveryAttemptedAt = nowMs;
                 if (res.status === 'applied') { await markConfirmed(op); confirmed++; continue; }
@@ -702,7 +706,8 @@ async function processEditOperationsInner(
                 await stampReceiptCheck(op, nowMs);
                 held++;
                 continue;
-              } catch {
+              } catch (e: any) {
+                console.log(`[V3DIAG] re-drive THREW ${op.wellName}: ${String(e?.message || e)}`);
                 // v3 undeployed / transient → fall back to the governed recovery.
               }
             }
@@ -718,6 +723,7 @@ async function processEditOperationsInner(
           continue;
         } catch (err) {
           const d = diagnoseThrown(err);
+          console.log(`[V3DIAG] getWbmEditStatus THREW ${op.wellName} kind=${d.kind}: ${String((err as any)?.message || err)}`);
           if (d.kind === 'auth_session' || d.kind === 'permission') {
             // A real auth/permission failure is NOT awaiting-server silence:
             // record it and recheck on cadence (never treat as confirmed).

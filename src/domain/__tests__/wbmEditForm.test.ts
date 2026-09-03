@@ -74,6 +74,34 @@ describe('Well-Down authority (edit path)', () => {
   });
 });
 
+describe('Well-Down edit path — directive scenarios', () => {
+  test('concurrent server status change while form open: untouched stays NON-authoritative (server preserves canonical)', () => {
+    // Original said Online; suppose the well went Down on the server meanwhile.
+    // An untouched checkbox must not fight that — it asserts no authority, so the
+    // server keeps whatever canonical is at apply time.
+    const r = resolveWellDownForEdit(draft({ wellDownTouched: false, wellDown: false }), G4_ORIGINAL);
+    expect(r.wellDownIsAuthoritative).toBe(false);
+    expect(r.changed).toBe(false);
+  });
+
+  test('offline persistence/restart: finalize is deterministic — same draft+original ⇒ same authority + mask', () => {
+    const mk = () => finalizeEdit({ draft: draft({ wellDownTouched: true, wellDown: true }), original: G4_ORIGINAL, bblPerFoot: BPF, editEventId: 'e' });
+    const a = mk();
+    const b = mk(); // as if re-finalized after an app restart from the persisted draft
+    expect(a.wellDownIsAuthoritative).toBe(b.wellDownIsAuthoritative);
+    expect(a.editedFields).toEqual(b.editedFields);
+    expect(a.canonicalString).toBe(b.canonicalString);
+    expect(a.editedFields).toContain('wellDown');
+  });
+
+  test('final keypad digit then Done then immediate Save: finalize consumes the flushed values', () => {
+    // The keypad flush hands finalize the final level + a Well-Down toggle in one Save.
+    const f = finalizeEdit({ draft: draft({ topFeet: 12, topInches: 3, wellDownTouched: true, wellDown: true }), original: G4_ORIGINAL, bblPerFoot: BPF, editEventId: 'e' });
+    expect([...f.editedFields].sort()).toEqual(['tankLevelFeet', 'wellDown']);
+    expect(f.wellDownIsAuthoritative).toBe(true);
+  });
+});
+
 describe('changed-only mask — canonical, one entry per logical dimension', () => {
   test('the Gabriel 4 edit (bbls 150→170 only) → exactly [bblsTaken]', () => {
     const f = finalizeEdit({ draft: draft({ bbls: 170 }), original: G4_ORIGINAL, bblPerFoot: BPF, editEventId: 'editevt_g4' });

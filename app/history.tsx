@@ -443,6 +443,10 @@ export default function HistoryScreen() {
         editMode: 'true',
         editId: fullPacketId,
         editDateTime: entry.dateTime,
+        // The TRUE stored canonical instant, so the edit form's original snapshot
+        // uses it verbatim instead of reconstructing UTC from the minute-precision
+        // local string in the device timezone (Hard Blocker 1 precision).
+        editDateTimeUTC: entry.dateTimeUTC || '',
         editLevel: String(entry.tankLevelFeet),
         editBbls: String(entry.bblsTaken),
         editWellDown: String(entry.wellDown),

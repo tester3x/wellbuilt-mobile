@@ -150,11 +150,16 @@ export type PullEditStatus = 'edit_pending' | 'edit_submitted' | 'edited' | 'edi
 export interface PullHistoryEntry {
   id: string;                    // full packetId (timestamp_wellName_randomSuffix) - unique identifier
   wellName: string;
-  dateTime: string;              // "12/13/2025 5:30 PM" - what driver entered
+  dateTime: string;              // "12/13/2025 5:30 PM" - what driver entered (LOCAL display)
+  /** Canonical absolute instant (ISO). The chronological authority: sort order,
+   *  Today/Week/Month buckets, and the day-group header must all agree with THIS
+   *  (via sentAt = Date.parse(dateTimeUTC)). Set on create/backfill and re-set on
+   *  a TIME edit so an edited pull's dateTime, sort key, and bucket never diverge. */
+  dateTimeUTC?: string;
   tankLevelFeet: number;
   bblsTaken: number;
   wellDown: boolean;
-  sentAt: number;                // ms timestamp when submitted
+  sentAt: number;                // ms of the pull's canonical instant (dateTimeUTC) — the sort/bucket key
   packetTimestamp: string;       // "20251213_173045" for filename matching
   packetId: string;              // full unique ID (timestamp_wellName_randomSuffix) - stored in Excel column B
   status: 'sent' | 'edited';     // for future edit tracking
@@ -332,6 +337,7 @@ async function backfillFromFirebase(): Promise<BackfillResult> {
             id: packetId,
             wellName: p.wellName || "Unknown",
             dateTime: p.dateTime || new Date(sentAt).toLocaleString(),
+            dateTimeUTC: typeof p.dateTimeUTC === "string" ? p.dateTimeUTC : undefined,
             tankLevelFeet: typeof p.tankLevelFeet === "number" ? p.tankLevelFeet : 0,
             bblsTaken: typeof p.bblsTaken === "number" ? p.bblsTaken : 0,
             wellDown: p.wellDown === true,
@@ -771,6 +777,13 @@ export async function updatePullHistoryEntry(
      *  setPullEditStatus('edited') flip the marker on confirmation.
      *  Defaults to true for legacy/server-confirmed callers. */
     markEdited?: boolean;
+    /** The NEW canonical instant (ISO) when the TIME changed. When provided and
+     *  parseable, the entry's dateTimeUTC is stored AND its sentAt (the sort +
+     *  Today/Week/Month bucket key) is re-derived from it, so the edited pull's
+     *  local dateTime, chronological position, bucket placement, and day-group
+     *  header ALL follow the one edited instant — never a stale submission clock.
+     *  Omit (or pass unchanged) for non-time edits so ordering is untouched. */
+    dateTimeUTC?: string;
   }
 ): Promise<void> {
   if (cachedHistory.length === 0) {
@@ -783,11 +796,20 @@ export async function updatePullHistoryEntry(
     entry.tankLevelFeet = tankLevelFeet;
     entry.bblsTaken = bblsTaken;
     entry.wellDown = wellDown;
+    // TIMESTAMP CONSISTENCY (Hard Blocker 1): when the TIME changed, re-anchor the
+    // chronological key to the edited instant so sort + buckets + day header agree.
+    if (opts?.dateTimeUTC) {
+      const ms = Date.parse(opts.dateTimeUTC);
+      if (!Number.isNaN(ms)) {
+        entry.dateTimeUTC = opts.dateTimeUTC;
+        entry.sentAt = ms;
+      }
+    }
     if (opts?.markEdited !== false) {
       entry.status = 'edited';
     }
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedHistory));
-    console.log("[PullHistory] Updated entry:", id, "bbls:", bblsTaken);
+    console.log("[PullHistory] Updated entry:", id, "bbls:", bblsTaken, "sentAt:", entry.sentAt);
   } else {
     console.warn("[PullHistory] Entry not found for update:", id);
   }

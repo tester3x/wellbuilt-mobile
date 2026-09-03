@@ -140,6 +140,7 @@ function RecordScreenInner() {
   const isEditMode = params.editMode === 'true';
   const editId = String(params.editId || "");
   const editDateTime = String(params.editDateTime || "");
+  const editDateTimeUTC = String(params.editDateTimeUTC || "");
   const editLevel = String(params.editLevel || "");
   const editBbls = String(params.editBbls || "");
   const editWellDown = params.editWellDown === 'true';
@@ -680,7 +681,12 @@ function RecordScreenInner() {
           tankLevelFeet: parseFloat(editLevel) || 0,
           bblsTaken: parseFloat(editBbls) || 0,
           wellDown: editWellDown === true,
-          dateTimeUTC: (() => { try { return parseDateTimeString(editDateTime).toISOString(); } catch { return ''; } })(),
+          // Prefer the TRUE stored canonical instant (passed from History); only
+          // reconstruct from the minute-precision local string as a legacy
+          // fallback when the entry predates dateTimeUTC persistence.
+          dateTimeUTC: editDateTimeUTC
+            ? editDateTimeUTC
+            : (() => { try { return parseDateTimeString(editDateTime).toISOString(); } catch { return ''; } })(),
         };
 
         // ONE finalize authority: normalize, diff changed-only vs the immutable
@@ -742,7 +748,9 @@ function RecordScreenInner() {
           topLevel,
           bblsTakenNum,
           wellDownFinal,
-          { markEdited: false }
+          // Re-anchor the chronological key to the edited instant ONLY when the
+          // time actually changed (Hard Blocker 1); non-time edits leave order intact.
+          { markEdited: false, dateTimeUTC: minuteChanged ? dateTimeUTCString : undefined }
         );
 
         // Bottom level after pull — the SAME shared calc as the live preview,

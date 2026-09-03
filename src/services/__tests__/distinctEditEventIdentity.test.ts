@@ -27,6 +27,7 @@ const mockedUploadEdit = jest.fn(async (..._args: any[]): Promise<any> => ({ wel
 jest.mock('../firebase', () => ({
   uploadTankPacket: jest.fn(),
   uploadEditPacket: (...a: unknown[]) => mockedUploadEdit(...(a as [])),
+  uploadEditPacketV3: (...a: unknown[]) => mockedUploadEdit(...(a as [])),
   mintPacketId: jest.fn(() => 'pid_mock'),
 }));
 jest.mock('../driverAuth', () => ({ getDriverId: jest.fn(async () => 'driver-a'), getDriverName: jest.fn(async () => 'Driver A') }));

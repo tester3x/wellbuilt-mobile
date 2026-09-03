@@ -594,6 +594,57 @@ export const uploadEditPacket = async (params: {
   };
 };
 
+/**
+ * THE ordinary-edit upload — durable lane (v3). Builds the governed correction
+ * packet (with the CHANGED-ONLY mask + Well-Down authority from finalizeEdit when
+ * provided) and submits it to `submitWbmEditV3`. Acceptance means the op is
+ * durably stored; the server worker applies it and verifies the trail before it
+ * is `applied`. NEVER routes through the legacy packets/incoming edit path.
+ */
+export const uploadEditPacketV3 = async (params: {
+  originalPacketTimestamp: string;
+  originalPacketId: string;
+  wellName: string;
+  dateTime: string;
+  dateTimeUTC: string;
+  tankLevelFeet: number;
+  bblsTaken: number;
+  wellDown: boolean;
+  editEventId?: string;
+  correctionCreatedAtUTC?: string;
+  editedFieldsOverride?: string[];
+  wellDownIsAuthoritative?: boolean;
+}) => {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const { buildWbmEditCommand } = await import('./wbmEditCommand');
+  const packet = buildWbmEditCommand({
+    originalPacketTimestamp: params.originalPacketTimestamp,
+    originalPacketId: params.originalPacketId,
+    wellName: params.wellName,
+    dateTime: params.dateTime,
+    dateTimeUTC: params.dateTimeUTC,
+    tankLevelFeet: params.tankLevelFeet,
+    bblsTaken: params.bblsTaken,
+    wellDown: params.wellDown,
+    timezone,
+    editEventId: params.editEventId,
+    correctionCreatedAtUTC: params.correctionCreatedAtUTC,
+    editedFieldsOverride: params.editedFieldsOverride,
+    wellDownIsAuthoritative: params.wellDownIsAuthoritative,
+  });
+  const { submitWbmEditV3 } = await import('./secureOperationalApi');
+  const result = await submitWbmEditV3(packet);
+  return {
+    packet,
+    wellName: params.wellName,
+    editEventId: (packet.editEventId as string) || params.editEventId,
+    ok: result?.ok === true,
+    status: result?.status,       // accepted | applying | applied | rejected | retry_wait
+    idempotent: result?.idempotent === true,
+    reason: result?.reason,
+  };
+};
+
 // --- Real-time listener (optional, for instant updates) -------------
 
 /**

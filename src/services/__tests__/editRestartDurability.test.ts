@@ -19,7 +19,8 @@ jest.mock('@react-native-community/netinfo', () => ({
   default: { fetch: jest.fn(async () => ({ isConnected: true, isInternetReachable: true, type: 'cellular' })), addEventListener: jest.fn(() => () => undefined) },
 }));
 const mockedUploadEdit = jest.fn(async (..._a: any[]): Promise<any> => ({ wellName: 'Thor 1' }));
-jest.mock('../firebase', () => ({ uploadTankPacket: jest.fn(), uploadEditPacket: (...a: unknown[]) => mockedUploadEdit(...(a as [])), mintPacketId: jest.fn(() => 'pid') }));
+jest.mock('../firebase', () => ({ uploadTankPacket: jest.fn(), uploadEditPacket: (...a: unknown[]) => mockedUploadEdit(...(a as [])),
+  uploadEditPacketV3: (...a: unknown[]) => mockedUploadEdit(...(a as [])), mintPacketId: jest.fn(() => 'pid') }));
 jest.mock('../driverAuth', () => ({ getDriverId: jest.fn(async () => 'driver-a'), getDriverName: jest.fn(async () => 'Driver A') }));
 jest.mock('../secureOperationalApi', () => ({ getFieldCommandStatus: async () => { throw new Error('no_receipt'); } }));
 

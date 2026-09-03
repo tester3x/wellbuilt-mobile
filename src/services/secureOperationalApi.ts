@@ -119,6 +119,31 @@ export async function getWbmEditStatus(query: {
   });
 }
 
+export type WbmEditV3SubmitStatus = 'accepted' | 'applying' | 'applied' | 'rejected' | 'retry_wait';
+
+/**
+ * THE ordinary-edit transport. Submits a correction to the additive durable lane
+ * (`wbmEdits/v3/ops/{editEventId}`). Acceptance is returned only after the op is
+ * durably stored; the server worker then applies it and verifies the durable
+ * trail before it is `applied`. Idempotent on the op record: the same editEventId
+ * + same payload resumes the existing op (never a duplicate); a different payload
+ * under the same id is a permanent idempotency conflict. NEVER routes through the
+ * legacy `packets/incoming` edit path.
+ */
+export async function submitWbmEditV3(packet: Record<string, unknown>): Promise<{
+  ok: boolean;
+  status: WbmEditV3SubmitStatus;
+  editEventId?: string;
+  idempotent?: boolean;
+  reason?: string;
+}> {
+  const requestType = typeof packet.requestType === 'string' ? packet.requestType : '';
+  if (requestType !== 'edit') {
+    unsupportedFieldCommand(requestType || 'unknown');
+  }
+  return authorizedCallable('submitWbmEditV3', { packet });
+}
+
 /**
  * Governed recovery for an accepted-but-missing edit. Reuses the correction's
  * EXISTING editEventId + preserved payload (never a new id). Server refuses

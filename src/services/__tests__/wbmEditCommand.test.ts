@@ -36,6 +36,7 @@ const mockedUploadEdit = jest.fn();
 jest.mock('../firebase', () => ({
   uploadTankPacket: jest.fn(),
   uploadEditPacket: (...args: unknown[]) => mockedUploadEdit(...args),
+  uploadEditPacketV3: (...a: unknown[]) => mockedUploadEdit(...(a as [])),
   mintPacketId: jest.fn(() => 'pid_mock'),
 }));
 jest.mock('../driverAuth', () => ({

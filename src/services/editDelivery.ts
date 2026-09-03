@@ -23,7 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { readJsonPath } from './backendAccess';
 import { diagnoseThrown, formatDiagnosis } from './connectionDiagnosis';
-import { uploadEditPacket } from './firebase';
+import { uploadEditPacket, uploadEditPacketV3 } from './firebase';
 import { confirmAppliedEdit, confirmNewSecureEdit } from './editMarkers';
 import {
   isOnline,
@@ -51,6 +51,13 @@ export interface EditPacketParams {
    *  as the idempotency key. Optional for backward compatibility with legacy
    *  operations (which fall back to the historical deterministic key). */
   editEventId?: string;
+  /** Deterministic CHANGED-ONLY mask (canonical wire names) from finalizeEdit.
+   *  Absent on legacy operations → the transport falls back to the assertion
+   *  mask. Never a diff computed at upload time; captured once at Save. */
+  editedFields?: string[];
+  /** Well-Down authority: false only when the driver left the checkbox untouched
+   *  (server preserves canonical). Absent → treated as authoritative. */
+  wellDownIsAuthoritative?: boolean;
 }
 
 export type EditOpState =
@@ -104,6 +111,19 @@ export interface EditOperation {
    *  ingest; idempotent server-side) so the edit self-heals once the canary is
    *  enabled. */
   recoveryAttemptedAt?: number | null;
+  /** Which transport carried this op. 'v3' = the durable lane (submitWbmEditV3).
+   *  Absent = a legacy op submitted through the old ingest route; on delivery it
+   *  is re-driven into the durable lane (idempotent) to recover a lost edit. */
+  lane?: 'v3';
+  /** Immutable original snapshot captured at Save (before→after evidence base). */
+  originalSnapshot?: {
+    tankLevelFeet: number;
+    bblsTaken: number;
+    wellDown: boolean;
+    dateTimeUTC: string;
+  } | null;
+  /** Deterministic digest of the finalized edit (op immutability + local dedupe). */
+  payloadDigest?: string | null;
 }
 
 export type SubmitEditOutcome =
@@ -546,15 +566,29 @@ async function processEditOperationsInner(
         // correction's event time is derived from the op's persisted createdAt,
         // so it is stamped ONCE and preserved verbatim across every retry and
         // app restart (never a fresh device "now").
-        const uploadResult = await uploadEditPacket({
+        // THE ordinary edit transport is now the durable lane (submitWbmEditV3).
+        // Acceptance means the op is durably stored; the server worker applies it
+        // and verifies the trail before `applied`. Never the legacy ingest route.
+        const uploadResult = await uploadEditPacketV3({
           ...op.payload,
           editEventId: op.editEventId,
           correctionCreatedAtUTC: new Date(op.createdAt).toISOString(),
+          editedFieldsOverride: op.payload.editedFields,
+          wellDownIsAuthoritative: op.payload.wellDownIsAuthoritative,
         });
-        if (confirmNewSecureEdit(uploadResult)) {
+        op.lane = 'v3';
+        if (uploadResult.status === 'applied') {
           await markConfirmed(op);
           confirmed++;
+        } else if (uploadResult.status === 'rejected') {
+          op.state = 'edit_rejected';
+          op.rejectionReason = uploadResult.reason || 'rejected by server';
+          op.updatedAt = nowMs;
+          await upsertOp(op); // evidence preserved — never deleted
+          await setPullEditStatus(op.originalPacketId, 'edit_rejected', op.rejectionReason);
+          rejected++;
         } else {
+          // accepted | applying | retry_wait → durably queued; confirm via status.
           op.state = 'edit_submitted';
           op.lastError = null;
           await upsertOp(op);
@@ -625,9 +659,40 @@ async function processEditOperationsInner(
             continue;
           }
           if (verdict.status === 'missing') {
-            // Accepted by ingest, then LOST server-side. Governed recovery ONCE,
-            // reusing the SAME editEventId + preserved payload — never a new id,
-            // never a duplicate ingest. Repeats are idempotent server-side.
+            // Accepted by the OLD ingest route, then LOST server-side (zero trace).
+            // Re-drive into the DURABLE LANE (submitWbmEditV3), idempotent on the
+            // same editEventId + preserved payload — never a new id. This recovers
+            // a lost edit permanently: the durable worker applies it and verifies
+            // the trail before it reports `applied`.
+            if (op.lane !== 'v3') {
+              try {
+                const res = await uploadEditPacketV3({
+                  ...op.payload,
+                  editEventId: op.editEventId,
+                  correctionCreatedAtUTC: new Date(op.createdAt).toISOString(),
+                  editedFieldsOverride: op.payload.editedFields,
+                  wellDownIsAuthoritative: op.payload.wellDownIsAuthoritative,
+                });
+                op.lane = 'v3';
+                op.recoveryAttemptedAt = nowMs;
+                if (res.status === 'applied') { await markConfirmed(op); confirmed++; continue; }
+                if (res.status === 'rejected') {
+                  op.state = 'edit_rejected';
+                  op.rejectionReason = res.reason || 'rejected by server';
+                  op.updatedAt = Date.now();
+                  await upsertOp(op);
+                  await setPullEditStatus(op.originalPacketId, 'edit_rejected', op.rejectionReason);
+                  rejected++;
+                  continue;
+                }
+                await upsertOp(op); // accepted/applying/retry_wait → confirm next recheck
+                await stampReceiptCheck(op, nowMs);
+                held++;
+                continue;
+              } catch {
+                // v3 undeployed / transient → fall back to the governed recovery.
+              }
+            }
             const recovered = await tryGovernedEditRecovery(op, nowMs);
             if (recovered === 'applied') { await markConfirmed(op); confirmed++; continue; }
             await stampReceiptCheck(op, nowMs); // refused (canary off) / pending → recheck

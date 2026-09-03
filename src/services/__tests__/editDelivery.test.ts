@@ -29,6 +29,7 @@ jest.mock('@react-native-community/netinfo', () => ({
 jest.mock('../firebase', () => ({
   uploadTankPacket: jest.fn(),
   uploadEditPacket: jest.fn(),
+  uploadEditPacketV3: jest.fn(),
   mintPacketId: jest.fn((wellName: string) => {
     mockMint.counter += 1;
     return `20260722_14${String(mockMint.counter).padStart(4, '0')}_${String(wellName).replace(/\s+/g, '')}_e${mockMint.counter}`;
@@ -48,13 +49,15 @@ const mockGetFieldCommandStatus = jest.fn(async (..._args: unknown[]): Promise<{
 });
 const mockGetWbmEditStatus = jest.fn(async (..._a: unknown[]): Promise<{ status: string; reason?: string }> => ({ status: 'pending' }));
 const mockRecoverWbmEdit = jest.fn(async (..._a: unknown[]): Promise<{ ok: boolean; status: string; reason?: string; editEventId?: string; receiptWritten?: boolean; idempotent?: boolean }> => ({ ok: false, status: 'refused', reason: 'canary_disabled' }));
+const mockSubmitWbmEditV3 = jest.fn(async (..._a: unknown[]): Promise<{ ok: boolean; status: string; editEventId?: string; idempotent?: boolean; reason?: string }> => ({ ok: true, status: 'accepted' }));
 jest.mock('../secureOperationalApi', () => ({
   getFieldCommandStatus: (query: unknown) => mockGetFieldCommandStatus(query),
   getWbmEditStatus: (q: unknown) => mockGetWbmEditStatus(q),
   recoverWbmEdit: (p: unknown) => mockRecoverWbmEdit(p),
+  submitWbmEditV3: (p: unknown) => mockSubmitWbmEditV3(p),
 }));
 
-import { uploadEditPacket, uploadTankPacket } from '../firebase';
+import { uploadEditPacket, uploadEditPacketV3, uploadTankPacket } from '../firebase';
 import {
   EditPacketParams,
   getEditOperations,
@@ -69,7 +72,7 @@ import { addPullToHistory, clearPullHistory, getPullHistory, setPullSyncStatus }
 const QUEUE_KEY = '@wellbuilt_packet_queue';
 const EDIT_OPS_KEY = '@wellbuilt_edit_ops';
 const mockedUploadTank = uploadTankPacket as jest.Mock;
-const mockedUploadEdit = uploadEditPacket as jest.Mock;
+const mockedUploadEditV3 = uploadEditPacketV3 as jest.Mock;
 
 const PID = '20260721_120600_Gunslinger3_abc123';
 
@@ -111,7 +114,8 @@ beforeEach(async () => {
   for (const k of Object.keys(mockStore)) delete mockStore[k];
   mockOnline.value = true;
   mockedUploadTank.mockReset();
-  mockedUploadEdit.mockReset();
+  mockedUploadEditV3.mockReset();
+  mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
   mockGetFieldCommandStatus.mockReset();
   mockGetFieldCommandStatus.mockRejectedValue(new Error('no_receipt'));
   mockGetWbmEditStatus.mockReset();
@@ -137,7 +141,7 @@ describe('case 1 — original still locally queued', () => {
     expect(q[1].data.packetId).toBe(PID);
     expect(q[1].data.bblsTaken).toBe(155);           // corrected in place
     expect(rawOps()).toHaveLength(0);                // no dependent op created
-    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
 
     // History keeps its truthful delivery status and no '(edited)' claim.
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
@@ -158,7 +162,7 @@ describe('case 2 — original submitted but unresolved', () => {
     await seedHistory(PID, 'submitted');
     const outcome = await submitPullEdit(editParams(PID));
     expect(outcome).toEqual({ mode: 'held_dependent' });
-    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
     const ops = rawOps();
     expect(ops).toHaveLength(1);
     expect(ops[0].state).toBe('edit_pending');
@@ -186,13 +190,13 @@ describe('case 2 — original submitted but unresolved', () => {
   test('processed original releases the dependent edit', async () => {
     await seedHistory(PID, 'submitted');
     await submitPullEdit(editParams(PID));
-    mockedUploadEdit.mockResolvedValueOnce({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValueOnce({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     const r = await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID, processedAt: '2026-07-22T19:02:17.988Z' },
     }));
     expect(r.submitted).toBe(1);
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
-    expect(mockedUploadEdit.mock.calls[0][0].originalPacketId).toBe(PID);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3.mock.calls[0][0].originalPacketId).toBe(PID);
     expect(rawOps()[0].state).toBe('edit_submitted');
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
     expect(entry.editStatus).toBe('edit_submitted');
@@ -206,7 +210,7 @@ describe('case 2 — original submitted but unresolved', () => {
       [`packets/rejected/${PID}`]: { reason: 'STALE_PULL_TIME' },
     }));
     expect(r.held).toBe(1);
-    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
     const op = rawOps()[0];
     expect(op.state).toBe('edit_blocked');
     expect(op.blockedReason).toContain('STALE_PULL_TIME');
@@ -217,7 +221,7 @@ describe('case 2 — original submitted but unresolved', () => {
 describe('case 3 — original processed: normal upload + confirmation', () => {
   test("'(edited)' appears ONLY after server confirmation", async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID }, // exists, no editedAt yet
     }));
@@ -247,27 +251,27 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
 
   test('edit transport retries reuse the same operation and server key', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockRejectedValueOnce(new Error('tower down'));
+    mockedUploadEditV3.mockRejectedValueOnce(new Error('tower down'));
     await submitPullEdit(editParams(PID), makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID },
     }));
     expect(rawOps()[0].attempts).toBe(1);
     const opIdAfterFail = rawOps()[0].opId;
-    mockedUploadEdit.mockResolvedValueOnce({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValueOnce({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID },
     }), { nowMs: Date.now() + 60_000 });
     expect(rawOps()[0].opId).toBe(opIdAfterFail);     // same operation id
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(2);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(2);
     // Both attempts carry the SAME originalPacketTimestamp → the server
     // incoming key edit_<origTs>_<well> is identical (idempotent replay).
-    expect(mockedUploadEdit.mock.calls[0][0].originalPacketTimestamp)
-      .toBe(mockedUploadEdit.mock.calls[1][0].originalPacketTimestamp);
+    expect(mockedUploadEditV3.mock.calls[0][0].originalPacketTimestamp)
+      .toBe(mockedUploadEditV3.mock.calls[1][0].originalPacketTimestamp);
   });
 
   test('orphan/edit rejection is visible and preserved with the server reason', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted');
     // Governed status reports the rejection with its stable reason.
@@ -285,7 +289,7 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
 
   test('uncommitted rows with editedAt/wasEdited/isEdit do NOT confirm', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: {
@@ -305,7 +309,7 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
 
   test('editCommitted without a receipt key does NOT confirm', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     await processEditOperations(makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID, editCommitted: true },
@@ -315,7 +319,7 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
 
   test('getWbmEditStatus applied confirms', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted');
     mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'applied' });
@@ -330,7 +334,7 @@ describe('case 3 — original processed: normal upload + confirmation', () => {
 
   test('callable committed:true confirms immediately', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'applied', wellName: 'Gunslinger 3' });
     const outcome = await submitPullEdit(editParams(PID), makeFetch({
       [`packets/processed/${PID}`]: { packetId: PID },
     }));
@@ -350,7 +354,7 @@ describe('legacy identity + snapshot metadata + ordering', () => {
     expect(op.state).toBe('edit_blocked');
     expect(op.blockedReason).toContain('legacy');
     expect(op.payload.bblsTaken).toBe(165);           // payload retained
-    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
   });
 
   test('pending-edit metadata is truthfully queryable per well', async () => {
@@ -369,12 +373,12 @@ describe('legacy identity + snapshot metadata + ordering', () => {
     await seedHistory(PID, 'submitted');
     await submitPullEdit(editParams(PID));
     await processEditOperations(makeFetch({})); // original absent from processed
-    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
     expect(rawOps()[0].state).toBe('edit_pending');
     // Only when processed exists does the edit go — order guaranteed.
-    mockedUploadEdit.mockResolvedValueOnce({});
+    mockedUploadEditV3.mockResolvedValueOnce({ ok: true, status: 'accepted' });
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
   });
 
   test('edit ops feed attention counts truthfully', async () => {
@@ -406,13 +410,13 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     expect(rawOps()[0].state).toBe('edit_pending');
     // The governed edit callable is the driver-obtainable server-side confirmation
     // the read could not provide; it accepts and commits.
-    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'applied', wellName: 'Gunslinger 3' });
     await processEditOperations(denied);
     // Pre-fix: uploadEditPacket was never called; op stayed edit_pending forever.
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
-    expect(mockedUploadEdit.mock.calls[0][0].editEventId).toBe(
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3.mock.calls[0][0].editEventId).toBe(
       // idempotency key carried from the persisted op
-      JSON.parse(mockStore[EDIT_OPS_KEY] ?? '[]')[0]?.editEventId ?? mockedUploadEdit.mock.calls[0][0].editEventId,
+      JSON.parse(mockStore[EDIT_OPS_KEY] ?? '[]')[0]?.editEventId ?? mockedUploadEditV3.mock.calls[0][0].editEventId,
     );
     expect(rawOps()).toHaveLength(0);                    // confirmed + cleared
     const entry = (await getPullHistory()).find(e => e.packetId === PID)!;
@@ -423,7 +427,7 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     await seedHistory(PID, 'submitted');
     await submitPullEdit(editParams(PID), makeFetch({})); // permitted read, absent (no diagnosis)
     await processEditOperations(makeFetch({}));
-    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
     expect(rawOps()[0].state).toBe('edit_pending');      // dependent, waiting for the original
   });
 
@@ -434,11 +438,11 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     const denied = makeFetchDenied([`packets/processed/${PID}`]);
     const outcome = await submitPullEdit(editParams(PID, 150), denied);
     expect(outcome).toEqual({ mode: 'merged_into_queued' }); // merged in place, no separate op
-    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
     // Even back online, nothing to deliver early (the edit lives inside the queued CREATE).
     mockOnline.value = true;
     await processEditOperations(denied);
-    expect(mockedUploadEdit).not.toHaveBeenCalled();
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();
   });
 
   test('T4: duplicate retry on the read-blocked path retains ONE stable editEventId', async () => {
@@ -446,11 +450,11 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
     await submitPullEdit(editParams(PID), denied);
     const eid = rawOps()[0].editEventId;
-    mockedUploadEdit.mockRejectedValueOnce(new Error('network timeout')); // 1st attempt fails
+    mockedUploadEditV3.mockRejectedValueOnce(new Error('network timeout')); // 1st attempt fails
     await processEditOperations(denied);
-    mockedUploadEdit.mockResolvedValueOnce({ committed: true, wellName: 'Gunslinger 3' }); // 2nd succeeds
+    mockedUploadEditV3.mockResolvedValueOnce({ ok: true, status: 'applied', wellName: 'Gunslinger 3' }); // 2nd succeeds
     await processEditOperations(denied, { nowMs: Date.now() + 120000 }); // past backoff
-    const calls = mockedUploadEdit.mock.calls;
+    const calls = mockedUploadEditV3.mock.calls;
     expect(calls.length).toBeGreaterThanOrEqual(2);
     expect(calls.every((c: any[]) => c[0].editEventId === eid)).toBe(true); // ONE id across retries
   });
@@ -459,13 +463,13 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     await seedHistory(PID, 'submitted');
     const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
     await submitPullEdit(editParams(PID), denied);
-    mockedUploadEdit.mockRejectedValueOnce(new Error('missing_original')); // original not processed yet
+    mockedUploadEditV3.mockRejectedValueOnce(new Error('missing_original')); // original not processed yet
     await processEditOperations(denied);
     const op = rawOps()[0];
     expect(op.state).toBe('edit_pending');               // retryable, still pending
     expect(op.state).not.toBe('edit_rejected');
     expect(op.state).not.toBe('edit_failed');
-    mockedUploadEdit.mockResolvedValueOnce({ committed: true, wellName: 'Gunslinger 3' }); // then it lands
+    mockedUploadEditV3.mockResolvedValueOnce({ ok: true, status: 'applied', wellName: 'Gunslinger 3' }); // then it lands
     await processEditOperations(denied, { nowMs: Date.now() + 120000 });
     expect(rawOps()).toHaveLength(0);                     // committed + cleared
   });
@@ -502,10 +506,10 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     mockStore[EDIT_OPS_KEY] = JSON.stringify([vc26Op]);   // as-is; no migration step runs
     await seedHistory(PID, 'submitted');
     const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
-    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'applied', wellName: 'Gunslinger 3' });
     await processEditOperations(denied);
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);                       // exactly one logical submit
-    expect(mockedUploadEdit.mock.calls[0][0].editEventId).toBe('editevt_vc26_uuid_1234'); // SAME id retained
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);                       // exactly one logical submit
+    expect(mockedUploadEditV3.mock.calls[0][0].editEventId).toBe('editevt_vc26_uuid_1234'); // SAME id retained
     expect(rawOps()).toHaveLength(0);                                        // clears ONLY after governed ack
   });
 
@@ -514,9 +518,9 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     const blocked401 = makeFetchWithStatus({ [`packets/processed/${PID}`]: 401, [`packets/rejected/${PID}`]: 401 });
     await submitPullEdit(editParams(PID), blocked401);
     expect(rawOps()[0].state).toBe('edit_pending');
-    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'applied', wellName: 'Gunslinger 3' });
     await processEditOperations(blocked401);
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
     expect(rawOps()).toHaveLength(0);
   });
 
@@ -525,13 +529,13 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     const transient = makeFetchWithStatus({ [`packets/processed/${PID}`]: 503, [`packets/rejected/${PID}`]: 503 });
     await submitPullEdit(editParams(PID), transient);
     await processEditOperations(transient);
-    expect(mockedUploadEdit).not.toHaveBeenCalled();     // must NOT deliver via the read-block path
+    expect(mockedUploadEditV3).not.toHaveBeenCalled();     // must NOT deliver via the read-block path
     expect(rawOps()[0].state).toBe('edit_pending');      // dependent hold, awaits the original (bounded recheck)
     // and when the original genuinely lands (read now permitted), it delivers normally
-    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'applied', wellName: 'Gunslinger 3' });
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }),
       { nowMs: Date.now() + 120000 });
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
   });
 
   test('T9: missing_original stays retryable across MULTIPLE scheduler cycles — bounded backoff, no busy loop, one editEventId, then succeeds', async () => {
@@ -539,7 +543,7 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     const denied = makeFetchDenied([`packets/processed/${PID}`, `packets/rejected/${PID}`]);
     await submitPullEdit(editParams(PID), denied);
     const eid = rawOps()[0].editEventId;
-    mockedUploadEdit.mockRejectedValue(new Error('missing_original')); // never materializes (yet)
+    mockedUploadEditV3.mockRejectedValue(new Error('missing_original')); // never materializes (yet)
     let t = Date.now();
     const attemptsSeen: number[] = [];
     for (let cycle = 0; cycle < 4; cycle++) {
@@ -552,12 +556,13 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
       attemptsSeen.push(op.attempts);
     }
     // one delivery attempt per cycle (bounded, not a busy loop), all with the same id
-    expect(mockedUploadEdit.mock.calls.length).toBe(4);
+    expect(mockedUploadEditV3.mock.calls.length).toBe(4);
     expect(attemptsSeen).toEqual([1, 2, 3, 4]);
-    expect(mockedUploadEdit.mock.calls.every((c: any[]) => c[0].editEventId === eid)).toBe(true);
+    expect(mockedUploadEditV3.mock.calls.every((c: any[]) => c[0].editEventId === eid)).toBe(true);
     // later materialization commits it
-    mockedUploadEdit.mockReset();
-    mockedUploadEdit.mockResolvedValueOnce({ committed: true, wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockReset();
+  mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValueOnce({ ok: true, status: 'applied', wellName: 'Gunslinger 3' });
     await processEditOperations(denied, { nowMs: t + 120000 });
     expect(rawOps()).toHaveLength(0);
   });
@@ -585,11 +590,11 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     };
     mockStore[EDIT_OPS_KEY] = JSON.stringify([vc26Op]);
     await seedHistory(PID, 'submitted');
-    mockedUploadEdit.mockResolvedValue({ committed: true, wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'applied', wellName: 'Gunslinger 3' });
     // reconciliation read SUCCEEDS (original present) — the previously-uncovered path
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);                       // delivered, not skipped
-    expect(mockedUploadEdit.mock.calls[0][0].editEventId).toBe('editevt_vc26_readok_1'); // same id
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);                       // delivered, not skipped
+    expect(mockedUploadEditV3.mock.calls[0][0].editEventId).toBe('editevt_vc26_readok_1'); // same id
     expect(rawOps()).toHaveLength(0);                                        // committed + cleared
   });
 });
@@ -645,22 +650,22 @@ describe('submitted-timeout same-ID recovery (§7)', () => {
 describe('edit acknowledgment + lost receipt + duplicates', () => {
   test('lost acknowledgment is recovered via getWbmEditStatus applied without a second upload', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted');
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
 
     mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'applied' });
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()).toHaveLength(0);
     expect((await getPullHistory())[0].status).toBe('edited');
     expect((await getPullHistory())[0].editStatus).toBe('edited');
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1); // no duplicate
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1); // no duplicate
   });
 
   test('processed edit-key commit recovers a lost original-row marker', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     // Governed status confirms 'applied' even when the original-row marker was lost.
     mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'applied' });
@@ -669,12 +674,12 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     }));
     expect(rawOps()).toHaveLength(0);
     expect((await getPullHistory())[0].editStatus).toBe('edited');
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
   });
 
   test('incoming edit key blocks a duplicate resubmit', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     const editKey = rawOps()[0].editEventId!; // v2: receipts correlate by the op's unique editEventId
     await processEditOperations(makeFetch({
@@ -682,12 +687,12 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
       [`packets/incoming/${editKey}`]: { packetId: editKey },
     }));
     expect(rawOps()[0].state).toBe('edit_submitted');
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
   });
 
   test('auth failure while confirming is not treated as awaiting-server silence', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     mockGetWbmEditStatus.mockRejectedValueOnce(Object.assign(new Error('missing'), { name: 'AuthSessionError', httpStatus: 401 }));
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
@@ -698,7 +703,7 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
 
   test('retry after restart does not duplicate a confirmed edit', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     mockGetWbmEditStatus.mockResolvedValue({ status: 'applied' });
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
@@ -710,13 +715,13 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
         editCommittedReceiptKey: 'r1',
       },
     }));
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
     expect((await getPullHistory())[0].editStatus).toBe('edited');
   });
 
   test('offline-to-online recovery confirms without a new upload', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     mockOnline.value = false;
     mockGetWbmEditStatus.mockResolvedValue({ status: 'applied' });
@@ -725,15 +730,15 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     mockOnline.value = true;
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()).toHaveLength(0);
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
   });
 
   test('governed recovery of an accepted-but-MISSING edit reuses the same editEventId, never a duplicate ingest', async () => {
     await seedHistory(PID, 'sent');
-    mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
+    mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
     await submitPullEdit(editParams(PID), makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     const editEventId = rawOps()[0].editEventId!;
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
 
     // Status MISSING + recovery refused (canary OFF) → stays edit_submitted; the
     // recovery reused the SAME editEventId; no second ingest upload.
@@ -743,7 +748,7 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     expect(rawOps()[0].state).toBe('edit_submitted');
     expect(mockRecoverWbmEdit).toHaveBeenCalledTimes(1);
     expect((mockRecoverWbmEdit.mock.calls[0][0] as { editEventId?: string }).editEventId).toBe(editEventId);
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
 
     // Status MISSING + recovery APPLIED (canary enabled) → confirmed, no duplicate.
     mockGetWbmEditStatus.mockResolvedValueOnce({ status: 'missing' });
@@ -751,6 +756,6 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()).toHaveLength(0);
     expect((await getPullHistory())[0].editStatus).toBe('edited');
-    expect(mockedUploadEdit).toHaveBeenCalledTimes(1);
+    expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);
   });
 });

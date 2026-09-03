@@ -24,6 +24,13 @@ export type WbmEditCommandInput = {
    *  it is the correction's event time, distinct from the pull's business time.
    *  Required by the governed v2 producer (correctionCreatedAtUTC). */
   correctionCreatedAtUTC?: string;
+  /** Deterministic CHANGED-ONLY mask from finalizeEdit (canonical wire names).
+   *  When present it REPLACES the always-on assertion mask so the trail records
+   *  only what the driver actually changed. Absent → legacy assertion mask. */
+  editedFieldsOverride?: string[];
+  /** Well-Down authority (edit path): true only when the driver explicitly
+   *  changed Well-Down. Untouched → false so the server preserves canonical. */
+  wellDownIsAuthoritative?: boolean;
 };
 
 /** Governed v2 producer contract (evaluateWbmEdit). */
@@ -76,11 +83,21 @@ export function buildWbmEditCommand(input: WbmEditCommandInput): Record<string, 
   const dateTimeUTC = (input.dateTimeUTC || '').trim();
   const dateTime = (input.dateTime || '').trim();
 
-  // Explicit assertion mask — the WB-M edit screen asserts these three as final
-  // state on every submit; operational time is added only when the driver set it.
-  const editedFields: string[] = ['tankLevelFeet', 'bblsTaken', 'wellDown'];
-  if (dateTimeUTC) editedFields.push('dateTimeUTC');
-  if (dateTime) editedFields.push('dateTime');
+  // Field mask. Prefer the deterministic CHANGED-ONLY mask from finalizeEdit; it
+  // records exactly what the driver altered. Only when it is absent (legacy op /
+  // recovery of a pre-finalize operation) fall back to the always-on assertion
+  // mask so the edit still applies. A valid override must be non-empty.
+  const override = Array.isArray(input.editedFieldsOverride)
+    ? input.editedFieldsOverride.filter((f) => typeof f === 'string' && f.length > 0)
+    : null;
+  let editedFields: string[];
+  if (override && override.length > 0) {
+    editedFields = Array.from(new Set(override));
+  } else {
+    editedFields = ['tankLevelFeet', 'bblsTaken', 'wellDown'];
+    if (dateTimeUTC) editedFields.push('dateTimeUTC');
+    if (dateTime) editedFields.push('dateTime');
+  }
 
   const packet: Record<string, unknown> = {
     requestType: 'edit',
@@ -96,6 +113,9 @@ export function buildWbmEditCommand(input: WbmEditCommandInput): Record<string, 
     bblsTaken: input.bblsTaken,
     wellDown: input.wellDown === true, // explicit final-state boolean, never omitted
   };
+  // Well-Down authority: default true (assertion) unless finalize marked the
+  // untouched checkbox non-authoritative, so the server preserves canonical.
+  if (input.wellDownIsAuthoritative === false) packet.wellDownIsAuthoritative = false;
   if (dateTimeUTC) packet.dateTimeUTC = dateTimeUTC;
   if (dateTime) packet.dateTime = dateTime;
   if (input.timezone) packet.timezone = input.timezone;

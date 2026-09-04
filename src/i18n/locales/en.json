@@ -552,6 +552,7 @@
     "cancelRegistration": "Cancel registration",
     "approvedTitle": "Registration Approved!",
     "approvedMessage": "Welcome, {{name}}! Your registration has been approved.",
+    "approvedSignInHint": "Please sign in with the passcode you just created.",
     "continueToApp": "Continue to App",
     "rejectedTitle": "Access Denied",
     "rejectedMessage": "Your registration request was denied.",

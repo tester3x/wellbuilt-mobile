@@ -552,6 +552,7 @@
     "cancelRegistration": "Cancelar registro",
     "approvedTitle": "¡Registro Aprobado!",
     "approvedMessage": "¡Bienvenido, {{name}}! Tu registro ha sido aprobado.",
+    "approvedSignInHint": "Inicia sesión con el código que acabas de crear.",
     "continueToApp": "Continuar a la App",
     "rejectedTitle": "Acceso Denegado",
     "rejectedMessage": "Tu solicitud de registro fue denegada.",

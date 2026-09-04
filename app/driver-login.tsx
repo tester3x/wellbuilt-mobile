@@ -309,29 +309,13 @@ export default function DriverLoginScreen() {
     }
   };
 
-  // Complete registration after approval
-  const handleCompleteRegistration = async () => {
-    setMode('verifying');
-
-    try {
-      const result = await completeRegistration();
-
-      if (result.success) {
-        const dest = await authorizeEstablishedSession({
-          eligibleDestination: '/welcome',
-          revalidation: 'valid',
-        });
-        router.replace(dest);
-      } else {
-        setMode('error');
-        setError(result.error || t('driverLogin.completionFailed'));
-      }
-    } catch (err) {
-      console.error('[DriverLogin] Complete registration error:', err);
-      setMode('error');
-      const d = diagnoseThrown(err);
-      setError(`${userFacingErrorMessage(err, t)}${d.code ? ` (${d.code})` : ''}`);
-    }
+  // Approval does NOT establish a session. The employee returns to Sign In and
+  // authenticates with the passcode they chose at registration. This handler must
+  // never call completeRegistration() again, establish a session, or navigate into
+  // the app — it only switches the screen back to the login form.
+  const handleApprovedSignIn = () => {
+    setError('');
+    setMode('login');
   };
 
   // Cancel pending registration and start over
@@ -719,8 +703,12 @@ export default function DriverLoginScreen() {
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.button} onPress={handleCompleteRegistration}>
-              <Text style={styles.buttonText}>{t('driverLogin.continueToApp')}</Text>
+            <Text style={styles.passcodeHint}>
+              {t('driverLogin.approvedSignInHint')}
+            </Text>
+
+            <TouchableOpacity style={styles.button} onPress={handleApprovedSignIn}>
+              <Text style={styles.buttonText}>{t('driverLogin.signIn')}</Text>
             </TouchableOpacity>
           </View>
         )}

@@ -35,6 +35,7 @@ import * as SecureStore from 'expo-secure-store';
 import {
   saveDriverSession, getDriverSession, getDriverId, getDriverName, isDriverVerified,
   revalidateDriverSessionClassified, performPermittedLogout, captureCurrentSessionPermit,
+  __resetSessionMirrorFlagForTests,
 } from '../driverAuth';
 
 const MIRROR_KEY = '@wellbuilt_driver_identity_v1';
@@ -56,6 +57,7 @@ async function signInDrv1() {
 beforeEach(() => {
   for (const k of Object.keys(mockSecure)) delete mockSecure[k];
   for (const k of Object.keys(asyncStore)) delete asyncStore[k];
+  __resetSessionMirrorFlagForTests();
   mockVerify = async () => ({ driverId: 'drv-1', companyId: 'liquid-gold', active: true });
 });
 
@@ -91,6 +93,26 @@ describe('driver session survives process restart (identity mirror)', () => {
     invalidateSecureStoreKeepAsync();
     expect(await getDriverId()).toBe('drv-1');             // never wrongly "No driverId"
     expect(await getDriverName()).toBe('MikeS24');
+  });
+
+  test('carried-over session (SecureStore present, NO mirror yet) → first read STAMPS the mirror', async () => {
+    // Simulate a session that predates the mirror: SecureStore populated directly,
+    // AsyncStorage mirror absent (as after an upgrade from a build without the mirror).
+    await SecureStore.setItemAsync('driverId', 'drv-1');
+    await SecureStore.setItemAsync('driverName', 'MikeS24');
+    await SecureStore.setItemAsync('companyId', 'liquid-gold');
+    await SecureStore.setItemAsync('authMethod', 'manual');
+    expect(asyncStore[MIRROR_KEY]).toBeUndefined();
+
+    const s = await getDriverSession();                 // first read stamps the mirror
+    expect(s!.driverId).toBe('drv-1');
+    // Allow the fire-and-forget mirror write to settle.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(asyncStore[MIRROR_KEY]).toBeTruthy();
+
+    // Now a restart that DOES lose SecureStore still self-heals from the stamped mirror.
+    invalidateSecureStoreKeepAsync();
+    expect((await getDriverSession())!.driverId).toBe('drv-1');
   });
 
   test('reading from the mirror does NOT clear it; repeated cold reads are stable', async () => {

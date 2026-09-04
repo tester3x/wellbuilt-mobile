@@ -454,6 +454,9 @@ async function writeSessionItem(key: string, value: string): Promise<void> {
 // On startup, when SecureStore comes back empty, we re-hydrate SecureStore from this mirror
 // so the session restores. Only an explicit Logout (or a genuine revocation) clears it.
 const DRIVER_IDENTITY_MIRROR_KEY = "@wellbuilt_driver_identity_v1";
+// Ensures getDriverSession stamps the mirror at most once per session for a
+// carried-over (pre-mirror) session. Reset on logout so a new session re-stamps.
+let _mirrorEnsuredThisSession = false;
 
 /** Storage-shaped identity: values mirror exactly what SecureStore holds (raw JSON
  *  strings for the list fields) so re-hydration writes them back verbatim. */
@@ -492,8 +495,14 @@ async function readIdentityMirror(): Promise<DriverIdentityMirror | null> {
 }
 
 async function clearIdentityMirror(): Promise<void> {
+  _mirrorEnsuredThisSession = false;
   try { await AsyncStorage.removeItem(DRIVER_IDENTITY_MIRROR_KEY); }
   catch { /* non-fatal */ }
+}
+
+/** Test-only: reset the per-session "mirror stamped" flag (module state). */
+export function __resetSessionMirrorFlagForTests(): void {
+  _mirrorEnsuredThisSession = false;
 }
 
 /** Re-populate the SecureStore session keys from a durable AsyncStorage mirror when
@@ -631,6 +640,26 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
   try { assignedCustomers = customersRaw ? JSON.parse(customersRaw) : undefined; } catch { assignedCustomers = undefined; }
 
   if (driverId && displayName) {
+    // Opportunistically ensure the durable mirror exists for THIS session (once).
+    // Covers a session carried over from a build that predates the mirror (e.g. an
+    // in-place upgrade whose SecureStore survived): the first read stamps the mirror
+    // so a later restart that DOES lose SecureStore can still self-heal.
+    if (!_mirrorEnsuredThisSession) {
+      _mirrorEnsuredThisSession = true;
+      void writeIdentityMirror({
+        driverId, driverName: displayName,
+        isAdmin: isAdminStr === "true" ? "true" : "false",
+        isViewer: isViewerStr === "true" ? "true" : "false",
+        driverVerifiedAt: (await SecureStore.getItemAsync("driverVerifiedAt")) || undefined,
+        companyId: companyId || undefined,
+        companyName: companyName || undefined,
+        tier: tier || undefined,
+        rolesRaw: rolesRaw || undefined,
+        assignedRoutesRaw: routesRaw || undefined,
+        assignedCustomersRaw: customersRaw || undefined,
+        authMethod: authMethod || undefined,
+      });
+    }
     return {
       driverId,
       displayName,

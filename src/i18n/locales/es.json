@@ -523,8 +523,8 @@
   },
   "driverLogin": {
     "loading": "Cargando...",
-    "companyPlaceholder": "Nombre de tu empresa",
-    "companyHint": "Ingresa el nombre de la empresa que te dio tu empleador",
+    "companyPlaceholder": "Código de ingreso de la empresa",
+    "companyHint": "Ingresa el código que te dio tu empleador",
     "title": "Inicio de Sesión",
     "subtitle": "Ingresa tu nombre y código para iniciar sesión",
     "namePlaceholder": "Tu nombre",

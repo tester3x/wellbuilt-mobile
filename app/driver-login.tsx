@@ -77,7 +77,7 @@ export default function DriverLoginScreen() {
   const [confirmPasscode, setConfirmPasscode] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [legalName, setLegalName] = useState('');
-  const [companyName, setCompanyName] = useState('');
+  const [companyCode, setCompanyCode] = useState('');
   const [error, setError] = useState('');
   const [pendingName, setPendingName] = useState('');
   const [showPasscode, setShowPasscode] = useState(false);
@@ -290,7 +290,7 @@ export default function DriverLoginScreen() {
       const result = await submitRegistration({
         passcode: passcode.trim(),
         displayName: displayName.trim(),
-        companyName: companyName.trim(),
+        companyCode: companyCode.trim(),
         legalName: legalName.trim(),
       });
 
@@ -621,18 +621,18 @@ export default function DriverLoginScreen() {
             <TextInput
               ref={companyRef}
               style={styles.input}
-              value={companyName}
-              onChangeText={setCompanyName}
-              placeholder={t('driverLogin.companyPlaceholder', 'Your company name')}
+              value={companyCode}
+              onChangeText={(value) => setCompanyCode(value.toUpperCase())}
+              placeholder={t('driverLogin.companyPlaceholder', 'Company join code')}
               placeholderTextColor="#6B7280"
-              autoCapitalize="words"
+              autoCapitalize="characters"
               autoCorrect={false}
               returnKeyType="next"
               blurOnSubmit={false}
               onSubmitEditing={() => passcodeRef.current?.focus()}
             />
             <Text style={styles.passcodeHint}>
-              {t('driverLogin.companyHint', 'Enter the company name your employer gave you')}
+              {t('driverLogin.companyHint', 'Enter the join code your employer gave you')}
             </Text>
 
             {renderPasscodeInput(t('driverLogin.createPasscode'))}
@@ -650,10 +650,10 @@ export default function DriverLoginScreen() {
             <TouchableOpacity
               style={[
                 styles.button,
-                (!passcode.trim() || !displayName.trim() || !legalName.trim() || !!passcodeError) && styles.buttonDisabled,
+                (!passcode.trim() || !displayName.trim() || !legalName.trim() || !companyCode.trim() || !!passcodeError) && styles.buttonDisabled,
               ]}
               onPress={handleRegister}
-              disabled={!passcode.trim() || !displayName.trim() || !legalName.trim() || !!passcodeError}
+              disabled={!passcode.trim() || !displayName.trim() || !legalName.trim() || !companyCode.trim() || !!passcodeError}
             >
               <Text style={styles.buttonText}>{t('driverLogin.submitRegistration')}</Text>
             </TouchableOpacity>

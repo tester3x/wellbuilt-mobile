@@ -523,8 +523,8 @@
   },
   "driverLogin": {
     "loading": "Loading...",
-    "companyPlaceholder": "Your company name",
-    "companyHint": "Enter the company name your employer gave you",
+    "companyPlaceholder": "Company join code",
+    "companyHint": "Enter the join code your employer gave you",
     "title": "Driver Login",
     "subtitle": "Enter your name and passcode to sign in",
     "namePlaceholder": "Your name",

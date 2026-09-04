@@ -46,7 +46,7 @@ export async function secureLogin(displayName: string, passcode: string) {
 export async function secureRegister(params: {
   displayName: string;
   passcode: string;
-  companyName?: string;
+  companyCode: string;
   legalName?: string;
 }) {
   return callUnauthed<{ pendingId: string; status: string }>('requestDriverRegistration', {

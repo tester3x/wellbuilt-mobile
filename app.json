@@ -19,7 +19,7 @@
             "CFBundleURLSchemes": ["wellbuiltmobile", "msauth.com.wellbuiltmobile.app"]
           }
         ],
-        "LSApplicationQueriesSchemes": ["whatsapp", "sms", "tel"]
+        "LSApplicationQueriesSchemes": ["whatsapp", "sms", "tel", "wellbuilt-suite", "wellbuilt-tickets", "jsaapp", "wbewallet", "wellbuiltequipment"]
       }
     },
     "android": {

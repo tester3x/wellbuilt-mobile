@@ -1,6 +1,8 @@
 {
   "common": {
     "appName": "WellBuilt Móvil",
+    "settings": "Configuración",
+    "logOut": "Cerrar sesión",
     "language": "Idioma",
     "english": "Inglés",
     "spanish": "Español",
@@ -190,6 +192,8 @@
   },
   "record": {
     "title": "Registrar Carga",
+    "noChangesTitle": "Sin cambios",
+    "noChangesBody": "No se cambió nada, así que no hay nada que guardar.",
     "wellLabel": "Pozo",
     "dateLabel": "Fecha",
     "timeLabel": "Hora",
@@ -477,6 +481,8 @@
   },
   "driverLogin": {
     "loading": "Cargando...",
+    "companyPlaceholder": "Nombre de tu empresa",
+    "companyHint": "Ingresa el nombre de la empresa que te dio tu empleador",
     "title": "Inicio de Sesión",
     "subtitle": "Ingresa tu nombre y código para iniciar sesión",
     "namePlaceholder": "Tu nombre",

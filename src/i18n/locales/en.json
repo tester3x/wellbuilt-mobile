@@ -485,6 +485,8 @@
     "registerHere": "Register here",
     "registerTitle": "New Employee Registration",
     "registerSubtitle": "Choose a passcode and enter your display name",
+    "companyPlaceholder": "Company join code",
+    "companyHint": "Enter the join code your employer gave you",
     "displayNamePlaceholder": "Display name (e.g., MBurger)",
     "createPasscode": "Create a passcode",
     "passcodeHint": "4-12 characters",

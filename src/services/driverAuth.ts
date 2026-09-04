@@ -921,7 +921,7 @@ export const isPinAvailable = isPasscodeAvailable;
 export const submitRegistration = async (params: {
   passcode: string;
   displayName: string;
-  companyName?: string;
+  companyCode: string;
   legalName?: string;
 }): Promise<{ success: boolean; error?: string }> => {
   console.log("[DriverAuth] Submitting registration for:", params.displayName);

@@ -40,9 +40,10 @@ describe('record.tsx wiring of the future-time gate', () => {
     const gateBlock = handleSubmit.slice(gateIdx, gateIdx + 900);
     expect(gateBlock).toContain('if (!timeGate.ok)');
     expect(gateBlock).toContain('return;');
-    expect(gateBlock).toContain("'Future time detected'");
-    expect(gateBlock).toContain("'Fix date/time'");
-    expect(gateBlock).toContain("'Use current time'");
+    // Localized (EN+ES) — assert the i18n keys are wired, not raw English.
+    expect(gateBlock).toContain("t('record.futureTimeTitle')");
+    expect(gateBlock).toContain("t('record.futureTimeFix')");
+    expect(gateBlock).toContain("t('record.futureTimeUseCurrent')");
     // "Use current time" only updates the form pickers — no submit call.
     expect(gateBlock).not.toContain('handleSubmit');
     expect(gateBlock).toContain('setDateTime(now)');

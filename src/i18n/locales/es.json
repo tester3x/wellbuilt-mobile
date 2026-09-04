@@ -14,7 +14,8 @@
     "success": "Éxito",
     "updateRequired": "Actualización requerida",
     "updateRequiredBody": "Esta función no está disponible en esta versión. Actualice la aplicación.",
-    "unavailable": "No disponible"
+    "unavailable": "No disponible",
+    "offline": "SIN CONEXIÓN"
   },
   "welcome": {
     "tagline": "Móvil",
@@ -99,7 +100,9 @@
     "now": "Ahora",
     "noWellsSelected": "No hay pozos seleccionados.",
     "goToSettings": "Ve a Configuración para seleccionar tus rutas.",
-    "doubleTapUnlock": "Toca dos veces para desbloquear"
+    "doubleTapUnlock": "Toca dos veces para desbloquear",
+    "tanksCount_one": "{{count}} tanque",
+    "tanksCount_other": "{{count}} tanques"
   },
   "settings": {
     "title": "Configuración",
@@ -188,7 +191,25 @@
     "defaultTemplate": "Plantilla de Mensaje Predeterminada",
     "errorRequired": "El nombre y número de teléfono son requeridos",
     "successSignIn": "¡Sesión en OneDrive iniciada exitosamente!",
-    "errorSignIn": "Error al iniciar sesión: {{error}}"
+    "errorSignIn": "Error al iniciar sesión: {{error}}",
+    "clearHistoryTitle": "Borrar historial de extracciones",
+    "clearHistoryBody": "Esto eliminará todas las entradas del historial de extracciones. No se puede deshacer.",
+    "clearHistoryConfirm": "Borrar todo",
+    "clearedTitle": "Borrado",
+    "clearedBody": "Se ha borrado el historial de extracciones.",
+    "deleteRecipientTitle": "Eliminar destinatario",
+    "deleteRecipientBody": "¿Seguro que quieres eliminar este destinatario?",
+    "deleteConfirm": "Eliminar",
+    "savedTitle": "Guardado",
+    "templateSavedBody": "La plantilla de mensaje se guardó correctamente",
+    "freeTier": "PLAN GRATIS",
+    "wellsCount": "{{count}} / 5 pozos",
+    "customTemplateSuffix": " - Plantilla personalizada",
+    "recipientNamePlaceholder": "p. ej., Despacho, Oficina",
+    "phoneOrGroupLabel": "Teléfono o nombre de grupo",
+    "phoneLabel": "Número de teléfono",
+    "phoneOrGroupPlaceholder": "555-123-4567 o nombre de grupo",
+    "templateFieldsHelp": "{well} = Nombre del pozo\n{top} = Nivel antes de la extracción (p. ej., 10'3\")\n{bottom} = Nivel después de la extracción\n{time} = Formato 12h (p. ej., 2:30pm)\n{time24} = Formato 24h (p. ej., 14:30)\n{bbls} = Barriles extraídos (p. ej., 115 bbls)"
   },
   "record": {
     "title": "Registrar Carga",
@@ -231,7 +252,21 @@
     "successBody": "Extracción registrada para {{wellName}}",
     "timeoutTitle": "Tiempo agotado",
     "timeoutBody": "WellBuilt no respondió. Es posible que los datos se hayan guardado de todos modos.",
-    "sendFailedFallback": "Error al enviar"
+    "sendFailedFallback": "Error al enviar",
+    "clearFormTitle": "Borrar formulario",
+    "clearFormBody": "¿Seguro que quieres borrar todos los datos ingresados?",
+    "errorNoWell": "No se seleccionó ningún pozo",
+    "futureTimeTitle": "Se detectó una hora futura",
+    "futureTimeFix": "Corregir fecha/hora",
+    "futureTimeUseCurrent": "Usar la hora actual",
+    "editNeedsAttentionTitle": "La edición necesita atención",
+    "toastPullUpdatedTitle": "Extracción actualizada",
+    "toastPullUpdatedBody": "La extracción en cola de {{wellName}} ahora incluye tu corrección.",
+    "toastEditSavedTitle": "Edición guardada",
+    "toastEditSavedBody": "Se enviará cuando se confirme la extracción de {{wellName}}.",
+    "toastSavedOnPhoneTitle": "Guardado en este teléfono",
+    "toastSavedOnPhoneBody": "{{wellName}} se enviará automáticamente cuando vuelvas a estar en línea.",
+    "bottomHint": "Fondo: {{hint}}"
   },
   "well": {
     "wellIsDown": "Pozo apagado",
@@ -302,7 +337,10 @@
     "allCorrections": "Todas las correcciones",
     "pullsCount_one": "{{count}} extracción",
     "pullsCount_other": "{{count}} extracciones",
-    "footerTotals": "{{pulls}} • {{bbls}} BBLs"
+    "footerTotals": "{{pulls}} • {{bbls}} BBLs",
+    "viewerHistoryTitle": "Tu historial de extracciones",
+    "tryAdjustingFilters": "Intenta ajustar los filtros",
+    "viewerEmptyBody": "Esta pantalla muestra tu historial personal de extracciones.\nComo observador, usa \"Ver datos de cualquier pozo\" arriba\npara ver el historial de extracciones de los pozos."
   },
   "nav": {
     "history": "Historial",
@@ -554,7 +592,8 @@
     "upgradeSubmit": "Actualizar acceso",
     "upgradeBusy": "Actualizando acceso…",
     "upgradeFailed": "No se pudo completar la actualización",
-    "backToSignIn": "Volver a iniciar sesión"
+    "backToSignIn": "Volver a iniciar sesión",
+    "legalNamePlaceholder": "Nombre legal completo (p. ej., Mike Burger)"
   },
   "wellData": {
     "subtitle": "Base de Datos WellBuilt",
@@ -585,7 +624,11 @@
     "topLabel": "Superior:",
     "bblsLabel": "BBLs:",
     "pulledBy": "Extraído por:",
-    "you": "(Tú)"
+    "you": "(Tú)",
+    "errorTimeout": "Se agotó el tiempo de espera. ¿WellBuilt está en ejecución con la sincronización activa?",
+    "errorUnknown": "Error desconocido",
+    "errorFetchFailed": "No se pudieron obtener los datos",
+    "footerNote": "Datos de WellBuilt: última actualización: {{timestamp}}"
   },
   "aboutScreen": {
     "title": "Acerca de",
@@ -706,7 +749,10 @@
     "emptyPending": "Nada está esperando envío.",
     "emptyAttention": "Nada requiere atención.",
     "parked": "Guardado (en espera)",
-    "editParked": "Guardado en este teléfono — se enviará automáticamente cuando el servidor admita ediciones. No requiere acción."
+    "editParked": "Guardado en este teléfono — se enviará automáticamente cuando el servidor admita ediciones. No requiere acción.",
+    "backOnlineTitle": "De vuelta en línea",
+    "backOnlineBody_one": "{{count}} extracción enviada. Esperando confirmación.",
+    "backOnlineBody_other": "{{count}} extracciones enviadas. Esperando confirmación."
   },
   "noAccess": {
     "title": "WellBuilt Móvil",
@@ -723,7 +769,9 @@
   "appSwitcher": {
     "notInstalledTitle": "No Instalado",
     "notInstalledBody": "{{appName}} no está instalado en este dispositivo.",
-    "suiteNotInstalled": "WellBuilt Suite no está instalado en este dispositivo."
+    "suiteNotInstalled": "WellBuilt Suite no está instalado en este dispositivo.",
+    "jsaMigrationBody": "El inicio de sesión de JSA ahora usa un traspaso seguro con código de autorización. Esta versión no puede abrir JSA hasta que esa migración esté completa. No se envía ningún código de acceso ni hash.",
+    "shiftTimer": "Temporizador de turno"
   },
   "debugLogs": {
     "title": "Registros de Depuración",

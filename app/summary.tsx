@@ -577,9 +577,9 @@ export default function SummaryScreen() {
     }
 
     // Detail row values
-    const tanksText = `${well.numTanks} tank${well.numTanks !== 1 ? 's' : ''}`;
+    const tanksText = t('summary.tanksCount', { count: well.numTanks });
     const bblsAvailable = getBblsAvailable(well);
-    const bblsText = `${bblsAvailable} bbl`;
+    const bblsText = `${bblsAvailable} ${t('units.bbl')}`;
     const flowText = formatFlowRateCompact(well.flowRateMinutes);
 
     return (

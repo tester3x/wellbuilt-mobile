@@ -893,7 +893,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Calculate display values
   const numTanks = wellConfig?.numTanks ?? 1;
   const currentLevelDisplay = levelSnapshot?.unavailable
-    ? 'Unavailable'
+    ? t('common.unavailable')
     : formatFeetInches(displayFeet);
   
   // BBLs per foot — Dashboard-saved effective bbl/ft (override or derived from
@@ -933,7 +933,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   let bblsToPull = 0; // BBLs that would be taken if pulling to slider level
 
   if (wellDown) {
-    readyAtText = 'OFFLINE';
+    readyAtText = t('common.offline');
   } else if (flowMins <= 0) {
     readyAtText = 'N/A';
   } else if (displayFeet < sliderFeet) {

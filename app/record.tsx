@@ -27,6 +27,7 @@ import { getLevelSnapshot, savePendingPull, saveWellPull, saveLevelSnapshot } fr
 import { hp, spacing, wp } from '../src/ui/layout';
 import { resolveWellDownForSubmit } from '../src/utils/wellDownAuthority';
 import { finalizeEdit } from '../src/domain/wbmEditForm';
+import { formatAppDate, formatAppTime } from '../src/i18n/format';
 import {
   MeasurementKeypadDismissOverlay,
   MeasurementKeypadProvider,
@@ -256,12 +257,12 @@ function RecordScreenInner() {
   // Clear form and draft - show custom modal
   const handleClear = useCallback(() => {
     alert.show(
-      "Clear Form",
-      "Are you sure you want to clear all entered data?",
+      t('record.clearFormTitle'),
+      t('record.clearFormBody'),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t('common.cancel'), style: "cancel" },
         {
-          text: "Clear",
+          text: t('record.clear'),
           style: "destructive",
           onPress: async () => {
             setLevel('');
@@ -452,7 +453,7 @@ function RecordScreenInner() {
       // Last pull info
       if (snapshot?.lastPullDateTime) {
         const pullStr = snapshot.lastPullBbls
-          ? `${snapshot.lastPullDateTime} • ${snapshot.lastPullBbls} bbl`
+          ? `${snapshot.lastPullDateTime} • ${snapshot.lastPullBbls} ${t('units.bbl')}`
           : snapshot.lastPullDateTime;
         setLastPullInfo(pullStr);
       }
@@ -479,7 +480,6 @@ function RecordScreenInner() {
     setEstBbls(bbls);
   }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode]);
 
-  const formatDateLabel = (d: Date) => d.toLocaleDateString('en-US');
   const formatTimeLabel = (d: Date) => {
     const hours = d.getHours();
     const minutes = d.getMinutes();
@@ -595,7 +595,7 @@ function RecordScreenInner() {
       wellDown: wellDownFinal,
     });
     if (blocked === 'no_well') {
-      alert.show("Error", "No well selected");
+      alert.show(t('common.error'), t('record.errorNoWell'));
       return;
     }
     if (blocked === 'missing_level') {
@@ -649,10 +649,10 @@ function RecordScreenInner() {
       const timeGate = evaluatePullTime(dateTimeUTCString, Date.now());
       if (!timeGate.ok) {
         setIsSending(false);
-        alert.show('Future time detected', timeGate.message, [
-          { text: 'Fix date/time', style: 'cancel' },
+        alert.show(t('record.futureTimeTitle'), timeGate.message, [
+          { text: t('record.futureTimeFix'), style: 'cancel' },
           {
-            text: 'Use current time',
+            text: t('record.futureTimeUseCurrent'),
             onPress: () => {
               const now = new Date();
               setDateTime(now);
@@ -713,7 +713,7 @@ function RecordScreenInner() {
           alert.show(
             t('record.noChangesTitle', { defaultValue: 'No changes' }),
             t('record.noChangesBody', { defaultValue: 'Nothing was changed, so there is nothing to save.' }),
-            [{ text: 'OK', onPress: () => router.back() }],
+            [{ text: t('common.ok'), onPress: () => router.back() }],
           );
           return;
         }
@@ -813,24 +813,24 @@ function RecordScreenInner() {
         if (editOutcome.mode === 'merged_into_queued') {
           // Routine → branded nonblocking toast, plain driver wording.
           showSyncToast({
-            title: 'Pull updated',
-            body: `${wellName}'s queued pull now carries your correction.`,
+            title: t('record.toastPullUpdatedTitle'),
+            body: t('record.toastPullUpdatedBody', { wellName }),
             tone: 'gold',
           });
           router.back();
         } else if (editOutcome.mode === 'held_dependent') {
           showSyncToast({
-            title: 'Edit saved',
-            body: `It will send after ${wellName}'s pull is confirmed.`,
+            title: t('record.toastEditSavedTitle'),
+            body: t('record.toastEditSavedBody', { wellName }),
             tone: 'gold',
           });
           router.back();
         } else if (editOutcome.mode === 'blocked') {
           // Attention-required: blocking alert, never auto-dismissed.
           alert.show(
-            'Edit Needs Attention',
+            t('record.editNeedsAttentionTitle'),
             editOutcome.reason,
-            [{ text: 'OK', onPress: () => router.back() }]
+            [{ text: t('common.ok'), onPress: () => router.back() }]
           );
         } else {
           // Uploading (or stored for retry). The Cloud Function will process
@@ -939,8 +939,8 @@ function RecordScreenInner() {
         if (uploadResult.queued) {
           // Offline: branded, nonblocking, driver-plain — no dev wording.
           showSyncToast({
-            title: 'Saved on this phone',
-            body: `${wellName} will send automatically when you're back online.`,
+            title: t('record.toastSavedOnPhoneTitle'),
+            body: t('record.toastSavedOnPhoneBody', { wellName }),
             tone: 'gold',
           });
           router.back();
@@ -1088,7 +1088,7 @@ function RecordScreenInner() {
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.wellDownLabel}>{t('record.wellIsDown') || 'Well Down'}</Text>
+            <Text style={styles.wellDownLabel}>{t('record.wellIsDown')}</Text>
             <View style={[styles.checkbox, wellDown && styles.checkboxChecked]}>
               {wellDown && <Text style={styles.checkmark}>✓</Text>}
             </View>
@@ -1103,7 +1103,7 @@ function RecordScreenInner() {
               setTempDateTime(dateTime);
               setShowDatePicker(true);
             }}>
-              <Text style={styles.inputText}>{formatDateLabel(dateTime)}</Text>
+              <Text style={styles.inputText}>{formatAppDate(dateTime)}</Text>
             </TouchableOpacity>
           </View>
           <View style={[styles.section, { flex: 1 }]}>
@@ -1112,7 +1112,7 @@ function RecordScreenInner() {
               setTempDateTime(dateTime);
               setShowTimePicker(true);
             }}>
-              <Text style={styles.inputText}>{formatTimeLabel(dateTime)}</Text>
+              <Text style={styles.inputText}>{formatAppTime(dateTime)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1183,7 +1183,7 @@ function RecordScreenInner() {
             }}
           />
           <Text style={styles.bottomLevelHint}>
-            {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : ' '}
+            {bottomLevelHint ? t('record.bottomHint', { hint: bottomLevelHint }) : ' '}
           </Text>
         </View>
       </ScrollView>
@@ -1286,7 +1286,7 @@ function RecordScreenInner() {
       {keypad.isOpen && (keypad.isActiveField(BBLS_FIELD_KEY) || keypad.isActiveField(LEVEL_FIELD_KEY)) && (
         <View style={styles.keypadBottomHintBar}>
           <Text style={styles.keypadBottomHintText}>
-            {bottomLevelHint ? `Bottom: ${bottomLevelHint}` : ' '}
+            {bottomLevelHint ? t('record.bottomHint', { hint: bottomLevelHint }) : ' '}
           </Text>
         </View>
       )}

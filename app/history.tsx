@@ -261,7 +261,7 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
                 </Text>
                 {entry.bblsTaken > 0 && (
                   <Text style={styles.entryBbls}>
-                    {entry.bblsTaken} bbl
+                    {entry.bblsTaken} {t('units.bbl')}
                   </Text>
                 )}
               </>
@@ -668,7 +668,7 @@ export default function HistoryScreen() {
             count: filteredTotals.pulls,
           })}
           {' • '}
-          {formatAppNumber(filteredTotals.bbls)} BBLs
+          {formatAppNumber(filteredTotals.bbls)} {t('history.bbls')}
         </Text>
         {(dateFilter !== 'all' || wellFilter !== 'all') && (
           <TouchableOpacity
@@ -702,13 +702,13 @@ export default function HistoryScreen() {
         {historyByDay.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
-              {isViewer ? 'Your Pull History' : t('history.noPulls')}
+              {isViewer ? t('history.viewerHistoryTitle') : t('history.noPulls')}
             </Text>
             <Text style={styles.emptySubtext}>
               {dateFilter !== 'all' || wellFilter !== 'all'
-                ? 'Try adjusting your filters'
+                ? t('history.tryAdjustingFilters')
                 : isViewer
-                  ? 'This screen shows your personal pull history.\nAs a viewer, use "View Any Well\'s Data" above\nto see well pull history.'
+                  ? t('history.viewerEmptyBody')
                   : t('history.noPullsSubtext')}
             </Text>
           </View>
@@ -724,7 +724,7 @@ export default function HistoryScreen() {
                 <View style={styles.dayHeaderRow}>
                   <Text style={styles.dayHeader}>{day.date}</Text>
                   <View style={styles.dayTotals}>
-                    <Text style={styles.dayTotalText}>{dayTotal.pulls} pulls</Text>
+                    <Text style={styles.dayTotalText}>{dayTotal.pulls} {t('history.pulls')}</Text>
                     <Text style={styles.dayTotalDot}>•</Text>
                     <Text style={styles.dayTotalText}>{formatAppNumber(dayTotal.bbls)} {t('units.bbl')}</Text>
                   </View>

@@ -608,7 +608,7 @@ export default function DriverLoginScreen() {
               style={styles.input}
               value={legalName}
               onChangeText={setLegalName}
-              placeholder="Full legal name (e.g., Mike Burger)"
+              placeholder={t('driverLogin.legalNamePlaceholder')}
               placeholderTextColor="#6B7280"
               autoCapitalize="words"
               autoCorrect={false}

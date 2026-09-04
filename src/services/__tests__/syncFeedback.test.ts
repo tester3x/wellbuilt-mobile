@@ -122,7 +122,7 @@ describe('record.tsx — form reset contract', () => {
   test('new-pull path resets UNCONDITIONALLY after durable save, BEFORE feedback — identical for consecutive offline submissions', () => {
     const newPullIdx = submitBody.indexOf('NEW PULL MODE');
     const resetIdx = submitBody.indexOf('resetFormAfterDurableSave();', newPullIdx);
-    const queuedFeedbackIdx = submitBody.indexOf("'Saved on this phone'", newPullIdx);
+    const queuedFeedbackIdx = submitBody.indexOf("t('record.toastSavedOnPhoneTitle')", newPullIdx);
     expect(resetIdx).toBeGreaterThan(-1);
     expect(queuedFeedbackIdx).toBeGreaterThan(resetIdx); // reset precedes feedback
     // Unconditional: the reset sits before the queued/online branch, so the
@@ -134,7 +134,7 @@ describe('record.tsx — form reset contract', () => {
 
   test('edit path also resets before feedback', () => {
     const editResetIdx = submitBody.indexOf('resetFormAfterDurableSave();');
-    const editToastIdx = submitBody.indexOf("'Pull updated'");
+    const editToastIdx = submitBody.indexOf("t('record.toastPullUpdatedTitle')");
     expect(editResetIdx).toBeGreaterThan(-1);
     expect(editToastIdx).toBeGreaterThan(editResetIdx);
   });
@@ -148,22 +148,23 @@ describe('record.tsx — form reset contract', () => {
     expect(recordSrc).not.toContain('Queued for later (offline)');
     expect(recordSrc).not.toContain('Pull Saved Locally');
     expect(recordSrc).not.toContain('uploadResult.error ||');
-    expect(recordSrc).toContain("'Saved on this phone'");
-    expect(recordSrc).toContain("will send automatically when you're back online.");
+    // Feedback wording is now localized (EN+ES) — assert the i18n keys are wired.
+    expect(recordSrc).toContain("t('record.toastSavedOnPhoneTitle')");
+    expect(recordSrc).toContain("t('record.toastSavedOnPhoneBody', { wellName })");
   });
 
   test('future-time modal remains a blocking alert with action buttons', () => {
     const gate = submitBody.slice(submitBody.indexOf('!timeGate.ok'), submitBody.indexOf('!timeGate.ok') + 700);
-    expect(gate).toContain("alert.show('Future time detected'");
-    expect(gate).toContain("'Fix date/time'");
-    expect(gate).toContain("'Use current time'");
+    expect(gate).toContain("alert.show(t('record.futureTimeTitle')");
+    expect(gate).toContain("t('record.futureTimeFix')");
+    expect(gate).toContain("t('record.futureTimeUseCurrent')");
     expect(gate).not.toContain('showSyncToast');
   });
 
   test('attention-required edit outcome stays blocking; routine outcomes are toasts', () => {
-    expect(submitBody).toMatch(/alert\.show\(\s*'Edit Needs Attention'/);
-    expect(submitBody).toContain("title: 'Pull updated'");
-    expect(submitBody).toContain("title: 'Edit saved'");
+    expect(submitBody).toMatch(/alert\.show\(\s*t\('record\.editNeedsAttentionTitle'\)/);
+    expect(submitBody).toContain("title: t('record.toastPullUpdatedTitle')");
+    expect(submitBody).toContain("title: t('record.toastEditSavedTitle')");
   });
 });
 
@@ -174,7 +175,11 @@ describe('SyncToast — branded, truthful, nonblocking', () => {
   });
 
   test('wording is truthful: submitted until processed confirms; no delivered-success badge', () => {
-    expect(toastSrc).toContain('submitted. Waiting for confirmation.');
+    // Truthful wording is now localized; assert the wiring + the English value.
+    expect(toastSrc).toContain("i18n.t('syncStatus.backOnlineBody'");
+    const enSync = require('../../i18n/locales/en.json').syncStatus;
+    expect(enSync.backOnlineBody_other).toContain('submitted. Waiting for confirmation.');
+    expect(enSync.backOnlineBody_other).not.toMatch(/delivered|sent/i);
     expect(toastSrc).toMatch(/Successful delivery is normal operation/);
     expect(toastSrc).not.toMatch(/title: 'Delivered'/);
     expect(toastSrc).not.toMatch(/pulls? uploaded/i);

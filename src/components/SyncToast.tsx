@@ -12,6 +12,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Image, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import i18n from '../i18n';
 import { onReconcileResult } from '../services/deliveryStatus';
 import { onFlushComplete } from '../services/packetQueue';
 
@@ -51,8 +52,8 @@ export function SyncToastHost() {
     const unsubFlush = onFlushComplete((r) => {
       if (r.sent > 0) {
         showSyncToast({
-          title: 'Back online',
-          body: `${r.sent} pull${r.sent === 1 ? '' : 's'} submitted. Waiting for confirmation.`,
+          title: i18n.t('syncStatus.backOnlineTitle'),
+          body: i18n.t('syncStatus.backOnlineBody', { count: r.sent }),
           tone: 'blue',
         });
       }

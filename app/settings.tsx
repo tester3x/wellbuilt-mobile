@@ -233,16 +233,16 @@ export default function SettingsScreen() {
 
   const handleClearHistory = () => {
     alert.show(
-      "Clear Pull History",
-      "This will delete all pull history entries. This cannot be undone.",
+      t('settings.clearHistoryTitle'),
+      t('settings.clearHistoryBody'),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t('common.cancel'), style: "cancel" },
         {
-          text: "Clear All",
+          text: t('settings.clearHistoryConfirm'),
           style: "destructive",
           onPress: async () => {
             await clearPullHistory();
-            alert.show("Cleared", "Pull history has been cleared.");
+            alert.show(t('settings.clearedTitle'), t('settings.clearedBody'));
           },
         },
       ]
@@ -343,12 +343,12 @@ export default function SettingsScreen() {
 
   const handleDeleteRecipient = (id: string) => {
     alert.show(
-      "Delete Recipient",
-      "Are you sure you want to remove this recipient?",
+      t('settings.deleteRecipientTitle'),
+      t('settings.deleteRecipientBody'),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t('common.cancel'), style: "cancel" },
         {
-          text: "Delete",
+          text: t('settings.deleteConfirm'),
           style: "destructive",
           onPress: async () => {
             await deleteRecipient(id);
@@ -384,7 +384,7 @@ export default function SettingsScreen() {
     await saveMessageTemplate(template);
     setMessageTemplate(template);
     setShowTemplateModal(false);
-    alert.show("Saved", "Message template saved successfully");
+    alert.show(t('settings.savedTitle'), t('settings.templateSavedBody'));
   };
 
   // Simple field detection from template text
@@ -752,10 +752,10 @@ export default function SettingsScreen() {
         {tier === 'free' && (
           <View style={styles.tierBadgeRow}>
             <View style={styles.tierBadgeFree}>
-              <Text style={styles.tierBadgeText}>FREE TIER</Text>
+              <Text style={styles.tierBadgeText}>{t('settings.freeTier')}</Text>
             </View>
             <Text style={styles.tierWellCount}>
-              {routeGroups.reduce((sum, r) => sum + r.wells.length, 0)} / 5 wells
+              {t('settings.wellsCount', { count: routeGroups.reduce((sum, r) => sum + r.wells.length, 0) })}
             </Text>
           </View>
         )}
@@ -1018,7 +1018,7 @@ export default function SettingsScreen() {
                     </Text>
                     <Text style={styles.recipientDetails}>
                       {recipient.phone} ({recipient.channel.toUpperCase()})
-                      {recipient.customTemplate && ' - Custom template'}
+                      {recipient.customTemplate && t('settings.customTemplateSuffix')}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -1266,17 +1266,17 @@ export default function SettingsScreen() {
                 style={styles.fieldInput}
                 value={recipientForm.name}
                 onChangeText={(text) => setRecipientForm(prev => ({ ...prev, name: text }))}
-                placeholder="e.g., Dispatch, Office"
+                placeholder={t('settings.recipientNamePlaceholder')}
                 placeholderTextColor="#6B7280"
               />
               <Text style={[styles.fieldLabel, { marginTop: spacing.sm }]}>
-                {recipientForm.channel === 'whatsapp' ? 'Phone or Group Name' : 'Phone Number'}
+                {recipientForm.channel === 'whatsapp' ? t('settings.phoneOrGroupLabel') : t('settings.phoneLabel')}
               </Text>
               <TextInput
                 style={styles.fieldInput}
                 value={recipientForm.phone}
                 onChangeText={(text) => setRecipientForm(prev => ({ ...prev, phone: text }))}
-                placeholder={recipientForm.channel === 'whatsapp' ? "555-123-4567 or Group Name" : "555-123-4567"}
+                placeholder={recipientForm.channel === 'whatsapp' ? t('settings.phoneOrGroupPlaceholder') : "555-123-4567"}
                 placeholderTextColor="#6B7280"
                 keyboardType={recipientForm.channel === 'whatsapp' ? 'default' : 'phone-pad'}
               />
@@ -1417,12 +1417,7 @@ export default function SettingsScreen() {
               </View>
 
               <Text style={styles.fieldHintBox}>
-                {'{well}'} = Well name{'\n'}
-                {'{top}'} = Level before pull (e.g., 10'3"){'\n'}
-                {'{bottom}'} = Level after pull{'\n'}
-                {'{time}'} = 12hr format (e.g., 2:30pm){'\n'}
-                {'{time24}'} = 24hr format (e.g., 14:30){'\n'}
-                {'{bbls}'} = Barrels pulled (e.g., 115 bbls)
+                {t('settings.templateFieldsHelp')}
               </Text>
             </View>
 

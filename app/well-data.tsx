@@ -78,12 +78,12 @@ export default function WellDataScreen() {
       const response = await requestWellHistory(wellName, 50); // Always fetch 50
 
       if (!response) {
-        setError("Request timed out. Is WellBuilt running with sync active?");
+        setError(t('wellData.errorTimeout'));
         return;
       }
 
       if (response.status === "error") {
-        setError(response.errorMessage || "Unknown error");
+        setError(response.errorMessage || t('wellData.errorUnknown'));
         return;
       }
 
@@ -112,7 +112,7 @@ export default function WellDataScreen() {
       setHasFetched(true);
     } catch (err) {
       console.error("[WellData] Error:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch data");
+      setError(err instanceof Error ? err.message : t('wellData.errorFetchFailed'));
     }
   }, [wellName]);
 
@@ -571,7 +571,7 @@ export default function WellDataScreen() {
             ListFooterComponent={
               sortedRows.length > 0 ? (
                 <Text style={styles.footerNote}>
-                  Data from WellBuilt - Last updated: {data?.timestamp}
+                  {t('wellData.footerNote', { timestamp: data?.timestamp })}
                 </Text>
               ) : null
             }

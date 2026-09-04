@@ -14,7 +14,8 @@
     "success": "Success",
     "updateRequired": "Update required",
     "updateRequiredBody": "This feature is unavailable in this version. Please update the app.",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "offline": "OFFLINE"
   },
   "welcome": {
     "tagline": "Mobile",
@@ -99,7 +100,9 @@
     "now": "Now",
     "noWellsSelected": "No wells selected.",
     "goToSettings": "Go to Settings to select your routes.",
-    "doubleTapUnlock": "Double tap to unlock"
+    "doubleTapUnlock": "Double tap to unlock",
+    "tanksCount_one": "{{count}} tank",
+    "tanksCount_other": "{{count}} tanks"
   },
   "settings": {
     "title": "Settings",
@@ -188,7 +191,25 @@
     "defaultTemplate": "Default Message Template",
     "errorRequired": "Name and phone number are required",
     "successSignIn": "Signed in to OneDrive successfully!",
-    "errorSignIn": "Sign in failed: {{error}}"
+    "errorSignIn": "Sign in failed: {{error}}",
+    "clearHistoryTitle": "Clear Pull History",
+    "clearHistoryBody": "This will delete all pull history entries. This cannot be undone.",
+    "clearHistoryConfirm": "Clear All",
+    "clearedTitle": "Cleared",
+    "clearedBody": "Pull history has been cleared.",
+    "deleteRecipientTitle": "Delete Recipient",
+    "deleteRecipientBody": "Are you sure you want to remove this recipient?",
+    "deleteConfirm": "Delete",
+    "savedTitle": "Saved",
+    "templateSavedBody": "Message template saved successfully",
+    "freeTier": "FREE TIER",
+    "wellsCount": "{{count}} / 5 wells",
+    "customTemplateSuffix": " - Custom template",
+    "recipientNamePlaceholder": "e.g., Dispatch, Office",
+    "phoneOrGroupLabel": "Phone or Group Name",
+    "phoneLabel": "Phone Number",
+    "phoneOrGroupPlaceholder": "555-123-4567 or Group Name",
+    "templateFieldsHelp": "{well} = Well name\n{top} = Level before pull (e.g., 10'3\")\n{bottom} = Level after pull\n{time} = 12hr format (e.g., 2:30pm)\n{time24} = 24hr format (e.g., 14:30)\n{bbls} = Barrels pulled (e.g., 115 bbls)"
   },
   "record": {
     "title": "Record Load",
@@ -231,7 +252,21 @@
     "successBody": "Pull recorded for {{wellName}}",
     "timeoutTitle": "Timeout",
     "timeoutBody": "WellBuilt did not respond. Data may still be saved.",
-    "sendFailedFallback": "Failed to send"
+    "sendFailedFallback": "Failed to send",
+    "clearFormTitle": "Clear Form",
+    "clearFormBody": "Are you sure you want to clear all entered data?",
+    "errorNoWell": "No well selected",
+    "futureTimeTitle": "Future time detected",
+    "futureTimeFix": "Fix date/time",
+    "futureTimeUseCurrent": "Use current time",
+    "editNeedsAttentionTitle": "Edit Needs Attention",
+    "toastPullUpdatedTitle": "Pull updated",
+    "toastPullUpdatedBody": "{{wellName}}'s queued pull now carries your correction.",
+    "toastEditSavedTitle": "Edit saved",
+    "toastEditSavedBody": "It will send after {{wellName}}'s pull is confirmed.",
+    "toastSavedOnPhoneTitle": "Saved on this phone",
+    "toastSavedOnPhoneBody": "{{wellName}} will send automatically when you're back online.",
+    "bottomHint": "Bottom: {{hint}}"
   },
   "well": {
     "wellIsDown": "Well is down",
@@ -302,7 +337,10 @@
     "allCorrections": "All corrections",
     "pullsCount_one": "{{count}} pull",
     "pullsCount_other": "{{count}} pulls",
-    "footerTotals": "{{pulls}} • {{bbls}} BBLs"
+    "footerTotals": "{{pulls}} • {{bbls}} BBLs",
+    "viewerHistoryTitle": "Your Pull History",
+    "tryAdjustingFilters": "Try adjusting your filters",
+    "viewerEmptyBody": "This screen shows your personal pull history.\nAs a viewer, use \"View Any Well's Data\" above\nto see well pull history."
   },
   "nav": {
     "history": "History",
@@ -554,7 +592,8 @@
     "upgradeSubmit": "Upgrade login",
     "upgradeBusy": "Upgrading login…",
     "upgradeFailed": "Could not complete upgrade",
-    "backToSignIn": "Back to sign in"
+    "backToSignIn": "Back to sign in",
+    "legalNamePlaceholder": "Full legal name (e.g., Mike Burger)"
   },
   "wellData": {
     "subtitle": "WellBuilt Database",
@@ -585,7 +624,11 @@
     "topLabel": "Top:",
     "bblsLabel": "BBLs:",
     "pulledBy": "Pulled by:",
-    "you": "(You)"
+    "you": "(You)",
+    "errorTimeout": "Request timed out. Is WellBuilt running with sync active?",
+    "errorUnknown": "Unknown error",
+    "errorFetchFailed": "Failed to fetch data",
+    "footerNote": "Data from WellBuilt - Last updated: {{timestamp}}"
   },
   "aboutScreen": {
     "title": "About",
@@ -706,7 +749,10 @@
     "emptyPending": "Nothing is waiting to send.",
     "emptyAttention": "Nothing needs attention.",
     "parked": "Saved (parked)",
-    "editParked": "Saved on this phone — it will send automatically once the server supports pull edits. No action needed."
+    "editParked": "Saved on this phone — it will send automatically once the server supports pull edits. No action needed.",
+    "backOnlineTitle": "Back online",
+    "backOnlineBody_one": "{{count}} pull submitted. Waiting for confirmation.",
+    "backOnlineBody_other": "{{count}} pulls submitted. Waiting for confirmation."
   },
   "noAccess": {
     "title": "WellBuilt Mobile",
@@ -723,7 +769,9 @@
   "appSwitcher": {
     "notInstalledTitle": "Not Installed",
     "notInstalledBody": "{{appName}} is not installed on this device.",
-    "suiteNotInstalled": "WellBuilt Suite is not installed on this device."
+    "suiteNotInstalled": "WellBuilt Suite is not installed on this device.",
+    "jsaMigrationBody": "JSA sign-in has moved to a secure authorization-code handoff. This build cannot launch JSA until that migration is complete. No passcode or hash is sent.",
+    "shiftTimer": "Shift Timer"
   },
   "debugLogs": {
     "title": "Debug Logs",

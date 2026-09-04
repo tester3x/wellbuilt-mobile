@@ -335,8 +335,8 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
             url = 'wellbuilt-tickets://sso-start';
           } else if (app.deepLinkScheme === 'jsaapp') {
             Alert.alert(
-              'Update required',
-              'JSA sign-in has moved to a secure authorization-code handoff. This build cannot launch JSA until that migration is complete. No passcode or hash is sent.',
+              i18n.t('common.updateRequired'),
+              i18n.t('appSwitcher.jsaMigrationBody'),
             );
             return;
           } else if (app.deepLinkScheme === 'wbewallet' || app.deepLinkScheme === 'wellbuiltequipment') {
@@ -589,7 +589,7 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
         {/* Shift timer below badge — label overlaps bottom of icon, timer below */}
         {shiftElapsed && !isOpen ? (
           <View style={[styles.timerContainer, { marginTop: isPhone ? -12 : -18 }]}>
-            <Text style={[styles.timerLabel, { fontSize: isPhone ? 8 : 11 }]}>Shift Timer</Text>
+            <Text style={[styles.timerLabel, { fontSize: isPhone ? 8 : 11 }]}>{i18n.t('appSwitcher.shiftTimer')}</Text>
             <Text style={[styles.timerText, { color: shiftColor, fontSize: isPhone ? 9 : 12 }]}>{shiftElapsed}</Text>
           </View>
         ) : null}

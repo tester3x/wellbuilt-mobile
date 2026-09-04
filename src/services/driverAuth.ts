@@ -19,6 +19,7 @@
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { diagnoseThrown } from "./connectionDiagnosis";
 import { normalizeRouteList } from "./eligibility";
 import { wipeDurableWellConfigCache, clearWbmMemoryCatalog } from "./wellConfig";
@@ -444,6 +445,104 @@ async function writeSessionItem(key: string, value: string): Promise<void> {
   await SecureStore.setItemAsync(key, value);
 }
 
+// ─────────────────── resilient driver-IDENTITY mirror (AsyncStorage) ───────────────────
+// RELEASE FIX: the signed-in driver identity was persisted ONLY to expo-secure-store,
+// whose Android-Keystore-backed entries can be invalidated across a process restart /
+// `install -r` upgrade — silently logging the driver out. AsyncStorage is a plain durable
+// file that reliably survives process death and in-place upgrades, so we MIRROR the
+// non-secret identity (driverId/name/company/roles/authMethod — NEVER the passcode) there.
+// On startup, when SecureStore comes back empty, we re-hydrate SecureStore from this mirror
+// so the session restores. Only an explicit Logout (or a genuine revocation) clears it.
+const DRIVER_IDENTITY_MIRROR_KEY = "@wellbuilt_driver_identity_v1";
+
+/** Storage-shaped identity: values mirror exactly what SecureStore holds (raw JSON
+ *  strings for the list fields) so re-hydration writes them back verbatim. */
+interface DriverIdentityMirror {
+  driverId: string;
+  driverName: string;
+  isAdmin: string;      // "true" | "false"
+  isViewer: string;
+  driverVerifiedAt?: string;
+  companyId?: string;
+  companyName?: string;
+  tier?: string;
+  rolesRaw?: string;
+  assignedRoutesRaw?: string;
+  assignedCustomersRaw?: string;
+  authMethod?: string;  // "sso" | "manual"
+}
+
+async function writeIdentityMirror(m: DriverIdentityMirror): Promise<void> {
+  try { await AsyncStorage.setItem(DRIVER_IDENTITY_MIRROR_KEY, JSON.stringify(m)); }
+  catch { /* mirror is best-effort; SecureStore remains the primary store */ }
+}
+
+async function readIdentityMirror(): Promise<DriverIdentityMirror | null> {
+  try {
+    const raw = await AsyncStorage.getItem(DRIVER_IDENTITY_MIRROR_KEY);
+    if (!raw) return null;
+    const m = JSON.parse(raw) as Partial<DriverIdentityMirror>;
+    // A usable identity requires at least a driverId + driverName; malformed → null.
+    if (m && typeof m.driverId === "string" && m.driverId
+      && typeof m.driverName === "string" && m.driverName) {
+      return m as DriverIdentityMirror;
+    }
+    return null;
+  } catch { return null; }
+}
+
+async function clearIdentityMirror(): Promise<void> {
+  try { await AsyncStorage.removeItem(DRIVER_IDENTITY_MIRROR_KEY); }
+  catch { /* non-fatal */ }
+}
+
+/** Re-populate the SecureStore session keys from a durable AsyncStorage mirror when
+ *  SecureStore returned empty (keystore invalidation / cold start). Self-healing:
+ *  after this runs, subsequent SecureStore reads (getDriverId etc.) succeed too. */
+async function rehydrateSecureStoreFromMirror(m: DriverIdentityMirror): Promise<void> {
+  try {
+    await SecureStore.setItemAsync("driverId", m.driverId);
+    await SecureStore.setItemAsync("driverName", m.driverName);
+    await SecureStore.setItemAsync("isAdmin", m.isAdmin || "false");
+    await SecureStore.setItemAsync("isViewer", m.isViewer || "false");
+    if (m.driverVerifiedAt) await SecureStore.setItemAsync("driverVerifiedAt", m.driverVerifiedAt);
+    if (m.companyId) await SecureStore.setItemAsync("companyId", m.companyId);
+    if (m.companyName) await SecureStore.setItemAsync("companyName", m.companyName);
+    if (m.tier) await SecureStore.setItemAsync("tier", m.tier);
+    if (m.rolesRaw) await SecureStore.setItemAsync("roles", m.rolesRaw);
+    if (m.assignedRoutesRaw) await SecureStore.setItemAsync("assignedRoutes", m.assignedRoutesRaw);
+    if (m.assignedCustomersRaw) await SecureStore.setItemAsync("assignedCustomers", m.assignedCustomersRaw);
+    if (m.authMethod) await SecureStore.setItemAsync("authMethod", m.authMethod);
+  } catch { /* if SecureStore is unwritable, the mirror still answers reads */ }
+}
+
+/** Build a DriverSession from a mirror blob (same shape getDriverSession returns). */
+function sessionFromMirror(m: DriverIdentityMirror): DriverSession {
+  let roles: string[] | undefined;
+  let assignedRoutes: string[] | undefined;
+  let assignedCustomers: unknown;
+  try { roles = m.rolesRaw ? JSON.parse(m.rolesRaw) : undefined; } catch { roles = undefined; }
+  try {
+    const parsed = m.assignedRoutesRaw ? JSON.parse(m.assignedRoutesRaw) : undefined;
+    const n = normalizeRouteList(parsed);
+    assignedRoutes = n.present ? n.routes : undefined;
+  } catch { assignedRoutes = undefined; }
+  try { assignedCustomers = m.assignedCustomersRaw ? JSON.parse(m.assignedCustomersRaw) : undefined; } catch { assignedCustomers = undefined; }
+  return {
+    driverId: m.driverId,
+    displayName: m.driverName,
+    isAdmin: m.isAdmin === "true",
+    isViewer: m.isViewer === "true",
+    companyId: m.companyId || undefined,
+    companyName: m.companyName || undefined,
+    tier: (m.tier as CompanyTier) || undefined,
+    roles,
+    assignedRoutes,
+    assignedCustomers,
+    authMethod: m.authMethod === "sso" || m.authMethod === "manual" ? m.authMethod : undefined,
+  };
+}
+
 export const saveDriverSession = async (
   driverId: string,
   displayName: string,
@@ -481,6 +580,24 @@ export const saveDriverSession = async (
   // Track how driver logged in — SSO sessions are owned by WB S (cascade logout applies),
   // manual sessions are owned by the driver (WB S logout is ignored).
   if (authMethod) await writeSessionItem("authMethod", authMethod);
+
+  // Durable identity MIRROR (AsyncStorage) so the session survives a process
+  // restart / install -r even if SecureStore's keystore entries are invalidated.
+  // Non-secret identity only — the passcode is never mirrored.
+  await writeIdentityMirror({
+    driverId,
+    driverName: displayName,
+    isAdmin: isAdmin ? "true" : "false",
+    isViewer: isViewer ? "true" : "false",
+    driverVerifiedAt: Date.now().toString(),
+    companyId: companyId || undefined,
+    companyName: companyName || undefined,
+    tier: tier || undefined,
+    rolesRaw: extra?.roles ? JSON.stringify(extra.roles) : undefined,
+    assignedRoutesRaw: extra?.assignedRoutes ? JSON.stringify(extra.assignedRoutes) : undefined,
+    assignedCustomersRaw: extra?.assignedCustomers ? JSON.stringify(extra.assignedCustomers) : undefined,
+    authMethod: authMethod || undefined,
+  });
 
   // Clear any pending registration data
   await clearPendingRegistration();
@@ -528,6 +645,15 @@ export const getDriverSession = async (): Promise<DriverSession | null> => {
       authMethod: authMethod === 'sso' || authMethod === 'manual' ? authMethod : undefined,
     };
   }
+  // SecureStore came back empty (keystore invalidation / cold start after install -r).
+  // Fall back to the durable AsyncStorage identity mirror and RE-HYDRATE SecureStore so
+  // the session self-heals. Only a genuine logout clears the mirror, so a present mirror
+  // means the driver is still signed in — do NOT show Driver Login for this.
+  const mirror = await readIdentityMirror();
+  if (mirror) {
+    await rehydrateSecureStoreFromMirror(mirror);
+    return sessionFromMirror(mirror);
+  }
   return null;
 };
 
@@ -568,12 +694,23 @@ export const revalidateDriverSession = async (): Promise<boolean> => {
 
 export async function revalidateDriverSessionClassified(): Promise<Revalidation> {
   const session = await getDriverSession();
-  if (!session) return 'revoked';
+  // A missing session at revalidation time is a HYDRATION state, not a revocation —
+  // never destroy identity on it (the startup guard already routes a truly-absent
+  // session to Driver Login via isDriverVerified()).
+  if (!session) return 'unknown';
   try {
     const { verifySessionOnServer } = await import('./firebaseAuthSession');
     const live = await verifySessionOnServer();
     if (live.active === true && live.driverId === session.driverId) return 'valid';
-    return 'revoked';
+    // Only a GENUINE identity change — the server maps this authenticated account to a
+    // DIFFERENT driver — is a revocation. Any other ambiguity (active not strictly true,
+    // missing/short-shaped fields, response drift) must NOT clear a durably-persisted
+    // valid session; hold as 'unknown' so the app waits/retries rather than silently
+    // logging the driver out.
+    if (typeof live.driverId === 'string' && live.driverId && live.driverId !== session.driverId) {
+      return 'revoked';
+    }
+    return 'unknown';
   } catch (error) {
     console.error("[DriverAuth] Server revalidation failed:", error);
     return 'unknown';
@@ -616,6 +753,7 @@ async function rollbackOwnedLogin(): Promise<void> {
       await SecureStore.deleteItemAsync(key);
     } catch { /* ignore */ }
   }
+  try { await clearIdentityMirror(); } catch { /* ignore */ }
   try {
     await clearPendingRegistration();
   } catch { /* ignore */ }
@@ -825,6 +963,8 @@ async function deleteOwnedSecureStore(permit: SessionLogoutPermit): Promise<bool
   for (const key of SESSION_SECURE_KEYS) {
     await SecureStore.deleteItemAsync(key);
   }
+  // Explicit logout is the ONLY ordinary action that clears the durable identity mirror.
+  await clearIdentityMirror();
   await clearPendingRegistration();
   return true;
 }
@@ -1050,14 +1190,26 @@ export const checkWellBuiltAccess = async (): Promise<{
  * Used for "your pull" tracking
  */
 export const getDriverId = async (): Promise<string | null> => {
-  return SecureStore.getItemAsync("driverId");
+  try {
+    const id = await SecureStore.getItemAsync("driverId");
+    if (id) return id;
+  } catch { /* fall through to the durable mirror */ }
+  // SecureStore empty/unreadable → durable identity mirror keeps the driverId so
+  // startup work (history backfill, scheduler) is never wrongly told "No driverId".
+  const mirror = await readIdentityMirror();
+  return mirror ? mirror.driverId : null;
 };
 
 /**
  * Get driver display name for the current session
  */
 export const getDriverName = async (): Promise<string | null> => {
-  return SecureStore.getItemAsync("driverName");
+  try {
+    const name = await SecureStore.getItemAsync("driverName");
+    if (name) return name;
+  } catch { /* fall through to the durable mirror */ }
+  const mirror = await readIdentityMirror();
+  return mirror ? mirror.driverName : null;
 };
 
 // Legacy stubs for compatibility (no-ops)

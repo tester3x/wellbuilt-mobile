@@ -58,6 +58,7 @@ import {
   __setBackfillTimingForTests,
   __resetBackfillStateForTests,
 } from '../pullHistory';
+import { getDriverId } from '../driverAuth';
 
 const RECENT = Date.now() - 60 * 60 * 1000; // 1h ago, well inside the 7-day window
 
@@ -280,5 +281,23 @@ describe('pullHistory startup-hang fix', () => {
     expect(a.dateTime).toBe('9/1/2026 3:10 PM');
     expect(a.sentAt).toBe(RECENT);
     expect(a.packetId).toBe('A');
+  });
+});
+
+describe('backfill defers (not permanently skips) when identity is momentarily unavailable', () => {
+  test("no driverId at startup → status 'auth' (deferred), local history kept; identity later → backfill runs", async () => {
+    seedLocal([localEntry()]);
+    // Identity NOT ready on the first pass (hydration in flight).
+    (getDriverId as jest.Mock).mockResolvedValueOnce(null);
+    const first = await refreshFromServer();
+    expect(first).toBe('auth');                 // deferred, NOT a successful 'ok' empty scan
+    expect(getLastBackfillStatus()).toBe('auth');
+    // Local history is untouched by the deferral.
+    expect((await getPullHistory()).length).toBeGreaterThan(0);
+
+    // Identity now hydrated (mirror/SecureStore) → a subsequent pass actually scans.
+    (global as any).fetch = httpFetch(200, {});
+    const second = await refreshFromServer();
+    expect(second).toBe('ok');                  // re-runs — never permanently skipped
   });
 });

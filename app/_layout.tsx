@@ -20,6 +20,7 @@ import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/s
 import { startDeliveryReconciler } from '../src/services/deliveryStatus';
 import { startEditDelivery, setDeliveryForeground } from '../src/services/editDelivery';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
+import { resumePullHistoryBackfillOnAuth } from '../src/services/pullHistory';
 import { performPermittedLogout } from '../src/services/driverAuth';
 import { checkCanonicalSsoLogout } from '../src/services/ssoLogout';
 
@@ -110,6 +111,10 @@ export default function RootLayout() {
     // Ordered edit delivery (GS3): dependent edits survive restart and
     // release only after their original pull is confirmed processed.
     startEditDelivery();
+
+    // Resume the cross-app history backfill once a Firebase user hydrates on cold
+    // start, so a momentary startup "No driverId" never permanently skips queued work.
+    resumePullHistoryBackfillOnAuth();
 
     // Flush any packets that were queued while app was closed
     flushQueue();

@@ -240,9 +240,13 @@ async function backfillFromFirebase(): Promise<BackfillResult> {
     driverId = null;
   }
   if (!driverId) {
-    // No identity yet — nothing to scan for. NOT an error; local history stands.
-    console.log("[PullHistory] No driverId — skipping backfill");
-    return { status: 'ok', entries: [] };
+    // Identity NOT READY yet (hydration in flight) — do NOT treat this as a
+    // successful empty scan ('ok' would latch backfillAttempted and permanently
+    // skip queued work this session). Return 'auth' so refreshFromServer re-arms
+    // the once-per-session gate and a later trigger (auth-ready / foreground /
+    // screen open) re-runs the backfill once driverId hydrates. Local history stands.
+    console.log("[PullHistory] No driverId yet — deferring backfill until identity hydrates");
+    return { status: 'auth', entries: [] };
   }
 
   // OFFLINE pre-check: never even open the large company scan while disconnected.
@@ -520,6 +524,10 @@ export function refreshFromServer(): Promise<BackfillStatus> {
       console.log(`[PullHistory] backfill ${status}; retry in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`);
       await sleep(delay);
     }
+    // Identity/auth was not ready ('auth' — e.g. driverId hydrating, token refreshing).
+    // RE-ARM the once-per-session gate so the very next trigger re-runs the backfill
+    // after hydration completes; a temporary "No driverId" must never permanently skip.
+    if (status === 'auth') backfillAttempted = false;
     return status;
   })();
   backfillInFlight = run;
@@ -579,6 +587,26 @@ export async function loadPullHistory(): Promise<PullHistoryEntry[]> {
     cachedHistory = [];
     return cachedHistory;
   }
+}
+
+/** Resume the cross-app history backfill the moment a Firebase user becomes
+ *  available — login, SSO, or COLD-START restore. A startup pass that found the
+ *  driver identity not-ready re-armed the once-per-session gate ('auth'); this
+ *  auth-ready subscription retries it automatically once identity/token hydrate,
+ *  so a temporary "No driverId" never permanently skips queued work. Idempotent;
+ *  wired once from the app root. */
+let _authReadyBackfillUnsub: (() => void) | null = null;
+export function resumePullHistoryBackfillOnAuth(): void {
+  if (_authReadyBackfillUnsub) return;
+  void (async () => {
+    try {
+      const { subscribeAuthReady } = await import('./firebaseAuthSession');
+      _authReadyBackfillUnsub = subscribeAuthReady(() => {
+        backfillAttempted = false; // re-arm the once-per-session gate
+        void refreshFromServer();
+      });
+    } catch { /* non-fatal — screen-open triggers still re-run the re-armed backfill */ }
+  })();
 }
 
 /**

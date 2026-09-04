@@ -266,7 +266,11 @@
     "toastEditSavedBody": "It will send after {{wellName}}'s pull is confirmed.",
     "toastSavedOnPhoneTitle": "Saved on this phone",
     "toastSavedOnPhoneBody": "{{wellName}} will send automatically when you're back online.",
-    "bottomHint": "Bottom: {{hint}}"
+    "bottomHint": "Bottom: {{hint}}",
+    "busySendingPull": "Sending pull…",
+    "busySavingEdit": "Saving edit…",
+    "busyStillSending": "Still sending…",
+    "busyStillSaving": "Still saving…"
   },
   "well": {
     "wellIsDown": "Well is down",
@@ -846,5 +850,12 @@
     "firebaseWrite": "Could not save data. Please try again.",
     "updateRequired": "This feature is unavailable. Please update the app.",
     "dependencyBlocked": "Saved — will send when the server supports it."
+  },
+  "busy": {
+    "saving": "Saving…",
+    "deleting": "Deleting…",
+    "loading": "Loading…",
+    "working": "Working…",
+    "stillWorking": "Still working…"
   }
 }

@@ -266,7 +266,11 @@
     "toastEditSavedBody": "Se enviará cuando se confirme la extracción de {{wellName}}.",
     "toastSavedOnPhoneTitle": "Guardado en este teléfono",
     "toastSavedOnPhoneBody": "{{wellName}} se enviará automáticamente cuando vuelvas a estar en línea.",
-    "bottomHint": "Fondo: {{hint}}"
+    "bottomHint": "Fondo: {{hint}}",
+    "busySendingPull": "Enviando extracción…",
+    "busySavingEdit": "Guardando edición…",
+    "busyStillSending": "Aún enviando…",
+    "busyStillSaving": "Aún guardando…"
   },
   "well": {
     "wellIsDown": "Pozo apagado",
@@ -846,5 +850,12 @@
     "firebaseWrite": "No se pudieron guardar los datos. Inténtelo de nuevo.",
     "updateRequired": "Esta función no está disponible. Actualice la aplicación.",
     "dependencyBlocked": "Guardado — se enviará cuando el servidor lo admita."
+  },
+  "busy": {
+    "saving": "Guardando…",
+    "deleting": "Eliminando…",
+    "loading": "Cargando…",
+    "working": "Procesando…",
+    "stillWorking": "Aún procesando…"
   }
 }

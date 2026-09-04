@@ -2,7 +2,6 @@
 // Firebase Realtime Database version - replaces OneDrive/Graph API
 // Much simpler: no OAuth, no access tokens, just HTTP calls to Firebase
 
-import { getDriverId, getDriverName } from './driverAuth';
 import { loadWellConfig, getWellConfig, WellConfigMap } from './wellConfig';
 import { packetShowsEditBadge, selectVisibleHistoryPackets } from './editMarkers';
 import { reviewSignalsFromPacket } from '../utils/reviewSignals';
@@ -306,9 +305,11 @@ export const uploadTankPacket = async (params: {
   // Get device timezone (IANA format like "America/Chicago")
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  // Get current driver info for "your pull" tracking
-  const driverId = await getDriverId();
-  const driverName = await getDriverName();
+  // NOTE: driver identity is NOT read here. The server stamps the authenticated
+  // driver from the ID token on the callable; the wire packet never carried it.
+  // Two prior driver-identity SecureStore keystore reads sat on the online-submit
+  // critical path with their results discarded — removed as dead, blocking
+  // latency. See BUSY-STATE-CONTRACT.md (latency section).
 
   const { buildWbmPullCommand } = await import('./wbmPullCommand');
   const packet = buildWbmPullCommand({
@@ -325,8 +326,6 @@ export const uploadTankPacket = async (params: {
     wellDownIsAuthoritative: wellDownIsAuthoritative === false ? false : true,
     predictedLevelInches: predictedLevelInches ?? undefined,
   }) as unknown as TankPacket;
-  void driverId;
-  void driverName;
 
   // Dual-run: secure callable first; legacy RTDB while rules remain open
   try {
@@ -353,7 +352,7 @@ export const uploadTankPacket = async (params: {
   const uploadMs = Date.now() - uploadStart;
   console.log(`[Packet] ✅ UPLOADED in ${uploadMs}ms at ${new Date().toLocaleTimeString()}:`, packetId);
 
-  console.log("[Packet] Uploaded:", packetId, "by driver:", driverName || "unknown");
+  console.log("[Packet] Uploaded:", packetId);
 
   return {
     fileName: `pull_${timestamp}_${wellNameClean}.json`, // For compatibility

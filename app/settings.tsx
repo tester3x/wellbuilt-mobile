@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { createSingleFlight } from "../src/utils/singleFlight";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -304,41 +305,48 @@ export default function SettingsScreen() {
     setShowRecipientModal(true);
   };
 
+  // One-save-per-tap guards (shared primitive) so a double-tap can't create a
+  // duplicate recipient / double-write the template.
+  const saveRecipientFlight = useRef(createSingleFlight());
+  const saveTemplateFlight = useRef(createSingleFlight());
+
   const handleSaveRecipient = async () => {
     if (!recipientForm.name.trim() || !recipientForm.phone.trim()) {
       alert.show(t('record.errorGenericTitle'), t('settings.errorRequired'));
       return;
     }
 
-    // Build custom template if enabled and has content
-    let customTemplate: MessageTemplate | undefined;
-    if (recipientForm.useCustomTemplate && recipientForm.customTemplateText.trim()) {
-      const fields = parseTemplatePlaceholders(recipientForm.customTemplateText);
-      customTemplate = {
-        template: recipientForm.customTemplateText,
-        fields,
-      };
-    }
+    await saveRecipientFlight.current.run(async () => {
+      // Build custom template if enabled and has content
+      let customTemplate: MessageTemplate | undefined;
+      if (recipientForm.useCustomTemplate && recipientForm.customTemplateText.trim()) {
+        const fields = parseTemplatePlaceholders(recipientForm.customTemplateText);
+        customTemplate = {
+          template: recipientForm.customTemplateText,
+          fields,
+        };
+      }
 
-    if (editingRecipient) {
-      await updateRecipient(editingRecipient.id, {
-        name: recipientForm.name.trim(),
-        phone: recipientForm.phone.trim(),
-        channel: recipientForm.channel,
-        customTemplate,
-      });
-    } else {
-      await addRecipient({
-        name: recipientForm.name.trim(),
-        phone: recipientForm.phone.trim(),
-        channel: recipientForm.channel,
-        enabled: true,
-        customTemplate,
-      });
-    }
+      if (editingRecipient) {
+        await updateRecipient(editingRecipient.id, {
+          name: recipientForm.name.trim(),
+          phone: recipientForm.phone.trim(),
+          channel: recipientForm.channel,
+          customTemplate,
+        });
+      } else {
+        await addRecipient({
+          name: recipientForm.name.trim(),
+          phone: recipientForm.phone.trim(),
+          channel: recipientForm.channel,
+          enabled: true,
+          customTemplate,
+        });
+      }
 
-    await loadDispatchSettings();
-    setShowRecipientModal(false);
+      await loadDispatchSettings();
+      setShowRecipientModal(false);
+    });
   };
 
   const handleDeleteRecipient = (id: string) => {
@@ -377,14 +385,16 @@ export default function SettingsScreen() {
   };
 
   const handleSaveTemplate = async () => {
-    const template: MessageTemplate = {
-      template: templateText,
-      fields: templateFields,
-    };
-    await saveMessageTemplate(template);
-    setMessageTemplate(template);
-    setShowTemplateModal(false);
-    alert.show(t('settings.savedTitle'), t('settings.templateSavedBody'));
+    await saveTemplateFlight.current.run(async () => {
+      const template: MessageTemplate = {
+        template: templateText,
+        fields: templateFields,
+      };
+      await saveMessageTemplate(template);
+      setMessageTemplate(template);
+      setShowTemplateModal(false);
+      alert.show(t('settings.savedTitle'), t('settings.templateSavedBody'));
+    });
   };
 
   // Simple field detection from template text

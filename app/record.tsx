@@ -28,6 +28,8 @@ import { hp, spacing, wp } from '../src/ui/layout';
 import { resolveWellDownForSubmit } from '../src/utils/wellDownAuthority';
 import { finalizeEdit } from '../src/domain/wbmEditForm';
 import { formatAppDate, formatAppTime } from '../src/i18n/format';
+import { WellBuiltBusyOverlay } from '../src/components/WellBuiltBusyOverlay';
+import { startSubmitTrace, type SubmitOutcome } from '../src/telemetry/submitTiming';
 import {
   MeasurementKeypadDismissOverlay,
   MeasurementKeypadProvider,
@@ -161,6 +163,9 @@ function RecordScreenInner() {
   const [wellDown, setWellDown] = useState(false);
   const [isAlreadyDown, setIsAlreadyDown] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  // Synchronous one-operation-per-tap guard (independent of the isSending render
+  // state) so a duplicate submit can never start while one is awaiting the network.
+  const submitInFlightRef = useRef(false);
 
   // Custom alert hook
   const alert = useAppAlert();
@@ -548,6 +553,10 @@ function RecordScreenInner() {
   };
 
   const handleSubmit = async (committed?: { barrels?: string; level?: string }) => {
+    // Privacy-safe phase timing (operational metadata only — no identity/values).
+    const trace = startSubmitTrace(isEditMode ? 'edit' : 'create');
+    trace.mark('tap');
+    let submitOutcome: SubmitOutcome = 'failure';
     const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
     const levelValue = committed?.level ?? committedLevelRef.current ?? level;
 
@@ -607,6 +616,13 @@ function RecordScreenInner() {
       return;
     }
     const tankLevelFeet = parseLevel(levelValue);
+    trace.mark('validation');
+
+    // One operation per tap: block a duplicate submit (keypad Done re-fire, edit
+    // Save double-tap) during the network await. The guard is set before the
+    // first await; existing idempotency/durable-queue behavior stays authoritative.
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
 
     try {
       setIsSending(true);
@@ -724,6 +740,7 @@ function RecordScreenInner() {
         // for attention (rejected original / legacy identity). Carries the
         // deterministic CHANGED-ONLY mask + Well-Down authority + immutable
         // original snapshot + content digest from finalize.
+        trace.mark('requestBegin');
         const editOutcome = await submitPullEdit({
           originalPacketTimestamp: editPacketTimestamp,
           originalPacketId: editId,
@@ -738,6 +755,14 @@ function RecordScreenInner() {
           originalSnapshot,
           payloadDigest: finalized.canonicalString,
         });
+        trace.mark('serverAck');
+        // Durably stored (merged/held/op) → queued unless it uploaded now.
+        submitOutcome =
+          editOutcome.mode === 'blocked'
+            ? 'failure'
+            : editOutcome.mode === 'uploading'
+              ? 'success'
+              : 'queued';
 
         // Update the entry's VALUES locally — but never claim '(edited)'
         // here: that marker appears only on server confirmation
@@ -752,6 +777,7 @@ function RecordScreenInner() {
           // time actually changed (Hard Blocker 1); non-time edits leave order intact.
           { markEdited: false, dateTimeUTC: minuteChanged ? dateTimeUTCString : undefined }
         );
+        trace.mark('durableWrite');
 
         // Bottom level after pull — the SAME shared calc as the live preview,
         // the wire payload, and the server row (finalize.bottomInches, in feet).
@@ -777,6 +803,7 @@ function RecordScreenInner() {
           dateTimeUTCString,        // lastPullDateTimeUTC - use for level calculations
           true                      // forceUpdate - skip timestamp check for edits
         );
+        trace.mark('reconcile');
 
         // Save pending pull for drain animation on main screen (same as new pull)
         // isEdit flag tells main screen to skip immediate response check (old response still exists)
@@ -850,6 +877,7 @@ function RecordScreenInner() {
         // through upload/queue/replay, Pull History, and Firebase — replays
         // are idempotent and history reconciles by this same id.
         const packetId = mintPacketId(wellName);
+        trace.mark('requestBegin');
         const uploadResult = await smartUploadTankPacket({
           packetId,
           wellName,
@@ -861,6 +889,8 @@ function RecordScreenInner() {
           wellDownIsAuthoritative: wellDownAuthoritativeFinal, // false when untouched → server preserves canonical
           predictedLevelInches,               // What driver saw - for performance tracking
         });
+        trace.mark('serverAck');
+        submitOutcome = uploadResult.queued ? 'queued' : 'success';
 
         // History carries the SAME stable id whether the upload succeeded
         // or queued — no invented queued_* ids, no identity break.
@@ -879,6 +909,7 @@ function RecordScreenInner() {
           // reconciler confirms 'sent' once packets/processed shows it.
           uploadResult.success ? 'submitted' : 'pending_sync'
         );
+        trace.mark('durableWrite');
 
         // Save to local history for future level estimates
         await saveWellPull(wellName, levelAfterPull, bblsTakenNum, dateTimeString);
@@ -901,6 +932,7 @@ function RecordScreenInner() {
           undefined,           // flowRateMinutes (not available yet)
           dateTimeUTCString    // lastPullDateTimeUTC - use for level calculations
         );
+        trace.mark('reconcile');
 
         // Only save pending pull for animation if we actually sent to Firebase
         // (Don't show waiting animation for queued packets)
@@ -954,7 +986,14 @@ function RecordScreenInner() {
     } catch (error) {
       console.error('Upload failed', error);
       alert.show(t('record.errorGenericTitle'), error instanceof Error ? error.message : t('record.sendFailedFallback'));
+      submitOutcome = 'failure';
+    } finally {
+      // Always clear busy + guard — success, failure, no-op, or thrown — so the
+      // overlay can never get stuck and a subsequent submit is never wedged.
+      submitInFlightRef.current = false;
       setIsSending(false);
+      trace.mark('navigate');
+      trace.end(submitOutcome);
     }
   };
 
@@ -1294,6 +1333,17 @@ function RecordScreenInner() {
       {/* Custom Alert Modal */}
       <alert.AlertComponent />
       <MeasurementKeypadSlot doneEnabled={keypadDoneEnabled} />
+
+      {/* Canonical blocking busy state — paints only if the submit runs past
+          ~200ms (no flash for instant submits), dims the form, and relabels to
+          "Still…" after ~5s. Driven by isSending; the finally in handleSubmit
+          guarantees it clears on success, failure, no-op, and unmount. */}
+      <WellBuiltBusyOverlay
+        visible={isSending}
+        label={isEditMode ? t('record.busySavingEdit') : t('record.busySendingPull')}
+        longLabel={isEditMode ? t('record.busyStillSaving') : t('record.busyStillSending')}
+        testID="record-busy-overlay"
+      />
     </View>
     </MeasurementKeypadDismissOverlay>
   );

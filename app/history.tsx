@@ -317,9 +317,28 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
                       </View>
                     ))}
                     {editDetail.correctionCount > 1 && (
-                      <Text style={styles.editedHeaderNoteText}>
-                        {editDetail.correctionCount} corrections
-                      </Text>
+                      <View style={styles.correctionsList}>
+                        <Text style={styles.correctionsHeader}>
+                          {t('history.allCorrections', { defaultValue: 'All corrections' })} ({editDetail.correctionCount})
+                        </Text>
+                        {/* Every individual correction, chronological — so a round-trip
+                            (e.g. 140→145→140) stays inspectable and no correction is
+                            hidden just because the NET returned to its original value. */}
+                        {editDetail.corrections.map((corr, ci) => (
+                          <View key={corr.editEventId || `corr-${ci}`} style={styles.correctionItem}>
+                            <Text style={styles.correctionTime}>
+                              {ci + 1}. {formatAppDateTime(corr.appliedAtUTC || corr.correctionCreatedAtUTC || '')}
+                            </Text>
+                            {corr.changes.map((ch, i) => (
+                              <Text key={`${ch.field}-${i}`} style={styles.correctionChange}>
+                                {t(changeFieldLabelKey(ch.field))}: {formatChangeValue(ch.field, ch.before, t)}
+                                {'  →  '}
+                                {formatChangeValue(ch.field, ch.after, t)}
+                              </Text>
+                            ))}
+                          </View>
+                        ))}
+                      </View>
                     )}
                   </>
                 ) : editDetail === 'loading' || editDetail === null ? (
@@ -1245,6 +1264,35 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#92400E',
+  },
+  correctionsList: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#374151',
+  },
+  correctionsHeader: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  correctionItem: {
+    marginBottom: 6,
+    paddingLeft: 4,
+  },
+  correctionTime: {
+    color: '#D1D5DB',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  correctionChange: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    lineHeight: 15,
+    paddingLeft: 10,
   },
   entryCardEdited: {
     borderColor: "#92400E",

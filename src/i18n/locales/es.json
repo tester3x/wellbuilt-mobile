@@ -295,6 +295,7 @@
     "editPendingDetail": "Esta corrección está guardada en el teléfono y espera confirmación del servidor. Aún no está marcada como Editado.",
     "editFailedDetail": "Esta corrección no se pudo enviar. Use Estado de Sincronización para reintentar. No está marcada como Editado.",
     "editRejectedDetail": "El servidor rechazó esta corrección. No está marcada como Editado.",
+    "allCorrections": "Todas las correcciones",
     "pullsCount_one": "{{count}} extracción",
     "pullsCount_other": "{{count}} extracciones",
     "footerTotals": "{{pulls}} • {{bbls}} BBLs"

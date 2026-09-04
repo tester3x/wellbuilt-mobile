@@ -295,6 +295,7 @@
     "editPendingDetail": "This correction is saved on the phone and is waiting for server confirmation. It is not marked Edited yet.",
     "editFailedDetail": "This correction failed to send. Use Sync Status to retry. It is not marked Edited.",
     "editRejectedDetail": "The server rejected this correction. It is not marked Edited.",
+    "allCorrections": "All corrections",
     "pullsCount_one": "{{count}} pull",
     "pullsCount_other": "{{count}} pulls",
     "footerTotals": "{{pulls}} • {{bbls}} BBLs"

@@ -20,7 +20,6 @@ import {
 import { getFirebaseDatabase, waitForAuthUser } from './firebaseAuthSession';
 import * as SecureStore from 'expo-secure-store';
 import { runCancellableAttach } from './listenerAttach';
-import { decideIncomingVersionEvent, loadAppliedIncomingVersion, peekAppliedIncomingVersion } from './incomingVersion';
 import {
   INCOMING_REVISION_V2_PATH,
   decideRevisionV2Event,
@@ -357,64 +356,17 @@ export function cancelWaitForWellResponseChange(wellName: string): void {
   }
 }
 
-/**
- * Watch incoming_version for changes - just like Excel does
- * When it changes, the callback is fired so app can fetch updated responses
- */
-export function watchIncomingVersion(
-  onChange: (version: number) => void,
-  getApplied: () => number | null = peekAppliedIncomingVersion,
-): () => void {
-  const db = getFirebaseDatabase();
-  const versionRef = ref(db, 'packets/incoming_version');
-
-  let seenThisAttach = false;
-  // Use unique ID to allow multiple watchers without conflicts
-  const listenerId = `incoming_version_${Date.now()}`;
-
-  console.log('[FirebaseListener] Setting up incoming_version watcher:', listenerId);
-
-  const unsubscribe = onValue(versionRef, (snapshot) => {
-    const currentVersion = snapshot.val();
-    const isFirst = !seenThisAttach;
-    seenThisAttach = true;
-    const handle = async () => {
-      if (isFirst) {
-        await loadAppliedIncomingVersion();
-      }
-      const applied = getApplied();
-      const decision = decideIncomingVersionEvent({
-        appliedVersion: applied,
-        incomingVersion: currentVersion,
-        seenThisAttach: !isFirst,
-      });
-      console.log('[FirebaseListener] onValue fired - current:', currentVersion, 'applied:', applied, 'first:', isFirst, 'decision:', decision);
-      if (decision === 'sync') {
-        console.log('[FirebaseListener] incoming_version requires sync:', applied, '->', currentVersion);
-        onChange(Number(currentVersion));
-      }
-    };
-    void handle();
-  }, (error) => {
-    console.error('[FirebaseListener] Error watching incoming_version:', error);
-  });
-
-  activeListeners.set(listenerId, unsubscribe);
-
-  console.log('[FirebaseListener] Watching incoming_version');
-
-  return () => {
-    unsubscribe();
-    activeListeners.delete(listenerId);
-    console.log('[FirebaseListener] Stopped watching incoming_version:', listenerId);
-  };
-}
+// watchIncomingVersion (the packets/incoming_version backup listener) was
+// retired 2026-09-08. The production counter is saturated (~4.3e20) so it can
+// no longer signal change, and incoming_revision_v2 (below) is its
+// inequality-based successor. The company-scoped packets/outgoing realtime
+// path (subscribeToOutgoing) remains the primary refresh trigger.
 
 /**
- * Watch the v2 refresh token (Phase 2 dual contract). Fires onChange when the
- * TOKEN DIFFERS from the applied one — inequality, never numeric order. The
- * legacy watchIncomingVersion stays attached during the migration; the
- * caller's coalesced runner makes a double fire refresh once.
+ * Watch the v2 refresh token. Fires onChange when the TOKEN DIFFERS from the
+ * applied one — inequality, never numeric order — so it is immune to the
+ * counter saturation that retired the legacy incoming_version watcher. This is
+ * now the sole version-key refresh trigger alongside the packets/outgoing path.
  */
 export function watchIncomingRevisionV2(
   onChange: (token: string) => void,

@@ -5,7 +5,7 @@
 // Instead of downloading ALL data every 5 seconds, we subscribe once
 // and Firebase pushes only CHANGES to us. ~99% bandwidth reduction.
 
-import { subscribeToOutgoing, unsubscribeAll, isListening, watchIncomingVersion, watchIncomingRevisionV2 } from "./firebaseListener";
+import { subscribeToOutgoing, unsubscribeAll, isListening, watchIncomingRevisionV2 } from "./firebaseListener";
 import { saveLevelSnapshot, getLevelSnapshotSync, clearPendingPull } from "./wellHistory";
 import {
   isDownLevelToken,
@@ -17,7 +17,6 @@ import {
   captureAndApplyOutgoingStatus,
   loadAppliedIncomingVersion,
   markIncomingVersionApplied,
-  peekAppliedIncomingVersion,
 } from "./incomingVersion";
 import { loadAppliedRevisionV2, markRevisionV2Applied } from "./revisionV2";
 
@@ -42,7 +41,9 @@ const loadWellAlerts = async () => {
 let syncTimer: ReturnType<typeof setInterval> | null = null; // Keep for legacy, but unused
 let isSyncing = false;
 let listenerUnsubscribe: (() => void) | null = null;
-let versionUnsubscribe: (() => void) | null = null; // For incoming_version watcher
+// incoming_version backup listener retired 2026-09-08 — the company-scoped
+// packets/outgoing realtime path (METHOD 1) plus the incoming_revision_v2
+// watcher (METHOD 2) fully cover refresh; the legacy counter is saturated.
 let revisionV2Unsubscribe: (() => void) | null = null; // For incoming_revision_v2 watcher (Phase 2)
 let justDidSync = false; // Skip initial load if we just synced via REST
 let versionRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -309,9 +310,11 @@ export async function syncOnForeground(): Promise<number> {
  *
  * Uses TWO mechanisms for reliability:
  * 1. Firebase SDK listeners on outgoing/ (real-time push when working)
- * 2. incoming_version watcher (like Excel does) - when version changes, fetch all responses
+ * 2. incoming_revision_v2 watcher - when the refresh token changes, fetch all responses
  *
- * The version watcher is more reliable on mobile where WebSocket connections can drop.
+ * The revision-v2 watcher is more reliable on mobile where WebSocket connections
+ * can drop. (The legacy incoming_version backup listener was retired 2026-09-08;
+ * incoming_revision_v2 is its saturation-proof successor.)
  */
 function scheduleVersionCompletionRetry(): void {
   if (versionRetryTimer) return;
@@ -334,7 +337,6 @@ export function startBackgroundSync(): void {
   }
 
   console.log('[BackgroundSync] Starting Firebase listeners');
-  void loadAppliedIncomingVersion();
 
   // METHOD 1: Subscribe to outgoing responses directly
   // Firebase will call our callback whenever data changes (if WebSocket is connected)
@@ -370,18 +372,10 @@ export function startBackgroundSync(): void {
     }
   );
 
-  // METHOD 2: Watch incoming_version. First snapshot after reattach compares
-  // against the last successfully applied version — a missed increment syncs.
-  versionUnsubscribe = watchIncomingVersion((version) => {
-    console.log('[BackgroundSync] incoming_version changed - fetching updated responses', version);
-    void runOutgoingStatusSync().then(() => {
-      scheduleVersionCompletionRetry();
-    });
-  }, peekAppliedIncomingVersion);
-
-  // METHOD 3 (Phase 2 dual contract): watch the v2 refresh token. Both
-  // watchers funnel into the SAME coalesced runner, so legacy + v2 firing for
-  // one mutation refresh exactly once.
+  // METHOD 2: Watch the incoming_revision_v2 refresh token. It fires onChange
+  // when the TOKEN DIFFERS from the applied one (inequality, never numeric
+  // order), so it is immune to the saturation that retired incoming_version.
+  // Funnels into the SAME coalesced runner as METHOD 1's fetch path.
   void loadAppliedRevisionV2();
   revisionV2Unsubscribe = watchIncomingRevisionV2((token) => {
     console.log('[BackgroundSync] incoming_revision_v2 changed - fetching updated responses', token);
@@ -414,13 +408,6 @@ export function stopBackgroundSync(): void {
     revisionV2Unsubscribe();
     revisionV2Unsubscribe = null;
     console.log('[BackgroundSync] Stopped revision v2 watcher');
-  }
-
-  // Unsubscribe from version watcher
-  if (versionUnsubscribe) {
-    versionUnsubscribe();
-    versionUnsubscribe = null;
-    console.log('[BackgroundSync] Stopped version watcher');
   }
 
   if (versionRetryTimer) {

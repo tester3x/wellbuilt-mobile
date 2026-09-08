@@ -99,14 +99,20 @@ describe('foreground / version wiring', () => {
     expect(index).not.toMatch(/onViewableItemsChanged[\s\S]{0,400}syncFromProcessedFolder/);
   });
 
-  it('watcher compares against persisted applied version, not a null baseline', () => {
-    expect(listener).toMatch(/decideIncomingVersionEvent/);
-    expect(listener).toMatch(/loadAppliedIncomingVersion/);
+  it('the incoming_version backup listener is retired — no watcher attaches to it', () => {
+    // Retired 2026-09-08: the production counter is saturated (~4.3e20) and can
+    // no longer signal change. The listener function and its subscription are gone.
+    expect(listener).not.toMatch(/export function watchIncomingVersion/);
+    expect(sync).not.toMatch(/watchIncomingVersion\(/);
+    expect(sync).not.toMatch(/incoming_version changed - fetching updated responses/);
+    // The shared coalesced runner still records the applied version for the
+    // capture-before-fetch race guard (kept for the revision-v2 path).
     expect(sync).toMatch(/markIncomingVersionApplied/);
   });
 
-  it('active second phone version event syncs through the coalesced callable once', () => {
-    expect(sync).toMatch(/incoming_version changed - fetching updated responses/);
+  it('incoming_revision_v2 event syncs through the coalesced callable once', () => {
+    expect(sync).toMatch(/incoming_revision_v2 changed - fetching updated responses/);
+    expect(sync).toMatch(/watchIncomingRevisionV2/);
     expect(sync).toMatch(/runOutgoingStatusSync/);
     expect(sync).toMatch(/createCoalescedRunner/);
     expect(sync).toMatch(/captureAndApplyOutgoingStatus/);

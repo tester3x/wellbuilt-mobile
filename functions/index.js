@@ -1206,15 +1206,9 @@ async function getLastResponseForWell(wellName) {
  * App watches this to know when new responses are ready in outgoing/
  */
 async function incrementIncomingVersion() {
-  try {
-    const snapshot = await db.ref("packets/incoming_version").once("value");
-    // Parse as integer to prevent string concatenation (e.g., "85" + 1 = "851")
-    const currentVersion = parseInt(snapshot.val(), 10) || 0;
-    await db.ref("packets/incoming_version").set(currentVersion + 1);
-    console.log(`Incremented incoming_version to ${currentVersion + 1}`);
-  } catch (error) {
-    console.error("Error incrementing incoming_version:", error);
-  }
+  // Publication is owned by Dashboard processIncomingPull after outgoing.
+  // Never concatenate; never +1 a value that cannot change in IEEE-754.
+  return;
 }
 
 /**

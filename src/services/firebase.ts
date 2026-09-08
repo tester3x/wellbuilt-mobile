@@ -242,17 +242,9 @@ export const isVbaOnline = async (): Promise<boolean> => {
  * This reduces VBA's bandwidth by ~90% when idle
  */
 const incrementIncomingVersion = async (): Promise<void> => {
-  try {
-    // Read current version
-    const current = await firebaseGet(INCOMING_VERSION_PATH);
-    const currentVersion = current ? parseInt(current, 10) : 0;
-
-    // Write incremented version
-    await firebasePut(INCOMING_VERSION_PATH, (currentVersion + 1).toString());
-  } catch (error) {
-    // Non-fatal - VBA will still work, just slightly less efficient
-    console.log("[Firebase] Failed to increment incoming version:", error);
-  }
+  // Dashboard processIncomingPull owns publication after outgoing.
+  // Do not write packets/incoming_version (concat / poison +1).
+  return;
 };
 
 // --- PUSH: uploadTankPacket -----------------------------------------

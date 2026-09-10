@@ -743,7 +743,10 @@
     "connectionTimeout": "Connection timed out. Please sign in manually.",
     "connectionError": "Connection error. Please sign in manually.",
     "enterLegalName": "Enter your full legal name",
-    "usedOnTickets": "Used on printed tickets, invoices, and payroll"
+    "usedOnTickets": "Used on printed tickets, invoices, and payroll",
+    "enterJoinCode": "Enter the 8-character company join code",
+    "joinCodePlaceholder": "Company join code",
+    "joinCodeHint": "The 8-character code your employer gave you — separate from the company name."
   },
   "performance": {
     "title": "Performance",

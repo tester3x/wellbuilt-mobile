@@ -78,11 +78,17 @@ export default function DriverLoginScreen() {
   const [displayName, setDisplayName] = useState('');
   const [legalName, setLegalName] = useState('');
   const [companyName, setCompanyName] = useState('');
+  // Company join code — separate from Company Name. The deployed
+  // requestDriverRegistration callable requires an 8-character code
+  // (normalizeCompanyJoinCode = uppercase, strip non-[A-Z0-9]) and resolves
+  // it server-side to the company; company NAME alone can never join.
+  const [companyCode, setCompanyCode] = useState('');
   const [error, setError] = useState('');
   const [pendingName, setPendingName] = useState('');
   const [showPasscode, setShowPasscode] = useState(false);
   const legalNameRef = useRef<TextInput>(null);
   const companyRef = useRef<TextInput>(null);
+  const companyCodeRef = useRef<TextInput>(null);
   const passcodeRef = useRef<TextInput>(null);
   const [passcodeError, setPasscodeError] = useState('');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -274,6 +280,15 @@ export default function DriverLoginScreen() {
       return;
     }
 
+    // Company join code — normalize to the server contract (uppercase, strip
+    // non-[A-Z0-9]) and require the full 8 characters before submitting. The
+    // server re-validates and resolves it; this is a UX pre-check only.
+    const normalizedCode = companyCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (normalizedCode.length !== 8) {
+      setError(t('loginExtra.enterJoinCode', 'Enter the 8-character company join code'));
+      return;
+    }
+
     setMode('registering');
     setError('');
 
@@ -286,12 +301,14 @@ export default function DriverLoginScreen() {
         return;
       }
 
-      // Submit registration
+      // Submit registration — companyCode is the governed join key the server
+      // resolves to the company; companyName stays free-text context only.
       const result = await submitRegistration({
         passcode: passcode.trim(),
         displayName: displayName.trim(),
         companyName: companyName.trim(),
         legalName: legalName.trim(),
+        companyCode: normalizedCode,
       });
 
       if (result.success) {
@@ -629,10 +646,28 @@ export default function DriverLoginScreen() {
               autoCorrect={false}
               returnKeyType="next"
               blurOnSubmit={false}
-              onSubmitEditing={() => passcodeRef.current?.focus()}
+              onSubmitEditing={() => companyCodeRef.current?.focus()}
             />
             <Text style={styles.passcodeHint}>
               {t('driverLogin.companyHint', 'Enter the company name your employer gave you')}
+            </Text>
+
+            <TextInput
+              ref={companyCodeRef}
+              style={styles.input}
+              value={companyCode}
+              onChangeText={(v) => setCompanyCode(v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
+              placeholder={t('loginExtra.joinCodePlaceholder', 'Company join code')}
+              placeholderTextColor="#6B7280"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={8}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => passcodeRef.current?.focus()}
+            />
+            <Text style={styles.passcodeHint}>
+              {t('loginExtra.joinCodeHint', 'The 8-character code your employer gave you — separate from the company name.')}
             </Text>
 
             {renderPasscodeInput(t('driverLogin.createPasscode'))}
@@ -650,10 +685,10 @@ export default function DriverLoginScreen() {
             <TouchableOpacity
               style={[
                 styles.button,
-                (!passcode.trim() || !displayName.trim() || !legalName.trim() || !!passcodeError) && styles.buttonDisabled,
+                (!passcode.trim() || !displayName.trim() || !legalName.trim() || companyCode.length !== 8 || !!passcodeError) && styles.buttonDisabled,
               ]}
               onPress={handleRegister}
-              disabled={!passcode.trim() || !displayName.trim() || !legalName.trim() || !!passcodeError}
+              disabled={!passcode.trim() || !displayName.trim() || !legalName.trim() || companyCode.length !== 8 || !!passcodeError}
             >
               <Text style={styles.buttonText}>{t('driverLogin.submitRegistration')}</Text>
             </TouchableOpacity>

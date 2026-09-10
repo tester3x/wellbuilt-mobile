@@ -48,9 +48,15 @@ export async function secureRegister(params: {
   passcode: string;
   companyName?: string;
   legalName?: string;
+  companyCode?: string;
 }) {
+  // Normalize to the server contract (uppercase, strip non-[A-Z0-9]) so the
+  // wire value matches normalizeCompanyJoinCode exactly. The server
+  // re-validates length (8) and resolves the code to the company.
+  const companyCode = String(params.companyCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   return callUnauthed<{ pendingId: string; status: string }>('requestDriverRegistration', {
     ...params,
+    companyCode,
     source: 'wbm',
   });
 }

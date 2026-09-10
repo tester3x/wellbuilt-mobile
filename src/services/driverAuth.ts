@@ -923,6 +923,9 @@ export const submitRegistration = async (params: {
   displayName: string;
   companyName?: string;
   legalName?: string;
+  /** 8-char governed company join code (normalized upstream). Resolved
+   *  server-side to the company; company NAME alone can never join. */
+  companyCode?: string;
 }): Promise<{ success: boolean; error?: string }> => {
   console.log("[DriverAuth] Submitting registration for:", params.displayName);
 

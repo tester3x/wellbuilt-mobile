@@ -743,7 +743,10 @@
     "connectionTimeout": "Tiempo de conexión agotado. Inicie sesión manualmente.",
     "connectionError": "Error de conexión. Inicie sesión manualmente.",
     "enterLegalName": "Ingrese su nombre legal completo",
-    "usedOnTickets": "Usado en tickets impresos, facturas y nómina"
+    "usedOnTickets": "Usado en tickets impresos, facturas y nómina",
+    "enterJoinCode": "Ingrese el código de acceso de 8 caracteres de la empresa",
+    "joinCodePlaceholder": "Código de acceso de la empresa",
+    "joinCodeHint": "El código de 8 caracteres que le dio su empleador — distinto del nombre de la empresa."
   },
   "performance": {
     "title": "Rendimiento",

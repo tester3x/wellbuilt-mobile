@@ -21,7 +21,10 @@ function bounded(v: unknown): string | undefined {
 export async function governedClientBuildMeta(): Promise<ClientBuildMeta | undefined> {
   const meta: ClientBuildMeta = {};
   try {
-    const { Platform } = await import('react-native');
+    // Metro's dynamic import enumerates RN's lazy exports, initializing unrelated
+    // native modules (including PushNotificationIOS) during pull submission.
+    // Read only Platform so optional native modules are never initialized here.
+    const { Platform } = require('react-native') as typeof import('react-native');
     meta.platform = bounded(Platform?.OS);
   } catch { /* non-RN test env */ }
   try {

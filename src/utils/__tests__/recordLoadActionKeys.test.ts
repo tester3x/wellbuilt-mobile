@@ -243,7 +243,7 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
     it('one Done press → one submission; repeat press finds no session', () => {
       const bblsDone = bblsBlock.slice(bblsBlock.indexOf('onDoneComplete='));
       expect(bblsDone.match(/handleSubmit\(/g)?.length).toBe(1);
-      expect(ctx).toMatch(/current\.onDone\(committed\);\s*sessionRef\.current = null;/);
+      expect(ctx).toMatch(/sessionRef\.current = null;[\s\S]*?inputRef\?\.current\?\.blur\(\);\s*Keyboard\.dismiss\(\);\s*current\.onDone\(committed\);/);
       expect(ctx).toMatch(/if \(!current \|\| !canCommitKeypadSession\(\{/);
     });
   });

@@ -766,13 +766,15 @@ export function MeasurementKeypadProvider({ children }: { children: ReactNode })
       variant: current.variant,
     });
     const inputRef = measurementInputRefs.current[current.fieldKey];
-    current.onDone(committed);
+    // Release ownership and native focus before a completion handler can
+    // submit, display a modal, navigate, or synchronously re-enter Done.
     sessionRef.current = null;
     clearNativeSelectOnFocus();
     releaseKeypadCommandSelection();
     setSession(null);
     inputRef?.current?.blur();
     Keyboard.dismiss();
+    current.onDone(committed);
   }, [clearNativeSelectOnFocus, releaseKeypadCommandSelection, sessionOwnerMismatch]);
 
   // 7/26 ticket 19858 — flush the active draft into its field without

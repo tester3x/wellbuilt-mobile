@@ -163,6 +163,7 @@ export function useAppAlert() {
     show,
     hide,
     visible,
+    alertProps: { visible, ...config, onDismiss: hide },
     AlertComponent,
   };
 }

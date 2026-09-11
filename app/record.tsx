@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAppAlert } from '../components/AppAlert';
+import { AppAlert, useAppAlert } from '../components/AppAlert';
 import { useDispatch } from '../src/contexts/DispatchContext';
 import { isCurrentUserViewer } from '../src/services/driverAuth';
 import { smartUploadTankPacket } from '../src/services/packetQueue';
@@ -1331,7 +1331,7 @@ function RecordScreenInner() {
       )}
 
       {/* Custom Alert Modal */}
-      <alert.AlertComponent />
+      <AppAlert {...alert.alertProps} />
       <MeasurementKeypadSlot doneEnabled={keypadDoneEnabled} />
 
       {/* Canonical blocking busy state — paints only if the submit runs past

@@ -331,7 +331,12 @@ export async function saveLevelSnapshot(
     // EXCEPTION: forceUpdate=true skips this check (used for edits where we need to update
     // regardless of timestamp because the user is explicitly correcting data)
     const existingSnapshot = cachedSnapshots[wellName];
-    if (!forceUpdate && existingSnapshot && existingSnapshot.timestamp > timestamp) {
+    // An unavailable placeholder is not a newer measurement. Older builds
+    // stamped empty placeholders with Date.now(), blocking every real pull
+    // before the first lookup. Keep the guard when a proven pull was retained.
+    const existingHasMeasurement = existingSnapshot &&
+      (!existingSnapshot.unavailable || !!existingSnapshot.lastPullDateTimeUTC);
+    if (!forceUpdate && existingHasMeasurement && existingSnapshot.timestamp > timestamp) {
       console.log(`[WellHistory] Skipping older response for ${wellName}: existing=${existingSnapshot.timestamp} > new=${timestamp}`);
       return; // Don't overwrite newer data with older data!
     }
@@ -395,7 +400,7 @@ export async function markLevelUnavailable(wellName: string): Promise<void> {
     const existing = cachedSnapshots[wellName];
     cachedSnapshots[wellName] = {
       levelFeet: existing?.levelFeet ?? 0,
-      timestamp: existing?.timestamp ?? Date.now(),
+      timestamp: existing?.timestamp ?? 0,
       responseTimestamp: existing?.responseTimestamp ?? '',
       isDown: false,
       unavailable: true,

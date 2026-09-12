@@ -89,6 +89,17 @@ export function diagnoseThrown(err: unknown): ConnectionDiagnosis {
   if (/unsupported_field_command/i.test(msg)) {
     return { kind: 'dependency_blocked', code: 'edit_unsupported', retryable: false };
   }
+  // A missing Cloud callable / endpoint (HTTP 404) is a backend DEPENDENCY gap,
+  // not a transient error and not driver-fixable: retrying a non-existent
+  // endpoint can NEVER succeed. Park it (dependency_blocked) so the edit shows
+  // the honest "saved — will send once the server supports it" state instead of
+  // silently burning EDIT_FAILED_THRESHOLD retries into a non-attention
+  // edit_failed. authorizedCallable throws `Callable <name> failed (404)` when
+  // the function (e.g. the not-yet-deployed ingestWbmEdit) is absent. This does
+  // NOT deliver or unpark the edit — it only classifies the failure honestly.
+  if (/callable\s+\S+\s+failed\s*\(404\)/i.test(msg) || /\b404\b/.test(msg)) {
+    return { kind: 'dependency_blocked', code: 'endpoint_unavailable', retryable: false };
+  }
   if (/functions\/invalid-argument|invalid-argument|missing_original|forged_well|idempotency_key_mismatch|invalid_bblsTaken|invalid_tankLevelFeet/i.test(msg)) {
     return { kind: 'malformed', code: 'invalid_edit', retryable: false };
   }

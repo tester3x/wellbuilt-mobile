@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   AppState,
+  DeviceEventEmitter,
   Dimensions,
   FlatList,
   Image,
@@ -34,6 +35,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { TankPelican } from '../../src/components/TankPelican';
+import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
 import {
   DUCK_FONT_SIZE,
   DUCK_LIFT_PX,
@@ -1532,6 +1534,7 @@ export default function MainScreen() {
   
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showPicker, setShowPicker] = useState(false);
+  const [showMore, setShowMore] = useState(false); // WB-M "More" sheet (Route Me / Summary / Switch Apps)
   const [tempSelectedIndex, setTempSelectedIndex] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -2373,7 +2376,7 @@ export default function MainScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Keep bottom nav accessible so user can still navigate */}
+        {/* Keep bottom nav accessible so user can still navigate (History | Pull | More) */}
         <View style={styles.bottomNav}>
           <View style={styles.navSide}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push('/history')}>
@@ -2381,16 +2384,16 @@ export default function MainScreen() {
               <Text style={styles.navLabel}>{t('nav.history')}</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.pullButton, styles.pullButtonDisabled]}
-            disabled
-          >
-            <Text style={[styles.pullButtonText, styles.pullButtonTextDisabled]}>{t('homeExtra.pull')}</Text>
-          </TouchableOpacity>
           <View style={styles.navSide}>
-            <TouchableOpacity style={styles.navButton} onPress={handleSummaryPress}>
-              <Text style={styles.navIcon}>📊</Text>
-              <Text style={styles.navLabel}>{t('nav.summary')}</Text>
+            <TouchableOpacity style={styles.navButton} disabled>
+              <Text style={[styles.navIcon, styles.navIconDisabled]}>🛢️</Text>
+              <Text style={[styles.navLabel, styles.navLabelDisabled]}>{t('homeExtra.pull')}</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.navSide}>
+            <TouchableOpacity style={styles.navButton} onPress={() => setShowMore(true)}>
+              <Text style={styles.navIcon}>•••</Text>
+              <Text style={styles.navLabel}>{t('nav.more', { defaultValue: 'More' })}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2466,7 +2469,7 @@ export default function MainScreen() {
         }
       />
 
-      {/* Bottom nav - History | Pull | Summary */}
+      {/* Bottom nav - History | Pull | More (Summary now lives in the More sheet) */}
       <View style={styles.bottomNav}>
         <View style={styles.navSide}>
           <TouchableOpacity style={styles.navButton} onPress={() => router.push('/history')}>
@@ -2475,27 +2478,58 @@ export default function MainScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={[styles.pullButton, isViewer && styles.pullButtonDisabled]}
-          onPress={handlePullPress}
-        >
-          <Text style={[styles.pullButtonText, isViewer && styles.pullButtonTextDisabled]}>
-            {isViewer ? t('homeExtra.viewOnly') : t('nav.pull')}
-          </Text>
-          {currentWellHasDraft && !isViewer && (
-            <View style={styles.draftIndicator}>
-              <Text style={styles.draftIndicatorIcon}>✏️</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        {/* Pull — primary accent, but a normal-sized icon button matching the bar. */}
+        <View style={styles.navSide}>
+          <TouchableOpacity style={styles.navButton} onPress={handlePullPress} disabled={isViewer}>
+            <Text style={[styles.navIcon, styles.navIconAccent, isViewer && styles.navIconDisabled]}>🛢️</Text>
+            <Text style={[styles.navLabel, styles.navLabelAccent, isViewer && styles.navLabelDisabled]}>
+              {isViewer ? t('homeExtra.viewOnly') : t('nav.pull')}
+            </Text>
+            {currentWellHasDraft && !isViewer && (
+              <View style={styles.draftIndicator}>
+                <Text style={styles.draftIndicatorIcon}>✏️</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.navSide}>
-          <TouchableOpacity style={styles.navButton} onPress={handleSummaryPress}>
-            <Text style={styles.navIcon}>📊</Text>
-            <Text style={styles.navLabel}>{t('nav.summary')}</Text>
+          <TouchableOpacity style={styles.navButton} onPress={() => setShowMore(true)}>
+            <Text style={styles.navIcon}>•••</Text>
+            <Text style={styles.navLabel}>{t('nav.more', { defaultValue: 'More' })}</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* WB-M "More" sheet — Route Me, Summary, Switch Apps (locked initial items). */}
+      <Modal visible={showMore} transparent animationType="fade" onRequestClose={() => setShowMore(false)}>
+        <Pressable style={styles.moreBackdrop} onPress={() => setShowMore(false)}>
+          <Pressable style={styles.moreSheet} onPress={() => {}}>
+            <View style={styles.moreHandle} />
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => { setShowMore(false); router.push('/route-me'); }}
+            >
+              <Text style={styles.moreItemIcon}>🧭</Text>
+              <Text style={styles.moreItemLabel}>{t('nav.routeMe', { defaultValue: 'Route Me' })}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => { setShowMore(false); handleSummaryPress(); }}
+            >
+              <Text style={styles.moreItemIcon}>📊</Text>
+              <Text style={styles.moreItemLabel}>{t('nav.summary')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => { setShowMore(false); DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT); }}
+            >
+              <Text style={styles.moreItemIcon}>🔀</Text>
+              <Text style={styles.moreItemLabel}>{t('nav.switchApps', { defaultValue: 'Switch Apps' })}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Well picker modal - works for both platforms */}
       <Modal visible={showPicker} transparent animationType="fade">
@@ -3202,6 +3236,44 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 2,
   },
+  // Pull is the primary action — accent color, but the SAME icon-button size as the
+  // rest of the bar (no oversized control).
+  navIconAccent: { color: '#C4A574' },
+  navLabelAccent: { color: '#C4A574', fontWeight: '700' },
+  navIconDisabled: { opacity: 0.4 },
+  navLabelDisabled: { color: '#6B7280' },
+  // "More" sheet
+  moreBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  moreSheet: {
+    backgroundColor: '#111827',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
+  },
+  moreHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#374151',
+    marginBottom: spacing.sm,
+  },
+  moreItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F2937',
+  },
+  moreItemIcon: { fontSize: Math.round(hp('2.4%')) },
+  moreItemLabel: { color: '#F9FAFB', fontSize: Math.round(hp('1.9%')), fontWeight: '600' },
   pullButton: {
     backgroundColor: '#C4A574',
     paddingVertical: spacing.sm,

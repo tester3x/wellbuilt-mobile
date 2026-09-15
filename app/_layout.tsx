@@ -148,6 +148,7 @@ export default function RootLayout() {
             <Stack.Screen name="record" />
             <Stack.Screen name="settings" />
             <Stack.Screen name="summary" />
+            <Stack.Screen name="route-me" />
             <Stack.Screen name="about" />
             <Stack.Screen name="manager" />
             <Stack.Screen name="no-access" />

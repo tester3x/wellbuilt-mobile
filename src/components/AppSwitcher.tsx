@@ -17,6 +17,7 @@ import {
   Platform,
   Alert,
   AppState,
+  DeviceEventEmitter,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
@@ -31,6 +32,13 @@ const db: any = null;
 const getDriverIdentity: any = async () => null;
 
 // ── Constants ────────────────────────────────────────────────────────────────
+
+/** The floating draggable switcher button is retired — the app-grid is now opened
+ *  from WB-M's "More → Switch Apps" (event OPEN_APP_SWITCHER_EVENT). The grid overlay
+ *  and app registry are unchanged. */
+const SHOW_FLOATING_SWITCHER = false;
+/** Fired by the More sheet to open the app-grid overlay without a floating button. */
+export const OPEN_APP_SWITCHER_EVENT = 'wb.openAppSwitcher';
 
 const STORAGE_KEY = 'wbt_app_switcher_pos';
 const REGISTRY_CACHE_KEY = 'wbt_app_registry_cache';
@@ -123,6 +131,12 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
   const [shiftStartTime, setShiftStartTime] = useState<string | null>(null);
   const [shiftElapsed, setShiftElapsed] = useState<string>('');
   const [shiftColor, setShiftColor] = useState('#34D399');
+
+  // Open the app-grid overlay when "More → Switch Apps" requests it (no floating button).
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(OPEN_APP_SWITCHER_EVENT, () => setIsOpen(true));
+    return () => sub.remove();
+  }, []);
 
   // Animation for radial burst
   const burstAnim = useRef(new Animated.Value(0)).current;
@@ -566,7 +580,8 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
         );
       })}
 
-      {/* Floating button + shift timer */}
+      {/* Floating button + shift timer — RETIRED (opened from More → Switch Apps). */}
+      {SHOW_FLOATING_SWITCHER && (
       <Animated.View
         style={[
           styles.button,
@@ -594,6 +609,7 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
           </View>
         ) : null}
       </Animated.View>
+      )}
     </>
   );
 }

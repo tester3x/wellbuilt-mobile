@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WB-M Registration — Android Back returns to Sign In</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #111827;
+      color: #E5E7EB;
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding: 24px;
+    }
+    h1 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+    p.cap { font-size: 12px; color: #9CA3AF; margin-bottom: 16px; max-width: 420px; line-height: 1.4; }
+    .phone {
+      width: 360px;
+      height: 720px;
+      background: #05060B;
+      border-radius: 28px;
+      border: 2px solid #1F2937;
+      position: relative;
+      overflow: hidden;
+      padding: 8px 22px 16px;
+    }
+    .back {
+      position: absolute;
+      top: 8px;
+      left: 4px;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #F9FAFB;
+      font-size: 28px;
+      line-height: 1;
+    }
+    .logo { text-align: center; margin-bottom: 6px; padding-top: 8px; }
+    .mark {
+      width: 44px; height: 44px; margin: 0 auto 2px;
+      border-radius: 10px; background: #1D4ED8;
+      color: #fff; font-weight: 800; font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .app { font-size: 18px; font-weight: 700; color: #F9FAFB; letter-spacing: 1.5px; }
+    .tm { font-size: 9px; color: #6B7280; vertical-align: super; }
+    .title { font-size: 18px; font-weight: 700; color: #F9FAFB; margin-bottom: 2px; text-align: center; }
+    .sub { font-size: 12px; color: #9CA3AF; margin-bottom: 8px; text-align: center; }
+    .field {
+      width: 100%; min-height: 44px; background: #1F2937;
+      border: 1px solid #374151; border-radius: 10px;
+      padding: 10px 14px; color: #6B7280; font-size: 14px;
+      margin-bottom: 6px; display: flex; align-items: center;
+    }
+    .tight { margin-bottom: 2px; }
+    .hint { font-size: 11px; line-height: 14px; color: #9CA3AF; margin: 0 0 6px 4px; }
+    .hint-bottom { margin-bottom: 8px; }
+    .btn {
+      width: 100%; min-height: 44px; background: #1E3A5F; opacity: 0.6;
+      border-radius: 10px; color: #fff; font-size: 15px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; margin-bottom: 6px;
+    }
+    .link { font-size: 13px; color: #9CA3AF; text-align: center; margin: 2px 0 6px; }
+    .link b { color: #60A5FA; font-weight: 600; }
+    .approval { font-size: 11px; line-height: 14px; color: #6B7280; text-align: center; margin-bottom: 2px; }
+    .ver { font-size: 10px; color: #374151; text-align: center; margin-top: 2px; padding-top: 2px; }
+    .gesture {
+      position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+      width: 96px; height: 4px; background: #4B5563; border-radius: 2px;
+    }
+  </style>
+</head>
+<body>
+  <h1>New Employee Registration — Android Back</h1>
+  <p class="cap">Hardware Back, header chevron, and “Already registered? Sign in” all return to Sign In. First Back may dismiss the keyboard. Passcode is not restored on reopen. Closed-keyboard compact layout unchanged.</p>
+  <div class="phone">
+    <div class="back" title="header Back">‹</div>
+    <div class="logo">
+      <div class="mark">W</div>
+      <div><span class="app">WellBuilt</span><span class="tm">™</span></div>
+    </div>
+    <div class="title">New Employee Registration</div>
+    <div class="sub">Choose a passcode and enter your display name</div>
+    <div class="field">Display name (e.g., MBurger)</div>
+    <div class="field tight">Full legal name (e.g., Mike Burger)</div>
+    <div class="hint">Used on tickets</div>
+    <div class="field tight">Company join code</div>
+    <div class="hint">Enter the join code your employer gave you</div>
+    <div class="field tight">Create a passcode</div>
+    <div class="hint hint-bottom">4-12 characters</div>
+    <div class="btn">Submit Registration</div>
+    <div class="link">Already registered? <b>Sign in</b></div>
+    <div class="approval">Your registration will need to be approved by an administrator.</div>
+    <div class="ver">v2.1.0</div>
+    <div class="gesture"></div>
+  </div>
+</body>
+</html>

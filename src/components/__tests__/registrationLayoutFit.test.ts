@@ -30,6 +30,15 @@ describe('WB-M registration screen viewport fit & touch targets', () => {
     return result;
   };
 
+  test('header Back is overlayed so it does not grow the closed-keyboard height budget', () => {
+    const back = extractStyleObject('registerBackButton');
+    expect(back.position).toBe('absolute');
+    expect(Number(back.width)).toBeGreaterThanOrEqual(44);
+    expect(Number(back.height)).toBeGreaterThanOrEqual(44);
+    expect(source).toContain('testID="register-header-back"');
+    expect(source).toContain('onPress={handleSwitchToLogin}');
+  });
+
   test('source contains register-specific compact styles', () => {
     expect(source).toContain('scrollContentRegister');
     expect(source).toContain('logoContainerRegister');

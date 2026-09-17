@@ -87,6 +87,8 @@ export default function DriverLoginScreen() {
   const [passcodeError, setPasscodeError] = useState('');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const isRegister = mode === 'register';
+
 
   // Check initial state on mount
   useEffect(() => {
@@ -404,12 +406,14 @@ export default function DriverLoginScreen() {
 
   // Render passcode input with eye toggle
   const renderPasscodeInput = (placeholder: string, autoFocus: boolean = false) => (
-    <View style={styles.inputContainer}>
+    <View style={[styles.inputContainer, isRegister && styles.inputContainerRegister]}>
       <TextInput
         ref={passcodeRef}
         style={[
           styles.input,
           styles.inputWithIcon,
+          isRegister && styles.inputRegister,
+          isRegister && styles.inputWithIconRegister,
           passcodeError ? styles.inputError : null,
         ]}
         value={passcode}
@@ -423,12 +427,12 @@ export default function DriverLoginScreen() {
         onSubmitEditing={mode === 'login' ? handleLogin : handleRegister}
       />
       <TouchableOpacity
-        style={styles.eyeButton}
+        style={[styles.eyeButton, isRegister && styles.eyeButtonRegister]}
         onPress={() => setShowPasscode(!showPasscode)}
       >
         <Ionicons
           name={showPasscode ? 'eye-off' : 'eye'}
-          size={22}
+          size={isRegister ? 20 : 22}
           color="#6B7280"
         />
       </TouchableOpacity>
@@ -441,19 +445,22 @@ export default function DriverLoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isRegister && styles.scrollContentRegister,
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         {/* Logo */}
-        <View style={styles.logoContainer}>
+        <View style={[styles.logoContainer, isRegister && styles.logoContainerRegister]}>
           <Image
             source={require('../assets/images/WellBuilt_Icon_transparent.png')}
-            style={styles.logo}
+            style={[styles.logo, isRegister && styles.logoRegister]}
             resizeMode="contain"
           />
           <View style={styles.appNameRow}>
-            <Text style={styles.appName}>WellBuilt</Text>
-            <Text style={styles.trademark}>™</Text>
+            <Text style={[styles.appName, isRegister && styles.appNameRegister]}>WellBuilt</Text>
+            <Text style={[styles.trademark, isRegister && styles.trademarkRegister]}>™</Text>
           </View>
         </View>
 
@@ -569,14 +576,14 @@ export default function DriverLoginScreen() {
 
         {/* REGISTER MODE */}
         {mode === 'register' && (
-          <View style={styles.formContainer}>
-            <Text style={styles.title}>{t('driverLogin.registerTitle')}</Text>
-            <Text style={styles.subtitle}>
+          <View style={[styles.formContainer, styles.formContainerRegister]}>
+            <Text style={[styles.title, styles.titleRegister]}>{t('driverLogin.registerTitle')}</Text>
+            <Text style={[styles.subtitle, styles.subtitleRegister]}>
               {t('driverLogin.registerSubtitle')}
             </Text>
 
             <TextInput
-              style={styles.input}
+              style={[styles.input, styles.inputRegister]}
               value={displayName}
               onChangeText={setDisplayName}
               placeholder={t('driverLogin.displayNamePlaceholder')}
@@ -589,7 +596,7 @@ export default function DriverLoginScreen() {
 
             <TextInput
               ref={legalNameRef}
-              style={styles.input}
+              style={[styles.input, styles.inputRegister, styles.inputRegisterTight]}
               value={legalName}
               onChangeText={setLegalName}
               placeholder={t('driverLogin.legalNamePlaceholder')}
@@ -600,11 +607,11 @@ export default function DriverLoginScreen() {
               blurOnSubmit={false}
               onSubmitEditing={() => companyRef.current?.focus()}
             />
-            <Text style={styles.passcodeHint}>{t('loginExtra.usedOnTickets')}</Text>
+            <Text style={[styles.passcodeHint, styles.hintRegister]}>{t('loginExtra.usedOnTickets')}</Text>
 
             <TextInput
               ref={companyRef}
-              style={styles.input}
+              style={[styles.input, styles.inputRegister, styles.inputRegisterTight]}
               value={companyCode}
               onChangeText={(value) => setCompanyCode(value.toUpperCase())}
               placeholder={t('driverLogin.companyPlaceholder', 'Company join code')}
@@ -615,40 +622,41 @@ export default function DriverLoginScreen() {
               blurOnSubmit={false}
               onSubmitEditing={() => passcodeRef.current?.focus()}
             />
-            <Text style={styles.passcodeHint}>
+            <Text style={[styles.passcodeHint, styles.hintRegister]}>
               {t('driverLogin.companyHint', 'Enter the join code your employer gave you')}
             </Text>
 
             {renderPasscodeInput(t('driverLogin.createPasscode'))}
 
             {passcodeError ? (
-              <Text style={styles.passcodeError}>{passcodeError}</Text>
+              <Text style={[styles.passcodeError, styles.hintRegister, styles.passcodeHintBottom]}>{passcodeError}</Text>
             ) : (
-              <Text style={styles.passcodeHint}>
+              <Text style={[styles.passcodeHint, styles.hintRegister, styles.passcodeHintBottom]}>
                 {t('driverLogin.passcodeHint')}
               </Text>
             )}
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? <Text style={[styles.error, styles.errorRegister]}>{error}</Text> : null}
 
             <TouchableOpacity
               style={[
                 styles.button,
+                styles.buttonRegister,
                 (!passcode.trim() || !displayName.trim() || !legalName.trim() || !companyCode.trim() || !!passcodeError) && styles.buttonDisabled,
               ]}
               onPress={handleRegister}
               disabled={!passcode.trim() || !displayName.trim() || !legalName.trim() || !companyCode.trim() || !!passcodeError}
             >
-              <Text style={styles.buttonText}>{t('driverLogin.submitRegistration')}</Text>
+              <Text style={[styles.buttonText, styles.buttonTextRegister]}>{t('driverLogin.submitRegistration')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={handleSwitchToLogin}>
-              <Text style={styles.linkText}>
+              <Text style={[styles.linkText, styles.linkTextRegister]}>
                 {t('driverLogin.alreadyRegistered')} <Text style={styles.linkBold}>{t('driverLogin.signInLink')}</Text>
               </Text>
             </TouchableOpacity>
 
-            <Text style={styles.hint}>
+            <Text style={[styles.hint, styles.approvalHintRegister]}>
               {t('driverLogin.approvalHint')}
             </Text>
           </View>
@@ -760,7 +768,7 @@ export default function DriverLoginScreen() {
         )}
 
         {/* Version display */}
-        <Text style={styles.version}>
+        <Text style={[styles.version, isRegister && styles.versionRegister]}>
           v{Constants.expoConfig?.version || '1.0.0'}
         </Text>
       </ScrollView>
@@ -954,5 +962,104 @@ const styles = StyleSheet.create({
     color: '#374151',
     marginTop: 'auto',
     paddingTop: spacing.xl,
+  },
+  scrollContentRegister: {
+    paddingTop: 8,
+    paddingBottom: 16,
+    paddingHorizontal: wp('6%'),
+  },
+  logoContainerRegister: {
+    marginBottom: 6,
+  },
+  logoRegister: {
+    width: 44,
+    height: 44,
+    marginBottom: 2,
+  },
+  appNameRegister: {
+    fontSize: 18,
+    letterSpacing: 1.5,
+  },
+  trademarkRegister: {
+    fontSize: 9,
+    marginTop: 1,
+  },
+  formContainerRegister: {
+    maxWidth: 420,
+  },
+  titleRegister: {
+    fontSize: 18,
+    marginBottom: 2,
+  },
+  subtitleRegister: {
+    fontSize: 12,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  inputRegister: {
+    minHeight: 44,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  inputRegisterTight: {
+    marginBottom: 2,
+  },
+  inputContainerRegister: {
+    marginBottom: 2,
+  },
+  inputWithIconRegister: {
+    paddingRight: 44,
+    marginBottom: 0,
+  },
+  eyeButtonRegister: {
+    right: 8,
+    paddingHorizontal: 4,
+  },
+  hintRegister: {
+    fontSize: 11,
+    lineHeight: 14,
+    marginBottom: 6,
+    marginLeft: 4,
+    color: '#9CA3AF',
+  },
+  passcodeHintBottom: {
+    marginBottom: 8,
+  },
+  errorRegister: {
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  buttonRegister: {
+    minHeight: 44,
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginBottom: 6,
+    minWidth: wp('60%'),
+  },
+  buttonTextRegister: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  linkTextRegister: {
+    fontSize: 13,
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  approvalHintRegister: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: '#6B7280',
+    marginTop: 0,
+    marginBottom: 2,
+    paddingHorizontal: 8,
+  },
+  versionRegister: {
+    fontSize: 10,
+    marginTop: 2,
+    paddingTop: 2,
   },
 });

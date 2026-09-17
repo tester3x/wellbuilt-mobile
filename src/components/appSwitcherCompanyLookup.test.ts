@@ -282,4 +282,9 @@ describe('AppSwitcher wiring', () => {
     assert.match(src, /applyAppSwitcherTierLookup/);
     assert.match(src, /invalidate\(\)/);
   });
+  it('is a modal opened by appSwitcherOpen, not a floating badge', () => {
+    assert.match(src, /appSwitcherOpen/);
+    assert.match(src, /<Modal/);
+    assert.doesNotMatch(src, /PanResponder/);
+  });
 });

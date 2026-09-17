@@ -155,10 +155,9 @@ export default function RootLayout() {
           </Stack>
           {/* Global dispatch button - appears when there are pending sends */}
           {appIsReady && <DispatchButton />}
-          {/* AppSwitcher — floating WB ecosystem app launcher */}
+          {/* AppSwitcher — More-menu modal (no floating badge) */}
           {appIsReady && (
             <AppSwitcher
-              badgeSource={require('../assets/images/app-switcher-badge.png')}
               selfScheme="wellbuilt-mobile"
               getIdentity={async () => {
                 const driverId = await SecureStore.getItemAsync('driverId');

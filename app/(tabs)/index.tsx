@@ -20,6 +20,7 @@ import {
   TouchableWithoutFeedback,
   View,
   ViewToken,
+  DeviceEventEmitter,
 } from 'react-native';
 import { GestureHandlerRootView, TapGestureHandler, State } from 'react-native-gesture-handler';
 import Animated, {
@@ -1532,6 +1533,7 @@ export default function MainScreen() {
   
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showPicker, setShowPicker] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [tempSelectedIndex, setTempSelectedIndex] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -2388,12 +2390,35 @@ export default function MainScreen() {
             <Text style={[styles.pullButtonText, styles.pullButtonTextDisabled]}>{t('homeExtra.pull')}</Text>
           </TouchableOpacity>
           <View style={styles.navSide}>
-            <TouchableOpacity style={styles.navButton} onPress={handleSummaryPress}>
-              <Text style={styles.navIcon}>📊</Text>
-              <Text style={styles.navLabel}>{t('nav.summary')}</Text>
+            <TouchableOpacity style={styles.navButton} onPress={() => setShowMoreMenu(true)}>
+              <Text style={styles.navIcon}>•••</Text>
+              <Text style={styles.navLabel}>More</Text>
             </TouchableOpacity>
           </View>
         </View>
+        <Modal visible={showMoreMenu} transparent animationType="fade" onRequestClose={() => setShowMoreMenu(false)}>
+          <TouchableWithoutFeedback onPress={() => setShowMoreMenu(false)}>
+            <View style={styles.moreBackdrop}>
+              <TouchableWithoutFeedback>
+                <View style={styles.moreSheet}>
+                  <Text style={styles.moreTitle}>More</Text>
+                  <TouchableOpacity
+                    style={styles.moreItem}
+                    onPress={() => { setShowMoreMenu(false); handleSummaryPress(); }}
+                  >
+                    <Text style={styles.moreItemText}>{t('nav.summary')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.moreItem}
+                    onPress={() => { setShowMoreMenu(false); DeviceEventEmitter.emit('appSwitcherOpen'); }}
+                  >
+                    <Text style={styles.moreItemText}>Switch Apps</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       </GestureHandlerRootView>
     );
   }
@@ -2490,9 +2515,9 @@ export default function MainScreen() {
         </TouchableOpacity>
 
         <View style={styles.navSide}>
-          <TouchableOpacity style={styles.navButton} onPress={handleSummaryPress}>
-            <Text style={styles.navIcon}>📊</Text>
-            <Text style={styles.navLabel}>{t('nav.summary')}</Text>
+          <TouchableOpacity style={styles.navButton} onPress={() => setShowMoreMenu(true)}>
+            <Text style={styles.navIcon}>•••</Text>
+            <Text style={styles.navLabel}>More</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -2587,6 +2612,30 @@ export default function MainScreen() {
                   }}
                 />
               </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal visible={showMoreMenu} transparent animationType="fade" onRequestClose={() => setShowMoreMenu(false)}>
+        <TouchableWithoutFeedback onPress={() => setShowMoreMenu(false)}>
+          <View style={styles.moreBackdrop}>
+            <TouchableWithoutFeedback>
+              <View style={styles.moreSheet}>
+                <Text style={styles.moreTitle}>More</Text>
+                <TouchableOpacity
+                  style={styles.moreItem}
+                  onPress={() => { setShowMoreMenu(false); handleSummaryPress(); }}
+                >
+                  <Text style={styles.moreItemText}>{t('nav.summary')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.moreItem}
+                  onPress={() => { setShowMoreMenu(false); DeviceEventEmitter.emit('appSwitcherOpen'); }}
+                >
+                  <Text style={styles.moreItemText}>Switch Apps</Text>
+                </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -3177,6 +3226,35 @@ const styles = StyleSheet.create({
   },
   textDisabled: {
     color: '#4B5563',
+  },
+  moreBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  moreSheet: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderWidth: 1,
+    borderColor: '#D4A84B',
+    padding: 20,
+    paddingBottom: 36,
+  },
+  moreTitle: {
+    color: '#D4A84B',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  moreItem: {
+    paddingVertical: 14,
+  },
+  moreItemText: {
+    color: '#F9FAFB',
+    fontSize: 16,
+    fontWeight: '600',
   },
   bottomNav: {
     flexDirection: 'row',

@@ -2397,6 +2397,35 @@ export default function MainScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      {/* WB-M "More" sheet — Route Me, Summary, Switch Apps (locked initial items). */}
+      <Modal visible={showMore} transparent animationType="fade" onRequestClose={() => setShowMore(false)}>
+        <Pressable style={styles.moreBackdrop} onPress={() => setShowMore(false)}>
+          <Pressable style={styles.moreSheet} onPress={() => {}}>
+            <View style={styles.moreHandle} />
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => { setShowMore(false); router.push('/route-me'); }}
+            >
+              <Text style={styles.moreItemIcon}>🧭</Text>
+              <Text style={styles.moreItemLabel}>{t('nav.routeMe', { defaultValue: 'Route Me' })}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => { setShowMore(false); handleSummaryPress(); }}
+            >
+              <Text style={styles.moreItemIcon}>📊</Text>
+              <Text style={styles.moreItemLabel}>{t('nav.summary')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => { setShowMore(false); DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT); }}
+            >
+              <Text style={styles.moreItemIcon}>🔀</Text>
+              <Text style={styles.moreItemLabel}>{t('nav.switchApps', { defaultValue: 'Switch Apps' })}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
       </GestureHandlerRootView>
     );
   }

@@ -1,11 +1,14 @@
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,6 +18,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import {
+  consumeRegisterHardwareBack,
+  shouldInstallRegisterBackHandler,
+} from '../src/components/registrationBack';
 import {
   verifyLogin,
   saveDriverSession,
@@ -89,6 +96,36 @@ export default function DriverLoginScreen() {
 
   const isRegister = mode === 'register';
 
+  // Shared Sign In destination for hardware Back, header Back, and the
+  // "Already registered? Sign in" link. Registration is a mode on this
+  // screen, so we must not router.back() — that would leave auth and close WB-M.
+  const handleSwitchToLogin = useCallback(() => {
+    Keyboard.dismiss();
+    setError('');
+    setPasscode('');
+    setShowPasscode(false);
+    setMode('login');
+  }, []);
+
+  // Android Back: first press may dismiss the keyboard; the next returns to
+  // Sign In. Installed only while Registration is focused; removed on blur/unmount.
+  useFocusEffect(
+    useCallback(() => {
+      if (!shouldInstallRegisterBackHandler(mode)) {
+        return undefined;
+      }
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        const keyboardVisible =
+          typeof Keyboard.isVisible === 'function' ? Keyboard.isVisible() : false;
+        return consumeRegisterHardwareBack({
+          keyboardVisible,
+          dismissKeyboard: () => Keyboard.dismiss(),
+          returnToSignIn: handleSwitchToLogin,
+        });
+      });
+      return () => sub.remove();
+    }, [mode, handleSwitchToLogin]),
+  );
 
   // Check initial state on mount
   useEffect(() => {
@@ -396,14 +433,6 @@ export default function DriverLoginScreen() {
     setMode('register');
   };
 
-  // Switch to login mode
-  const handleSwitchToLogin = () => {
-    setError('');
-    setPasscode('');
-    setShowPasscode(false);
-    setMode('login');
-  };
-
   // Render passcode input with eye toggle
   const renderPasscodeInput = (placeholder: string, autoFocus: boolean = false) => (
     <View style={[styles.inputContainer, isRegister && styles.inputContainerRegister]}>
@@ -444,6 +473,18 @@ export default function DriverLoginScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      {isRegister && (
+        <TouchableOpacity
+          testID="register-header-back"
+          style={styles.registerBackButton}
+          onPress={handleSwitchToLogin}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.back')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={28} color="#F9FAFB" />
+        </TouchableOpacity>
+      )}
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
@@ -962,6 +1003,16 @@ const styles = StyleSheet.create({
     color: '#374151',
     marginTop: 'auto',
     paddingTop: spacing.xl,
+  },
+  registerBackButton: {
+    position: 'absolute',
+    top: 8,
+    left: 4,
+    zIndex: 20,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollContentRegister: {
     paddingTop: 8,

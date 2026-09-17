@@ -21,6 +21,11 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
 import i18n from '../i18n';
+import {
+  TIER_INCLUDES,
+  loadAppSwitcherCompanyFields,
+  resolveAppSwitcherTier,
+} from './appSwitcherCompanyLookup';
 // WB M: Firestore + identity provided via props (no local Firestore client)
 let collection: any, getDocs: any, firestoreDoc: any, firestoreGetDoc: any;
 try {
@@ -54,12 +59,7 @@ interface AppEntry {
   androidPackage?: string;
 }
 
-// Tier hierarchy: god includes field includes free
-const TIER_INCLUDES: Record<string, string[]> = {
-  free: ['free'],
-  field: ['free', 'field'],
-  god: ['free', 'field', 'god'],
-};
+// Tier hierarchy lives in appSwitcherCompanyLookup (god includes field includes free).
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -250,11 +250,14 @@ export default function AppSwitcher({ badgeSource, selfScheme, firestoreDb, getI
     (async () => {
       try {
         const companyId = await AsyncStorage.getItem('selectedCompanyId');
-        if (companyId && effectiveDb) {
-          const companySnap = await firestoreGetDoc(firestoreDoc(effectiveDb, 'companies', companyId));
-          if (companySnap.exists()) {
-            setTier(companySnap.data()?.tier || 'free');
-          }
+        if (companyId && effectiveDb && firestoreGetDoc && firestoreDoc) {
+          const result = await loadAppSwitcherCompanyFields(companyId, async (collectionName, id) => {
+            const snap = await firestoreGetDoc(firestoreDoc(effectiveDb, collectionName, id));
+            const exists = typeof snap.exists === 'function' ? snap.exists() : !!snap.exists;
+            return { exists, data: exists ? snap.data() : undefined };
+          });
+          const nextTier = resolveAppSwitcherTier(result);
+          if (nextTier) setTier(nextTier);
         }
       } catch {}
     })();

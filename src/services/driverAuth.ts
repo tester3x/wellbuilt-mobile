@@ -840,9 +840,13 @@ export async function completeAuthenticatedSession(input: {
   mustChangePasscode?: boolean;
 }): Promise<DriverSession> {
   if (!input.customToken) throw new Error('missing_custom_token');
-  // Persist the forced-change flag first so any crash before routing still
-  // re-gates on next launch (fail-closed toward requiring the change).
-  await setPersistedMustChangePasscode(input.mustChangePasscode === true);
+  // Persist the forced-change flag ONLY when the caller supplies an explicit
+  // boolean (manual login, where authenticateDriver is authoritative). Never
+  // invent `false` for callers that omit it (e.g. SSO) — those resolve the
+  // authoritative token claim after the session is established.
+  if (typeof input.mustChangePasscode === 'boolean') {
+    await setPersistedMustChangePasscode(input.mustChangePasscode);
+  }
   return runSessionTransition(async () => {
     const claimed = claimSessionGeneration();
     try {

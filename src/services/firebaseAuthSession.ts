@@ -127,6 +127,30 @@ export async function forceRefreshIdToken(): Promise<string> {
   return user.getIdToken(true);
 }
 
+/**
+ * Authoritative forced-passcode-change state from the signed-in driver's ID
+ * token claims (minted by authenticateDriver / adminSetDriverPasscode and
+ * cleared by driverChangeOwnPasscode). Returns 'true' | 'false' only when the
+ * claim is an explicit boolean; 'unknown' when there is no session, the claim
+ * is absent, or it is malformed. Callers MUST NOT invent false from 'unknown'.
+ */
+export async function readMustChangePasscodeClaim(
+  forceRefresh = false,
+): Promise<'true' | 'false' | 'unknown'> {
+  try {
+    await waitForAuthUser();
+    const user = getFirebaseAuth().currentUser;
+    if (!user) return 'unknown';
+    const res = await user.getIdTokenResult(forceRefresh);
+    const claim = (res.claims as Record<string, unknown>).mustChangePasscode;
+    if (claim === true) return 'true';
+    if (claim === false) return 'false';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 export async function authorizedCallable<T>(
   name: string,
   data: Record<string, unknown> = {},

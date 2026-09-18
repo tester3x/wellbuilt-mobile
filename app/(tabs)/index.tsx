@@ -52,6 +52,7 @@ import {
 } from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder, syncOnForeground } from '../../src/services/backgroundSync';
 import { startingLevelFromSnapshot } from '../../src/services/downSnapshot';
+import { withAuthTimeout, HYDRATION_TIMEOUT_MS } from '../../src/services/authFlowState';
 import { downNumberTopPx } from '../../src/ui/downNumberLayout';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
@@ -69,7 +70,7 @@ import {
 import { getTankDimensions, hp, isTablet, spacing, wp } from '../../src/ui/layout';
 import { useAppAlert } from '../../components/AppAlert';
 import { debugLog, autoFlushIfNeeded } from '../../src/services/debugLog';
-import { isCurrentUserViewer } from '../../src/services/driverAuth';
+import { isCurrentUserViewer, clearDriverSession } from '../../src/services/driverAuth';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -297,6 +298,7 @@ interface WellViewProps {
 
 const WellView = React.memo(function WellView({ wellName, isActive, getPreviousLevel, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
+  const hydrationRouter = useRouter();
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
   const [wellConfig, setWellConfig] = useState<WellConfig | null>(null);
@@ -307,6 +309,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const [targetFraction, setTargetFraction] = useState<number | null>(null);
   const [drainCompleteSignal, setDrainCompleteSignal] = useState(0); // Triggers live update effect after drain finishes
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
+  const [hydrationError, setHydrationError] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [sliderUIActive, setSliderUIActive] = useState(false); // Controls slider level/datetime visibility
   const [sliderLocked, setSliderLocked] = useState(true); // Slider locked state
   const [sliderPeeking, setSliderPeeking] = useState(false); // Tap to peek values without unlocking
@@ -515,6 +519,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
   // Load data and check for pending pull on mount/refresh
   useEffect(() => {
+    // Generation guard: results from a prior well/account/context must be
+    // discarded (identity/company change, well switch, unmount).
+    let cancelled = false;
     const loadData = async () => {
       // Clear stale data from previous well immediately to prevent showing wrong well's info
       setLastPullInfo(null);
@@ -522,16 +529,19 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
       // Load well config - MUST await since it's async
       const config = await getWellConfig(wellName);
+      if (cancelled) return;
       setWellConfig(config);
 
       // Load level snapshot (flow rate is now stored with snapshot, not separately)
       const snapshot = await getLevelSnapshot(wellName);
+      if (cancelled) return;
 
       // Pre-check for pending pull BEFORE setting levelSnapshot.
       // setLevelSnapshot triggers the live update useEffect — if there's a pending pull,
       // we need drainAnimationActive=true BEFORE that effect runs, otherwise
       // the live update starts a competing 500ms animation (the "double animation" bug).
       const pending = await getPendingPull(wellName);
+      if (cancelled) return;
       if (pending) {
         drainAnimationActive.current = true;
       }
@@ -544,6 +554,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
       // Load last pull record
       const pull = await getWellPull(wellName);
+      if (cancelled) return;
       setPullRecord(pull);
 
       // Calculate bblsPerFoot for level calculations — use the Dashboard-saved
@@ -600,6 +611,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
       // Load persisted slider position (keeps driver's last setting)
       const savedSliderPos = await getSliderPosition(wellName);
+      if (cancelled) return;
       setSliderFeet(savedSliderPos);
 
       // Use pending pull from pre-check above (already fetched before setLevelSnapshot)
@@ -711,9 +723,32 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         setIsLoadingInitial(false);
       }
     };
-    
-    loadData();
-  }, [wellName, refreshTrigger, isActive, getPreviousLevel, waterFraction]);
+
+    // Bounded hydration: a hung read can never leave the wells spinning. On
+    // timeout/rejection we stop the spinner and surface a retry — WITHOUT
+    // wiping any valid cached snapshot (only an identity change clears cache,
+    // handled at session establishment).
+    const run = async () => {
+      if (cancelled) return;
+      setHydrationError(false);
+      try {
+        const raced = await withAuthTimeout(loadData(), HYDRATION_TIMEOUT_MS);
+        if (cancelled) return;
+        if (raced.timedOut) setHydrationError(true);
+      } catch {
+        if (!cancelled) setHydrationError(true);
+      } finally {
+        // Teardown on EVERY terminal path: success, rejection, timeout.
+        // (unmount/well-change set cancelled and skip state writes.)
+        if (!cancelled) setIsLoadingInitial(false);
+      }
+    };
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wellName, refreshTrigger, retryNonce, isActive, getPreviousLevel, waterFraction]);
 
   // Live level update based on flow rate (now stored in levelSnapshot)
   // Formula matches dashboard: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
@@ -1298,6 +1333,35 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#60A5FA" />
               <Text style={styles.loadingOverlayText}>{t('homeExtra.loading')}</Text>
+            </View>
+          )}
+
+          {/* Recovery overlay - hydration failed/timed out. The spinner is gone;
+              valid cached data (if any) is preserved. Offer retry + sign out. */}
+          {hydrationError && !isLoadingInitial && !wellDown && (
+            <View style={styles.loadingOverlay}>
+              <Text style={styles.loadingOverlayText}>
+                {t('homeExtra.loadFailed', "Couldn't load well data.")}
+              </Text>
+              <Pressable
+                style={styles.recoveryBtn}
+                onPress={() => {
+                  setHydrationError(false);
+                  setIsLoadingInitial(true);
+                  setRetryNonce((n) => n + 1);
+                }}
+              >
+                <Text style={styles.recoveryBtnText}>{t('common.retry', 'Retry')}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.recoveryBtn}
+                onPress={async () => {
+                  await clearDriverSession();
+                  hydrationRouter.replace('/driver-login');
+                }}
+              >
+                <Text style={styles.recoveryBtnText}>{t('common.logOut', 'Log out')}</Text>
+              </Pressable>
             </View>
           )}
           
@@ -2915,6 +2979,19 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: scaledFont(0.016),
     marginTop: 8,
+  },
+  recoveryBtn: {
+    marginTop: 12,
+    borderColor: '#3b82f6',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  recoveryBtnText: {
+    color: '#93C5FD',
+    fontSize: scaledFont(0.015),
+    fontWeight: '600',
   },
   numberContainer: {
     position: 'absolute',

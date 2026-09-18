@@ -7,8 +7,10 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { takeWbmPkce } from '../src/services/ssoPkce';
 import { exchangeSsoCode } from '../src/services/secureDriverAuth';
-import { completeAuthenticatedSession } from '../src/services/driverAuth';
+import { completeAuthenticatedSession, setPersistedMustChangePasscode } from '../src/services/driverAuth';
+import { readMustChangePasscodeClaim } from '../src/services/firebaseAuthSession';
 import { authorizeEstablishedSession } from '../src/services/postAuthGate';
+import { decideForcedChangeFromClaim } from '../src/services/authFlowState';
 
 export default function WbmSsoCallback() {
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
@@ -33,14 +35,28 @@ export default function WbmSsoCallback() {
         displayName: exchanged.displayName || exchanged.driverId,
         companyId: exchanged.companyId,
         authMethod: 'sso',
+        // Intentionally omitted: the SSO exchange payload is NOT authoritative
+        // for forced-change. We read the minted token claim below instead of
+        // inventing a value.
       });
-      // SSO is a credential-free path (not a temporary-passcode sign-in), so a
-      // fresh SSO session never carries a forced change; completeAuthenticatedSession
-      // above already persisted the flag as false.
+
+      // Authoritative source: the driver's ID-token claim on the just-minted
+      // SSO session. Never assume SSO cannot carry a forced change.
+      const claim = await readMustChangePasscodeClaim(/* forceRefresh */ true);
+      const decision = decideForcedChangeFromClaim(claim);
+      if (decision.persist !== null) {
+        await setPersistedMustChangePasscode(decision.persist);
+      }
+      if (decision.route === 'verify') {
+        // Missing/malformed/stale claim → authenticated verification, never a
+        // silent continue into the app.
+        router.replace('/session-verify');
+        return;
+      }
       const dest = await authorizeEstablishedSession({
         eligibleDestination: '/(tabs)',
         revalidation: 'valid',
-        mustChangePasscode: false,
+        mustChangePasscode: decision.route === 'passcode-change',
       });
       router.replace(dest);
     })().catch((err) => {

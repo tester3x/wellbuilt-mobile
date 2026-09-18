@@ -11,7 +11,10 @@ import {
   clearDriverSession,
   revalidateDriverSessionClassified,
   getPersistedMustChangePasscode,
+  setPersistedMustChangePasscode,
 } from '../src/services/driverAuth';
+import { readMustChangePasscodeClaim } from '../src/services/firebaseAuthSession';
+import { decideForcedChangeFromClaim } from '../src/services/authFlowState';
 
 export default function SessionVerifyScreen() {
   const router = useRouter();
@@ -23,7 +26,17 @@ export default function SessionVerifyScreen() {
     setBusy(true);
     try {
       const revalidation = await revalidateDriverSessionClassified();
-      const mustChangePasscode = await getPersistedMustChangePasscode();
+      // Authoritative first: the token claim. On 'unknown' fall back to the last
+      // authoritative persisted value — never invent false.
+      const claim = await readMustChangePasscodeClaim(/* forceRefresh */ true);
+      const decision = decideForcedChangeFromClaim(claim);
+      let mustChangePasscode: boolean;
+      if (decision.persist !== null) {
+        await setPersistedMustChangePasscode(decision.persist);
+        mustChangePasscode = decision.persist;
+      } else {
+        mustChangePasscode = await getPersistedMustChangePasscode();
+      }
       const dest = await authorizeEstablishedSession({
         eligibleDestination: '/welcome',
         revalidation,

@@ -153,6 +153,75 @@ export function isRetryable(category: AuthCategory): boolean {
 }
 
 /**
+ * Decide routing from the AUTHORITATIVE forced-passcode-change token claim.
+ * Never invents `false`: an unresolved claim routes to authenticated session
+ * verification instead of silently continuing.
+ *   - 'true'    → forced change, persist true
+ *   - 'false'   → continue normally, persist false
+ *   - 'unknown' → verify (missing / malformed / stale), do NOT persist
+ */
+export function decideForcedChangeFromClaim(
+  claim: 'true' | 'false' | 'unknown',
+): { route: 'passcode-change' | 'continue' | 'verify'; persist: boolean | null } {
+  if (claim === 'true') return { route: 'passcode-change', persist: true };
+  if (claim === 'false') return { route: 'continue', persist: false };
+  return { route: 'verify', persist: null };
+}
+
+// ── Wells / profile hydration flow ──────────────────────────────────────────
+
+export type HydrationPhase = 'loading' | 'ready' | 'error';
+
+export function shouldShowHydrationSpinner(phase: HydrationPhase, wellDown: boolean): boolean {
+  return phase === 'loading' && !wellDown;
+}
+
+/**
+ * Every terminal event leaves a NON-loading phase (spinner stops). success →
+ * ready; timeout/error → error; unmount/logout/identity_change abandon the load
+ * (no spinner); retry restarts loading.
+ */
+export type HydrationEvent =
+  | 'success'
+  | 'timeout'
+  | 'error'
+  | 'unmount'
+  | 'logout'
+  | 'identity_change'
+  | 'retry';
+
+export function nextHydrationPhase(current: HydrationPhase, event: HydrationEvent): HydrationPhase {
+  switch (event) {
+    case 'success':
+      return 'ready';
+    case 'timeout':
+    case 'error':
+      return 'error';
+    case 'retry':
+      return 'loading';
+    case 'unmount':
+    case 'logout':
+    case 'identity_change':
+      return 'ready'; // abandoned attempt must not keep animating
+    default:
+      return current;
+  }
+}
+
+/** A result from a prior account/well/context generation must be discarded. */
+export function isStaleHydration(startedGeneration: string, currentGeneration: string): boolean {
+  return startedGeneration !== currentGeneration;
+}
+
+/**
+ * Valid cached data must NOT be wiped merely because a request timed out or the
+ * network failed. Only a genuine identity/company change invalidates the cache.
+ */
+export function shouldClearCacheOnHydrationFailure(event: HydrationEvent): boolean {
+  return event === 'identity_change';
+}
+
+/**
  * Race a promise against a bounded timeout. On timeout the returned marker lets
  * the caller tear the spinner down and classify as 'timeout' without leaving the
  * original promise able to flip the spinner back on.

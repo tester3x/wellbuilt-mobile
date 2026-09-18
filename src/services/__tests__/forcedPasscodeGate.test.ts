@@ -18,8 +18,15 @@ import {
   isSpinnerTornDown,
   isRetryable,
   withAuthTimeout,
+  decideForcedChangeFromClaim,
+  shouldShowHydrationSpinner,
+  nextHydrationPhase,
+  isStaleHydration,
+  shouldClearCacheOnHydrationFailure,
   type AuthPhase,
   type AuthEvent,
+  type HydrationEvent,
+  type HydrationPhase,
 } from '../authFlowState';
 
 describe('forced-passcode-change gate (decidePostAuthRoute)', () => {
@@ -150,6 +157,73 @@ describe('spinner tears down on every terminal outcome', () => {
       const phase = nextAuthPhase('authenticating', ev);
       expect(isSpinnerTornDown(phase)).toBe(true);
     }
+  });
+});
+
+describe('SSO forced-change resolves from the authoritative claim (no invented false)', () => {
+  it('explicit true → passcode-change and persists true', () => {
+    expect(decideForcedChangeFromClaim('true')).toEqual({
+      route: 'passcode-change',
+      persist: true,
+    });
+  });
+
+  it('explicit false → continue and persists false', () => {
+    expect(decideForcedChangeFromClaim('false')).toEqual({
+      route: 'continue',
+      persist: false,
+    });
+  });
+
+  it('missing/malformed/stale/restored/identity-change → unknown → verify, never persists', () => {
+    // readMustChangePasscodeClaim maps all of these to 'unknown':
+    //  - missing claim (older mint / no claim)      → 'unknown'
+    //  - malformed claim (non-boolean)              → 'unknown'
+    //  - no current user (stale/restored session)   → 'unknown'
+    //  - identity/company change before refresh      → 'unknown'
+    const d = decideForcedChangeFromClaim('unknown');
+    expect(d.route).toBe('verify'); // routed to authenticated verification, not a silent continue
+    expect(d.persist).toBeNull();   // never invents true or false
+  });
+});
+
+describe('wells-hydration flow tears down on every terminal path', () => {
+  it('spinner shows only while loading and not well-down', () => {
+    expect(shouldShowHydrationSpinner('loading', false)).toBe(true);
+    expect(shouldShowHydrationSpinner('loading', true)).toBe(false); // well-down overlay owns it
+    for (const p of ['ready', 'error'] as HydrationPhase[]) {
+      expect(shouldShowHydrationSpinner(p, false)).toBe(false);
+    }
+  });
+
+  it('every terminal event leaves a non-loading phase (spinner stops)', () => {
+    const terminal: HydrationEvent[] = [
+      'success',
+      'timeout',
+      'error',
+      'unmount',
+      'logout',
+      'identity_change',
+    ];
+    for (const ev of terminal) {
+      expect(nextHydrationPhase('loading', ev)).not.toBe('loading');
+    }
+  });
+
+  it('retry returns to loading, then success reaches ready', () => {
+    expect(nextHydrationPhase('error', 'retry')).toBe('loading');
+    expect(nextHydrationPhase('loading', 'success')).toBe('ready');
+  });
+
+  it('discards results from a prior generation', () => {
+    expect(isStaleHydration('gen-A', 'gen-B')).toBe(true);
+    expect(isStaleHydration('gen-A', 'gen-A')).toBe(false);
+  });
+
+  it('does NOT clear valid cache on timeout/network; only on identity change', () => {
+    expect(shouldClearCacheOnHydrationFailure('timeout')).toBe(false);
+    expect(shouldClearCacheOnHydrationFailure('error')).toBe(false);
+    expect(shouldClearCacheOnHydrationFailure('identity_change')).toBe(true);
   });
 });
 

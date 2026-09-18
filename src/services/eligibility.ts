@@ -8,7 +8,12 @@
 export type EligibilityStatus = 'eligible' | 'ineligible' | 'unknown';
 
 export type EligibleDestination = '/welcome' | '/(tabs)';
-export type BootstrapRoute = EligibleDestination | '/no-access' | '/driver-login' | '/session-verify';
+export type BootstrapRoute =
+  | EligibleDestination
+  | '/no-access'
+  | '/driver-login'
+  | '/session-verify'
+  | '/passcode-change';
 
 export interface EligibilityVerdict {
   status: EligibilityStatus;
@@ -172,10 +177,23 @@ export function decidePostAuthRoute(opts: {
   revalidation: 'valid' | 'revoked' | 'unknown';
   eligibility: EligibilityStatus;
   eligibleDestination?: EligibleDestination;
+  /**
+   * Server-authoritative forced-passcode-change flag (from authenticateDriver /
+   * the session's minted claims). When true, the driver is signed in but must
+   * replace a temporary/admin-set passcode before ANY normal app access. It is
+   * gated here — the single post-auth authority every entry path (manual login,
+   * SSO, and cold start) funnels through — so relaunch, restored navigation,
+   * and deep links cannot bypass it. It outranks eligibility/destination but
+   * never a revoked session or a missing session.
+   */
+  mustChangePasscode?: boolean;
 }): BootstrapRoute {
   const intended = opts.eligibleDestination ?? '/welcome';
   if (!opts.hasLocalSession) return '/driver-login';
   if (opts.revalidation === 'revoked') return '/driver-login';
+  // Forced change is enforced before eligibility, welcome, or tabs so no
+  // destination can be reached while the temporary passcode is still active.
+  if (opts.mustChangePasscode === true) return '/passcode-change';
   if (opts.eligibility === 'ineligible' && opts.revalidation === 'valid') return '/no-access';
   if (opts.eligibility === 'eligible') return intended;
   return '/session-verify';
@@ -186,6 +204,7 @@ export function decideBootstrapRoute(opts: {
   hasLocalSession: boolean;
   revalidation: 'valid' | 'revoked' | 'unknown';
   eligibility: EligibilityStatus;
+  mustChangePasscode?: boolean;
 }): BootstrapRoute {
   return decidePostAuthRoute({ ...opts, eligibleDestination: '/welcome' });
 }

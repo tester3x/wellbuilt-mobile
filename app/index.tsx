@@ -6,6 +6,7 @@ import {
   revalidateDriverSessionClassified,
   clearDriverSession,
   getDriverSession,
+  getPersistedMustChangePasscode,
 } from '../src/services/driverAuth';
 import { authorizeEstablishedSession } from '../src/services/postAuthGate';
 import { type BootstrapRoute } from '../src/services/eligibility';
@@ -33,9 +34,11 @@ export default function Index() {
       }
 
       const session = await getDriverSession();
+      const mustChangePasscode = await getPersistedMustChangePasscode();
       const route = await authorizeEstablishedSession({
         eligibleDestination: '/welcome',
         revalidation,
+        mustChangePasscode,
       });
       if (route === '/welcome' || route === '/session-verify' || route === '/(tabs)') {
         notifyAuthenticated();

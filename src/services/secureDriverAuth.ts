@@ -35,6 +35,13 @@ export async function secureLogin(displayName: string, passcode: string) {
     assignedRoutes?: unknown;
     assignedCustomers?: unknown;
     tier?: string | null;
+    /**
+     * Server-authoritative: the driver signed in with a temporary/admin-set
+     * passcode and must replace it before normal app access. Surfaced by the
+     * deployed authenticateDriver callable (driverAuthCallables.ts) and cleared
+     * server-side by driverChangeOwnPasscode.
+     */
+    mustChangePasscode?: boolean;
   }>('authenticateDriver', { displayName, passcode });
 
   if (!data.customToken) {

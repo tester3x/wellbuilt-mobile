@@ -7,7 +7,11 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { authorizeEstablishedSession } from '../src/services/postAuthGate';
-import { clearDriverSession, revalidateDriverSessionClassified } from '../src/services/driverAuth';
+import {
+  clearDriverSession,
+  revalidateDriverSessionClassified,
+  getPersistedMustChangePasscode,
+} from '../src/services/driverAuth';
 
 export default function SessionVerifyScreen() {
   const router = useRouter();
@@ -19,9 +23,11 @@ export default function SessionVerifyScreen() {
     setBusy(true);
     try {
       const revalidation = await revalidateDriverSessionClassified();
+      const mustChangePasscode = await getPersistedMustChangePasscode();
       const dest = await authorizeEstablishedSession({
         eligibleDestination: '/welcome',
         revalidation,
+        mustChangePasscode,
       });
       setCode(dest);
       if (dest !== '/session-verify') {

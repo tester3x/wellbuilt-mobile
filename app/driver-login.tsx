@@ -266,10 +266,12 @@ export default function DriverLoginScreen() {
           roles: result.roles,
           assignedRoutes: result.assignedRoutes,
           authMethod: 'manual',
+          mustChangePasscode: result.mustChangePasscode === true,
         });
         const dest = await authorizeEstablishedSession({
           eligibleDestination: '/welcome',
           revalidation: 'valid',
+          mustChangePasscode: result.mustChangePasscode === true,
         });
         router.replace(dest);
       } else if (!result.valid) {
@@ -408,10 +410,12 @@ export default function DriverLoginScreen() {
           roles: result.roles,
           assignedRoutes: result.assignedRoutes,
           authMethod: 'manual',
+          mustChangePasscode: result.mustChangePasscode === true,
         });
         const dest = await authorizeEstablishedSession({
           eligibleDestination: '/welcome',
           revalidation: 'valid',
+          mustChangePasscode: result.mustChangePasscode === true,
         });
         router.replace(dest);
       } else {

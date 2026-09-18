@@ -152,6 +152,9 @@ export default function RootLayout() {
             <Stack.Screen name="manager" />
             <Stack.Screen name="no-access" />
             <Stack.Screen name="session-verify" />
+            {/* Forced passcode change — no swipe/gesture escape; the screen also
+                blocks the Android hardware Back button. */}
+            <Stack.Screen name="passcode-change" options={{ gestureEnabled: false }} />
           </Stack>
           {/* Global dispatch button - appears when there are pending sends */}
           {appIsReady && <DispatchButton />}

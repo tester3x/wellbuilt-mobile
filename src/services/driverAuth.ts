@@ -65,6 +65,33 @@ export interface DriverSession {
   assignedRoutes?: string[];
   assignedCustomers?: unknown;
   authMethod?: 'sso' | 'manual';
+  /**
+   * Server-authoritative forced-passcode-change flag for this session. Persisted
+   * so a relaunch/restored-navigation re-gates the driver to /passcode-change.
+   * Cleared only after the server confirms the replacement.
+   */
+  mustChangePasscode?: boolean;
+}
+
+/** SecureStore key holding the forced-passcode-change flag across relaunches. */
+const MUST_CHANGE_PASSCODE_KEY = 'mustChangePasscode';
+
+/** Persist (or clear) the forced-change flag so cold start can re-gate. */
+export async function setPersistedMustChangePasscode(value: boolean): Promise<void> {
+  if (value) {
+    await SecureStore.setItemAsync(MUST_CHANGE_PASSCODE_KEY, '1');
+  } else {
+    await SecureStore.deleteItemAsync(MUST_CHANGE_PASSCODE_KEY).catch(() => undefined);
+  }
+}
+
+/** Read the persisted forced-change flag (defaults false / fail-closed to gate). */
+export async function getPersistedMustChangePasscode(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(MUST_CHANGE_PASSCODE_KEY)) === '1';
+  } catch {
+    return false;
+  }
 }
 
 // --- Firebase helpers ---
@@ -206,6 +233,8 @@ export type VerifyLoginResult =
       roles: string[];
       assignedRoutes: unknown;
       assignedCustomers?: unknown;
+      /** Server says this (successful) sign-in used a temporary passcode. */
+      mustChangePasscode?: boolean;
     }
   | {
       valid: false;
@@ -257,6 +286,7 @@ export const verifyLogin = async (
       companyName: s.companyName || undefined,
       roles: Array.isArray(s.roles) ? s.roles : ['driver'],
       assignedRoutes: s.assignedRoutes,
+      mustChangePasscode: s.mustChangePasscode === true,
     };
   } catch (error) {
     console.error("[DriverAuth] Login failed:", error);
@@ -806,8 +836,13 @@ export async function completeAuthenticatedSession(input: {
   assignedRoutes?: unknown;
   assignedCustomers?: unknown;
   authMethod: 'sso' | 'manual';
+  /** Server-authoritative forced-passcode-change flag for this session. */
+  mustChangePasscode?: boolean;
 }): Promise<DriverSession> {
   if (!input.customToken) throw new Error('missing_custom_token');
+  // Persist the forced-change flag first so any crash before routing still
+  // re-gates on next launch (fail-closed toward requiring the change).
+  await setPersistedMustChangePasscode(input.mustChangePasscode === true);
   return runSessionTransition(async () => {
     const claimed = claimSessionGeneration();
     try {
@@ -1061,6 +1096,8 @@ export async function performPermittedLogout(permit: SessionLogoutPermit): Promi
  * be bound (avoids clearing a newer driver).
  */
 export const clearDriverSession = async (): Promise<void> => {
+  // Logout must not leave a stale forced-change flag for the next driver.
+  await setPersistedMustChangePasscode(false);
   const permit = await captureCurrentSessionPermit();
   if (!permit) return;
   await performPermittedLogout(permit);

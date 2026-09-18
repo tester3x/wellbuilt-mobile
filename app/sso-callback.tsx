@@ -34,9 +34,13 @@ export default function WbmSsoCallback() {
         companyId: exchanged.companyId,
         authMethod: 'sso',
       });
+      // SSO is a credential-free path (not a temporary-passcode sign-in), so a
+      // fresh SSO session never carries a forced change; completeAuthenticatedSession
+      // above already persisted the flag as false.
       const dest = await authorizeEstablishedSession({
         eligibleDestination: '/(tabs)',
         revalidation: 'valid',
+        mustChangePasscode: false,
       });
       router.replace(dest);
     })().catch((err) => {

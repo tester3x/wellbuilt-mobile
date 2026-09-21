@@ -8,11 +8,18 @@ export type ExecutionBindingPin = {
   policyHash: string;
 };
 
+export type DispatchExecutionContext = {
+  jobTypeId: string;
+  wellName: string;
+  ndicWellName: string;
+};
+
 export type ExecutionBindingSnapshot = {
   jobId: string;
   companyId: string;
   driverId: string;
   binding: ExecutionBindingPin;
+  execution: DispatchExecutionContext;
   definition: Record<string, unknown>;
   implementedEffects: readonly unknown[];
 };

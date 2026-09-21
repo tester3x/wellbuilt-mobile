@@ -53,7 +53,9 @@ export async function ensureGovernedProductionWaterAccess(input: {
   surface: GovernedSurface;
   jobType?: unknown;
   connectivityStatus?: string;
+  queryWellName?: string;
 }): Promise<GovernedReadyResult> {
+  const queryWellName = typeof input.queryWellName === 'string' ? input.queryWellName.trim() : '';
   return runGovernedExecutionBinding({
     governed: isGovernedPacketAccessEnabled(),
     jobId: input.jobId,
@@ -65,6 +67,7 @@ export async function ensureGovernedProductionWaterAccess(input: {
     invalidate: invalidatePersistedExecutionBinding,
     surface: input.surface,
     jobType: input.jobType,
+    localIdentity: queryWellName ? { wellName: queryWellName } : undefined,
   });
 }
 

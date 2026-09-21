@@ -7,6 +7,7 @@ import {
   bindingCacheIndexKey,
   bindingCacheRecordKey,
   buildResolveExecutionBindingRequest,
+  EXECUTION_BINDING_CACHE_VERSION,
   GOVERNED_ACCESS_MAP,
   loadPersistedExecutionBindingFromKv,
   persistExecutionBindingToKv,
@@ -89,6 +90,8 @@ function productionWaterDefinition(extra: unknown[] = []) {
   };
 }
 
+const execution = { jobTypeId: 'pw', wellName: 'Python', ndicWellName: 'PYTHON 1' };
+
 function okResponse(over: Record<string, unknown> = {}) {
   return {
     ok: true,
@@ -96,6 +99,7 @@ function okResponse(over: Record<string, unknown> = {}) {
     companyId: session.companyId,
     driverId: session.driverId,
     binding,
+    execution,
     definition: productionWaterDefinition(),
     implementedEffects: [],
     ...over,
@@ -581,8 +585,8 @@ describe('G-014R1 current-release port', () => {
   test('durable cache keys do not collide with bootstrap/drafts', () => {
     expect(WBM_ENVELOPE_KEY).toBe('@wellbuilt_wbm_bootstrap_v1');
     const core = src('src/services/governedPacketAccessCore.ts');
-    expect(core).toMatch(/wbm\.executionBinding\.index\.v1\./);
-    expect(core).toMatch(/wbm\.executionBinding\.record\.v1\./);
+    expect(core).toMatch(/wbm\.executionBinding\.index\.v2\./);
+    expect(core).toMatch(/wbm\.executionBinding\.record\.v2\./);
     expect(core).not.toMatch(/@wellbuilt_wbm_bootstrap_v1/);
     expect(core).not.toMatch(/wellbuilt_draft_/);
     expect(src('app/record.tsx')).toMatch(/wellbuilt_draft_/);
@@ -592,5 +596,109 @@ describe('G-014R1 current-release port', () => {
     expect(GOVERNED_PACKET_ACCESS).toBe(false);
     expect(isGovernedPacketAccessEnabled()).toBe(false);
     expect(src('src/services/governedPacketAccessFlag.ts')).toMatch(/boolean = false/);
+  });
+});
+
+describe('G-015 authoritative well context', () => {
+  const fixture = JSON.parse(src('src/services/__tests__/__fixtures__/g015-execution-binding-response.json'));
+
+  test('1-2. governed jobId opens the returned well without a caller wellName', async () => {
+    expect(validate(definitionSchema, fixture.definition).ok).toBe(true);
+    expect(Object.keys(fixture.execution)).toEqual(['jobTypeId', 'wellName', 'ndicWellName']);
+    const accepted = acceptResolveExecutionBindingResponse({
+      requestedJobId: fixture.jobId,
+      session: { companyId: fixture.companyId, driverId: fixture.driverId },
+      raw: fixture,
+    });
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) return;
+    expect(accepted.snapshot.execution.wellName).toBe('Python');
+    const record = src('app/record.tsx');
+    expect(record).toMatch(/resolvedWellName/);
+    expect(record).toMatch(/queryWellName/);
+    expect(record).toMatch(/onResolved=\{onGovernedResolved\}/);
+  });
+
+  test('3. caller wellName cannot redirect to another well', () => {
+    expect(reasonOf(acceptResolveExecutionBindingResponse({
+      requestedJobId: 'job-1',
+      session,
+      raw: okResponse(),
+      localIdentity: { wellName: 'Gab 1' },
+    }))).toBe('well_mismatch');
+  });
+
+  test('4. matching display hint is accepted; mismatch fails closed', () => {
+    expect(acceptResolveExecutionBindingResponse({
+      requestedJobId: 'job-1', session, raw: okResponse(), localIdentity: { wellName: 'Python' },
+    }).ok).toBe(true);
+    expect(reasonOf(acceptResolveExecutionBindingResponse({
+      requestedJobId: 'job-1', session, raw: okResponse(), localIdentity: { wellName: 'Gab 1' },
+    }))).toBe('well_mismatch');
+  });
+
+  test('5. missing/partial execution context fails closed', () => {
+    expect(reasonOf(acceptResolveExecutionBindingResponse({
+      requestedJobId: 'job-1', session, raw: okResponse({ execution: undefined }),
+    }))).toBe('incomplete_execution');
+    expect(reasonOf(acceptResolveExecutionBindingResponse({
+      requestedJobId: 'job-1', session, raw: okResponse({ execution: { jobTypeId: 'pw', wellName: 'Python' } }),
+    }))).toBe('incomplete_execution');
+  });
+
+  test('6. wrong jobType fails closed', () => {
+    expect(reasonOf(acceptResolveExecutionBindingResponse({
+      requestedJobId: 'job-1', session, raw: okResponse(), localIdentity: { jobTypeId: 'fw' },
+    }))).toBe('job_type_mismatch');
+  });
+
+  test('7. old version-1 cache cannot authorize', () => {
+    const accepted = acceptResolveExecutionBindingResponse({ requestedJobId: 'job-1', session, raw: okResponse() });
+    if (!accepted.ok) throw new Error('setup');
+    const v1index = serializeExecutionBindingIndex(accepted.snapshot).replace('"cacheVersion":2', '"cacheVersion":1');
+    const v1record = serializeExecutionBindingRecord(accepted.snapshot).replace('"cacheVersion":2', '"cacheVersion":1');
+    expect(restoreExecutionBindingRecord({
+      jobId: 'job-1', session, indexJson: v1index, recordJson: v1record,
+    }).ok).toBe(false);
+    expect(EXECUTION_BINDING_CACHE_VERSION).toBe(2);
+  });
+
+  test('8. version-2 cache restores exact well after restart', async () => {
+    const kv = memoryKv();
+    const first = harness({ kv, governed: true, surface: 'open' });
+    const saved = await runGovernedExecutionBinding(first.deps);
+    clearExecutionBindingMemory();
+    const restored = await restoreGovernedExecutionBinding({
+      governed: true,
+      jobId: 'job-1',
+      session,
+      loadCached: (jobId, sess) => loadPersistedExecutionBindingFromKv(kv, { jobId, session: sess }),
+      surface: 'open',
+    });
+    expect(restored.ok).toBe(true);
+    if (restored.ok && saved.ok) {
+      expect(restored.snapshot?.execution).toEqual(saved.snapshot?.execution);
+    }
+  });
+
+  test('9. changed execution context rejects cache', async () => {
+    const accepted = acceptResolveExecutionBindingResponse({ requestedJobId: 'job-1', session, raw: okResponse() });
+    if (!accepted.ok) throw new Error('setup');
+    const index = JSON.parse(serializeExecutionBindingIndex(accepted.snapshot));
+    const record = JSON.parse(serializeExecutionBindingRecord(accepted.snapshot));
+    index.execution = { ...index.execution, wellName: 'Gab 1' };
+    expect(restoreExecutionBindingRecord({
+      jobId: 'job-1',
+      session,
+      indexJson: JSON.stringify(index),
+      recordJson: JSON.stringify(record),
+    }).ok).toBe(false);
+  });
+
+  test('12. submission uses the resolver-returned well', () => {
+    const record = src('app/record.tsx');
+    expect(record).toMatch(/isGovernedPacketAccessEnabled\(\) && params\.editMode !== 'true'/);
+    expect(record).toMatch(/snapshot\?\.execution\?\.wellName/);
+    expect(record).not.toMatch(/jobId:\s*wellName/);
   });
 });

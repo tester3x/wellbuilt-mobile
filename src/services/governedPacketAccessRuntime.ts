@@ -3,6 +3,7 @@ import {
   buildResolveExecutionBindingRequest,
   type BindingAcceptResult,
   type GovernedAccessKind,
+  type LocalDispatchIdentity,
   type SessionIdentity,
   packetGrantsCapability,
   requiredCapabilityForSurface,
@@ -49,6 +50,7 @@ export async function runGovernedExecutionBinding(input: {
   invalidate: (jobId: string) => Promise<void>;
   surface?: GovernedSurface;
   jobType?: unknown;
+  localIdentity?: LocalDispatchIdentity;
 }): Promise<GovernedReadyResult> {
   if (input.governed !== true) {
     return { ok: true, snapshot: null, kind: 'ok' };
@@ -62,7 +64,7 @@ export async function runGovernedExecutionBinding(input: {
   const cached = await input.loadCached(id, input.session);
   if (cached.ok) {
     rememberExecutionBinding(cached.snapshot);
-    return finishSurface(cached.snapshot, input.surface, input.jobType);
+    return finishSurface(cached.snapshot, input.surface, input.jobType, input.localIdentity);
   }
 
   if (isOffline(input.connectivityStatus)) {
@@ -82,11 +84,15 @@ export async function runGovernedExecutionBinding(input: {
     requestedJobId: id,
     session: input.session,
     raw,
+    localIdentity: input.localIdentity,
   });
   if (!accepted.ok) {
     forgetExecutionBinding(id);
     await input.invalidate(id);
-    return fail('invalid', accepted.reason, false, accepted.field);
+    const denied = accepted.reason === 'well_mismatch'
+      || accepted.reason === 'job_type_mismatch'
+      || accepted.reason === 'incomplete_execution';
+    return fail(denied ? 'packet_denied' : 'invalid', accepted.reason, false, accepted.field);
   }
 
   try {
@@ -96,14 +102,23 @@ export async function runGovernedExecutionBinding(input: {
     return fail('invalid', 'persist_failed', true);
   }
   rememberExecutionBinding(accepted.snapshot);
-  return finishSurface(accepted.snapshot, input.surface, input.jobType);
+  return finishSurface(accepted.snapshot, input.surface, input.jobType, input.localIdentity);
 }
 
 function finishSurface(
   snapshot: ExecutionBindingSnapshot,
   surface: GovernedSurface | undefined,
   jobType: unknown,
+  localIdentity?: LocalDispatchIdentity,
 ): GovernedReadyResult {
+  const hintWell = typeof localIdentity?.wellName === 'string' ? localIdentity.wellName.trim() : '';
+  if (hintWell && hintWell !== snapshot.execution.wellName) {
+    return fail('packet_denied', 'well_mismatch', false, 'wellName');
+  }
+  const hintType = typeof localIdentity?.jobTypeId === 'string' ? localIdentity.jobTypeId.trim() : '';
+  if (hintType && hintType !== snapshot.execution.jobTypeId) {
+    return fail('packet_denied', 'job_type_mismatch', false, 'jobTypeId');
+  }
   if (typeof jobType === 'string' && jobType.trim()) {
     const cap = requiredCapabilityForSurface(surface || 'open');
     if (!packetGrantsCapability(snapshot.definition, cap)) {

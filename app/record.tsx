@@ -142,8 +142,15 @@ function RecordScreenInner() {
   const insets = useSafeAreaInsets();
   const keypad = useMeasurementKeypad();
   const params = useLocalSearchParams();
-  const wellName = String(params.wellName || "");
+  const queryWellName = String(params.wellName || "");
   const jobId = readGovernedJobIdFromRecordParams(params);
+  const [resolvedWellName, setResolvedWellName] = useState('');
+  const wellName = isGovernedPacketAccessEnabled() && params.editMode !== 'true'
+    ? resolvedWellName
+    : queryWellName;
+  const onGovernedResolved = useCallback((snapshot: { execution?: { wellName: string } } | null) => {
+    setResolvedWellName(snapshot?.execution?.wellName || '');
+  }, []);
   const { initiateSendQueue } = useDispatch();
 
   // Edit mode params
@@ -1066,7 +1073,12 @@ function RecordScreenInner() {
   useEffect(() => { wellDownRef.current = wellDown; }, [wellDown]);
 
   return (
-    <GovernedPacketAccessGate jobId={jobId} disabled={isEditMode}>
+    <GovernedPacketAccessGate
+      jobId={jobId}
+      queryWellName={queryWellName}
+      disabled={isEditMode}
+      onResolved={onGovernedResolved}
+    >
     <MeasurementKeypadDismissOverlay>
     <View style={{ flex: 1, backgroundColor: '#05060B' }}>
       {/* Fixed Header with back button */}

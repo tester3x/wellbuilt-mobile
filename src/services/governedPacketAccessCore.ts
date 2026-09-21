@@ -6,13 +6,14 @@ import { validate, definitionSchema } from '@tester3x/wellbuilt-contracts/transp
 import {
   CONTRACTS_CAPABILITY_LIFECYCLE,
   CONTRACTS_CAPABILITY_PICKUP,
+  type DispatchExecutionContext,
   type ExecutionBindingPin,
   type ExecutionBindingSnapshot,
 } from './governedPacketAccessMemory';
 
-export const EXECUTION_BINDING_CACHE_VERSION = 1 as const;
-export const EXECUTION_BINDING_INDEX_PREFIX = 'wbm.executionBinding.index.v1.';
-export const EXECUTION_BINDING_RECORD_PREFIX = 'wbm.executionBinding.record.v1.';
+export const EXECUTION_BINDING_CACHE_VERSION = 2 as const;
+export const EXECUTION_BINDING_INDEX_PREFIX = 'wbm.executionBinding.index.v2.';
+export const EXECUTION_BINDING_RECORD_PREFIX = 'wbm.executionBinding.record.v2.';
 
 export type BindingAcceptFail = { ok: false; reason: string; field?: string };
 export type BindingAcceptResult = { ok: true; snapshot: ExecutionBindingSnapshot } | BindingAcceptFail;
@@ -101,6 +102,39 @@ function acceptImplementedEffects(raw: unknown): readonly unknown[] | null {
   return [];
 }
 
+export type LocalDispatchIdentity = {
+  jobTypeId?: string;
+  wellName?: string;
+  ndicWellName?: string;
+};
+
+function readExecution(raw: unknown): DispatchExecutionContext | null {
+  if (!isPlainObject(raw)) return null;
+  const jobTypeId = ownString(raw, 'jobTypeId');
+  const wellName = ownString(raw, 'wellName');
+  const ndicWellName = ownString(raw, 'ndicWellName');
+  if (!jobTypeId || !wellName || !ndicWellName) return null;
+  return { jobTypeId, wellName, ndicWellName };
+}
+
+export function executionEqual(a: DispatchExecutionContext, b: DispatchExecutionContext): boolean {
+  return a.jobTypeId === b.jobTypeId && a.wellName === b.wellName && a.ndicWellName === b.ndicWellName;
+}
+
+function matchLocalIdentity(
+  execution: DispatchExecutionContext,
+  local: LocalDispatchIdentity | undefined,
+): BindingAcceptFail | null {
+  if (!local) return null;
+  const jobTypeId = typeof local.jobTypeId === 'string' ? local.jobTypeId.trim() : '';
+  const wellName = typeof local.wellName === 'string' ? local.wellName.trim() : '';
+  const ndicWellName = typeof local.ndicWellName === 'string' ? local.ndicWellName.trim() : '';
+  if (jobTypeId && jobTypeId !== execution.jobTypeId) return fail('job_type_mismatch', 'jobTypeId');
+  if (wellName && wellName !== execution.wellName) return fail('well_mismatch', 'wellName');
+  if (ndicWellName && ndicWellName !== execution.ndicWellName) return fail('well_mismatch', 'ndicWellName');
+  return null;
+}
+
 /** Request body is exactly { jobId }. */
 export function buildResolveExecutionBindingRequest(jobId: string): { jobId: string } {
   return { jobId };
@@ -110,6 +144,7 @@ export function acceptResolveExecutionBindingResponse(input: {
   requestedJobId: string;
   session: SessionIdentity;
   raw: unknown;
+  localIdentity?: LocalDispatchIdentity;
 }): BindingAcceptResult {
   const requestedJobId = typeof input.requestedJobId === 'string' ? input.requestedJobId.trim() : '';
   if (!requestedJobId) return fail('missing_job_id');
@@ -133,11 +168,16 @@ export function acceptResolveExecutionBindingResponse(input: {
   if (!validated.ok) return fail('definition_invalid', validated.path || 'definition');
   const implementedEffects = acceptImplementedEffects(input.raw.implementedEffects);
   if (!implementedEffects) return fail('implemented_effects_not_empty_array', 'implementedEffects');
+  const execution = readExecution(input.raw.execution);
+  if (!execution) return fail('incomplete_execution', 'execution');
+  const localMismatch = matchLocalIdentity(execution, input.localIdentity);
+  if (localMismatch) return localMismatch;
   const snapshot: ExecutionBindingSnapshot = Object.freeze({
     jobId,
     companyId: responseCompanyId,
     driverId: responseDriverId,
     binding: Object.freeze({ ...binding }),
+    execution: Object.freeze({ ...execution }),
     definition: Object.freeze(snapshotPlain(validated.value)) as Record<string, unknown>,
     implementedEffects: Object.freeze([...implementedEffects]),
   });
@@ -151,6 +191,7 @@ export function serializeExecutionBindingRecord(snapshot: ExecutionBindingSnapsh
     companyId: snapshot.companyId,
     driverId: snapshot.driverId,
     binding: snapshot.binding,
+    execution: snapshot.execution,
     definition: snapshot.definition,
     implementedEffects: snapshot.implementedEffects,
   });
@@ -161,6 +202,7 @@ export function serializeExecutionBindingIndex(snapshot: ExecutionBindingSnapsho
     cacheVersion: EXECUTION_BINDING_CACHE_VERSION,
     jobId: snapshot.jobId,
     binding: snapshot.binding,
+    execution: snapshot.execution,
   });
 }
 
@@ -194,6 +236,10 @@ export function restoreExecutionBindingRecord(input: {
   const recordBinding = readBinding(recordRaw.binding);
   if (!indexBinding || !recordBinding) return fail('incomplete_binding', 'binding');
   if (!pinsEqual(indexBinding, recordBinding)) return fail('cache_pin_mismatch', 'binding');
+  const indexExecution = readExecution(indexRaw.execution);
+  const recordExecution = readExecution(recordRaw.execution);
+  if (!indexExecution || !recordExecution) return fail('incomplete_execution', 'execution');
+  if (!executionEqual(indexExecution, recordExecution)) return fail('cache_execution_mismatch', 'execution');
   return acceptResolveExecutionBindingResponse({
     requestedJobId: jobId,
     session: input.session,
@@ -203,6 +249,7 @@ export function restoreExecutionBindingRecord(input: {
       companyId: recordRaw.companyId,
       driverId: recordRaw.driverId,
       binding: recordBinding,
+      execution: recordExecution,
       definition: recordRaw.definition,
       implementedEffects: recordRaw.implementedEffects,
     },

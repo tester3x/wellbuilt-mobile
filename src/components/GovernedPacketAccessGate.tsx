@@ -7,14 +7,17 @@ import {
   isGovernedPacketAccessEnabled,
   type GovernedReadyResult,
 } from '../services/governedPacketAccess';
+import type { ExecutionBindingSnapshot } from '../services/governedPacketAccessMemory';
 
 type Props = {
   jobId: string;
+  queryWellName?: string;
   disabled?: boolean;
+  onResolved?: (snapshot: ExecutionBindingSnapshot | null) => void;
   children: React.ReactNode;
 };
 
-export default function GovernedPacketAccessGate({ jobId, disabled, children }: Props) {
+export default function GovernedPacketAccessGate({ jobId, queryWellName, disabled, onResolved, children }: Props) {
   const { t } = useTranslation();
   const governed = !disabled && isGovernedPacketAccessEnabled();
   const [result, setResult] = useState<GovernedReadyResult | null>(governed ? null : { ok: true, snapshot: null, kind: 'ok' });
@@ -29,12 +32,16 @@ export default function GovernedPacketAccessGate({ jobId, disabled, children }: 
   const run = useCallback(async () => {
     if (!isGovernedPacketAccessEnabled()) {
       setResult({ ok: true, snapshot: null, kind: 'ok' });
+      onResolved?.(null);
       return;
     }
     setResult(null);
-    const next = await ensureGovernedProductionWaterAccess({ jobId, surface: 'open' });
-    if (mounted.current) setResult(next);
-  }, [jobId]);
+    const next = await ensureGovernedProductionWaterAccess({ jobId, surface: 'open', queryWellName });
+    if (mounted.current) {
+      setResult(next);
+      onResolved?.(next.ok ? next.snapshot : null);
+    }
+  }, [jobId, queryWellName, onResolved]);
 
   useEffect(() => {
     if (!governed) return;

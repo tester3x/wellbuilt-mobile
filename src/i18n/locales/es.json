@@ -787,5 +787,17 @@
     "firebaseWrite": "No se pudieron guardar los datos. Inténtelo de nuevo.",
     "updateRequired": "Esta función no está disponible. Actualice la aplicación.",
     "dependencyBlocked": "Guardado — se enviará cuando el servidor lo admita."
+  },
+  "governedPacket": {
+    "verifying": "Verificando este trabajo…",
+    "retry": "Intentar de nuevo",
+    "networkTitle": "No se pudo verificar el trabajo",
+    "networkBody": "Revise su conexión e inténtelo de nuevo.",
+    "offlineTitle": "Se requiere verificación en línea",
+    "offlineBody": "Este trabajo debe verificarse en línea antes de abrirlo.",
+    "packetTitle": "No incluido en este paquete de trabajo",
+    "packetBody": "Esta acción de agua de producción no está incluida para este trabajo.",
+    "missingTitle": "Trabajo no verificado",
+    "missingBody": "Este trabajo no se puede abrir hasta que tenga una asignación verificada del Dashboard."
   }
 }

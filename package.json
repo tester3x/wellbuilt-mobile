@@ -12,6 +12,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@tester3x/wellbuilt-contracts": "0.7.0",
     "@expo/vector-icons": "^15.0.3",
     "@miblanchard/react-native-slider": "^2.6.0",
     "@react-native-async-storage/async-storage": "2.2.0",

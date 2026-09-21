@@ -35,6 +35,8 @@ import {
   useMeasurementKeypad,
 } from '../src/contexts/MeasurementKeypadContext';
 import LevelFieldInput, { type LevelFieldInputHandle } from '../src/components/LevelFieldInput';
+import GovernedPacketAccessGate from '../src/components/GovernedPacketAccessGate';
+import { authorizeGovernedPullSubmit, isGovernedPacketAccessEnabled } from '../src/services/governedPacketAccess';
 
 const BBLS_FIELD_KEY = 'record-bbls-taken';
 
@@ -189,6 +191,7 @@ function RecordScreenInner() {
   const keypad = useMeasurementKeypad();
   const params = useLocalSearchParams();
   const wellName = String(params.wellName || "");
+  const jobId = String(params.jobId || "");
   const { initiateSendQueue } = useDispatch();
 
   // Edit mode params
@@ -597,6 +600,23 @@ function RecordScreenInner() {
       alert.show("Error", "No well selected");
       return;
     }
+    if (!isEditMode && isGovernedPacketAccessEnabled()) {
+      const access = await authorizeGovernedPullSubmit(jobId);
+      if (!access.ok) {
+        const title = access.kind === 'packet_denied'
+          ? t('governedPacket.packetTitle')
+          : access.kind === 'offline_uncached'
+            ? t('governedPacket.offlineTitle')
+            : t('governedPacket.networkTitle');
+        const body = access.kind === 'packet_denied'
+          ? t('governedPacket.packetBody')
+          : access.kind === 'offline_uncached'
+            ? t('governedPacket.offlineBody')
+            : t('governedPacket.networkBody');
+        alert.show(title, body);
+        return;
+      }
+    }
 
     const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
     const tankLevelFeet = parseLevel(level);
@@ -928,6 +948,7 @@ function RecordScreenInner() {
   useEffect(() => { committedBarrelsRef.current = barrels; }, [barrels]);
 
   return (
+    <GovernedPacketAccessGate jobId={jobId} disabled={isEditMode}>
     <MeasurementKeypadDismissOverlay>
     <View style={{ flex: 1, backgroundColor: '#05060B' }}>
       {/* Fixed Header with back button */}
@@ -1189,6 +1210,7 @@ function RecordScreenInner() {
       <MeasurementKeypadSlot />
     </View>
     </MeasurementKeypadDismissOverlay>
+    </GovernedPacketAccessGate>
   );
 }
 

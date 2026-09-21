@@ -74,6 +74,28 @@ export async function secureSubmitFieldCommand(packet: Record<string, unknown>):
   unsupportedFieldCommand(requestType || 'unknown');
 }
 
+/**
+ * Read-only packet-binding resolver. Request is exactly { jobId }.
+ * Dashboard G-012 contract; not deployed. Do not send authority fields.
+ */
+export async function secureResolveExecutionBinding(input: { jobId: string }) {
+  const jobId = typeof input?.jobId === 'string' ? input.jobId.trim() : '';
+  return authorizedCallable<{
+    ok: boolean;
+    jobId: string;
+    companyId: string;
+    driverId: string;
+    binding: {
+      packageId: string;
+      packetRevision: number;
+      contentHash: string;
+      policyHash: string;
+    };
+    definition: Record<string, unknown>;
+    implementedEffects: unknown[];
+  }>('resolveExecutionBinding', { jobId });
+}
+
 /** Legacy field-command receipt lookup is not a deployed production callable. */
 export async function getFieldCommandStatus(_query: {
   packetId?: string;

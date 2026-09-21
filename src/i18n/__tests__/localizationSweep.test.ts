@@ -43,6 +43,11 @@ const REQUIRED_KEYS = [
   'wellData.errorTimeout', 'wellData.errorUnknown', 'wellData.errorFetchFailed', 'wellData.footerNote',
   'syncStatus.backOnlineTitle', 'syncStatus.backOnlineBody_one', 'syncStatus.backOnlineBody_other',
   'appSwitcher.jsaMigrationBody', 'appSwitcher.shiftTimer',
+  'governedPacket.verifying', 'governedPacket.retry',
+  'governedPacket.networkTitle', 'governedPacket.networkBody',
+  'governedPacket.offlineTitle', 'governedPacket.offlineBody',
+  'governedPacket.packetTitle', 'governedPacket.packetBody',
+  'governedPacket.missingTitle', 'governedPacket.missingBody',
 ];
 
 // literal English strings that must NO LONGER appear in each reachable screen.

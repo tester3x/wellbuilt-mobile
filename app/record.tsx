@@ -48,6 +48,12 @@ import {
   liveMeasurementValue,
   parseLevel,
 } from '../src/utils/recordLoadHints';
+import GovernedPacketAccessGate from '../src/components/GovernedPacketAccessGate';
+import {
+  authorizeGovernedPullSubmit,
+  isGovernedPacketAccessEnabled,
+  readGovernedJobIdFromRecordParams,
+} from '../src/services/governedPacketAccess';
 
 // Stable field keys for the two Record Load measurement fields.
 const LEVEL_FIELD_KEY = 'record-tank-level';
@@ -137,6 +143,7 @@ function RecordScreenInner() {
   const keypad = useMeasurementKeypad();
   const params = useLocalSearchParams();
   const wellName = String(params.wellName || "");
+  const jobId = readGovernedJobIdFromRecordParams(params);
   const { initiateSendQueue } = useDispatch();
 
   // Edit mode params
@@ -627,6 +634,28 @@ function RecordScreenInner() {
     try {
       setIsSending(true);
 
+      if (!isEditMode && isGovernedPacketAccessEnabled()) {
+        const access = await authorizeGovernedPullSubmit(jobId);
+        if (!access.ok) {
+          const title = access.kind === 'packet_denied'
+            ? t('governedPacket.packetTitle')
+            : access.kind === 'offline_uncached'
+              ? t('governedPacket.offlineTitle')
+              : access.kind === 'missing_job'
+                ? t('governedPacket.missingTitle')
+                : t('governedPacket.networkTitle');
+          const body = access.kind === 'packet_denied'
+            ? t('governedPacket.packetBody')
+            : access.kind === 'offline_uncached'
+              ? t('governedPacket.offlineBody')
+              : access.kind === 'missing_job'
+                ? t('governedPacket.missingBody')
+                : t('governedPacket.networkBody');
+          alert.show(title, body);
+          return;
+        }
+      }
+
       const bblsTakenNum = parseFloat(barrelsValue) || 0;
       const rawLevelFeet = tankLevelFeet ?? 0;
 
@@ -1037,6 +1066,7 @@ function RecordScreenInner() {
   useEffect(() => { wellDownRef.current = wellDown; }, [wellDown]);
 
   return (
+    <GovernedPacketAccessGate jobId={jobId} disabled={isEditMode}>
     <MeasurementKeypadDismissOverlay>
     <View style={{ flex: 1, backgroundColor: '#05060B' }}>
       {/* Fixed Header with back button */}
@@ -1346,6 +1376,7 @@ function RecordScreenInner() {
       />
     </View>
     </MeasurementKeypadDismissOverlay>
+    </GovernedPacketAccessGate>
   );
 }
 

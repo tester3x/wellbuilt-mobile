@@ -72,6 +72,10 @@ import { getTankDimensions, hp, isTablet, spacing, wp } from '../../src/ui/layou
 import { useAppAlert } from '../../components/AppAlert';
 import { debugLog, autoFlushIfNeeded } from '../../src/services/debugLog';
 import { isCurrentUserViewer } from '../../src/services/driverAuth';
+import {
+  beginGovernedProductionWaterPull,
+  isGovernedPacketAccessEnabled,
+} from '../../src/services/governedPacketAccess';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -2121,12 +2125,38 @@ export default function MainScreen() {
       return;
     }
     if (wells.length > 0) {
-      router.push({
-        pathname: '/record',
-        params: { wellName: wells[currentIndex] },
-      });
+      if (!isGovernedPacketAccessEnabled()) {
+        router.push({
+          pathname: '/record',
+          params: { wellName: wells[currentIndex] },
+        });
+        return;
+      }
+      void (async () => {
+        const wellName = wells[currentIndex];
+        const jobId = '';
+        const access = await beginGovernedProductionWaterPull({ jobId });
+        if (!access.ok) {
+          const title = access.kind === 'offline_uncached'
+            ? t('governedPacket.offlineTitle')
+            : access.kind === 'packet_denied'
+              ? t('governedPacket.packetTitle')
+              : t('governedPacket.missingTitle');
+          const body = access.kind === 'offline_uncached'
+            ? t('governedPacket.offlineBody')
+            : access.kind === 'packet_denied'
+              ? t('governedPacket.packetBody')
+              : t('governedPacket.missingBody');
+          alert.show(title, body, access.retryable ? [{ text: t('governedPacket.retry') }] : [{ text: t('common.ok') }]);
+          return;
+        }
+        router.push({
+          pathname: '/record',
+          params: { wellName, jobId },
+        });
+      })();
     }
-  }, [router, wells, currentIndex, isViewer, alert]);
+  }, [router, wells, currentIndex, isViewer, alert, t]);
 
   // Navigate to settings
   const handleSettingsPress = useCallback(() => {

@@ -858,5 +858,17 @@
     "loading": "Loading…",
     "working": "Working…",
     "stillWorking": "Still working…"
+  },
+  "governedPacket": {
+    "verifying": "Verifying this job…",
+    "retry": "Try again",
+    "networkTitle": "Could not verify job",
+    "networkBody": "Check your connection and try again.",
+    "offlineTitle": "Online verification required",
+    "offlineBody": "This job must be verified online before it can be opened.",
+    "packetTitle": "Not included in this job packet",
+    "packetBody": "This Production Water action is not included for this job.",
+    "missingTitle": "Job not verified",
+    "missingBody": "This job cannot be opened until it has a verified Dashboard assignment."
   }
 }

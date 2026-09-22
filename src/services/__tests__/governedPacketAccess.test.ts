@@ -146,9 +146,7 @@ beforeEach(() => {
 });
 
 describe('G-014 identity and request', () => {
-  test('1. flag OFF preserves current behavior and makes no resolver call', async () => {
-    expect(GOVERNED_PACKET_ACCESS).toBe(false);
-    expect(isGovernedPacketAccessEnabled()).toBe(false);
+  test('1. injectable flag-off preserves current behavior and makes no resolver call', async () => {
     const h = harness({ governed: false });
     const out = await runGovernedExecutionBinding(h.deps);
     expect(out.ok).toBe(true);
@@ -592,10 +590,10 @@ describe('G-014R1 current-release port', () => {
     expect(src('app/record.tsx')).toMatch(/wellbuilt_draft_/);
   });
 
-  test('flag default remains OFF on the current release line', () => {
-    expect(GOVERNED_PACKET_ACCESS).toBe(false);
-    expect(isGovernedPacketAccessEnabled()).toBe(false);
-    expect(src('src/services/governedPacketAccessFlag.ts')).toMatch(/boolean = false/);
+  test('field-test release ships with governed access ON', () => {
+    expect(GOVERNED_PACKET_ACCESS).toBe(true);
+    expect(isGovernedPacketAccessEnabled()).toBe(true);
+    expect(src('src/services/governedPacketAccessFlag.ts')).toMatch(/boolean = true/);
   });
 });
 

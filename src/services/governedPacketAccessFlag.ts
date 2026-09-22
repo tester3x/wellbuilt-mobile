@@ -11,7 +11,7 @@
  *
  * Location: src/services/governedPacketAccessFlag.ts
  */
-export const GOVERNED_PACKET_ACCESS: boolean = false;
+export const GOVERNED_PACKET_ACCESS: boolean = true;
 
 export function isGovernedPacketAccessEnabled(): boolean {
   return GOVERNED_PACKET_ACCESS === true;

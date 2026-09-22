@@ -84,13 +84,21 @@ export async function restoreGovernedProductionWaterAccess(input: {
   });
 }
 
-/** Tank-carousel Pull. Never treats wellName as jobId. */
+/** Tank-carousel Pull. Never treats wellName as jobId. Returns ok in standalone mode when jobId is missing. */
 export async function beginGovernedProductionWaterPull(input: {
   jobId: string;
 }): Promise<GovernedReadyResult> {
-  return ensureGovernedProductionWaterAccess({ jobId: input.jobId, surface: 'open' });
+  const id = typeof input?.jobId === 'string' ? input.jobId.trim() : '';
+  if (!id) {
+    return { ok: true, snapshot: null, kind: 'ok' };
+  }
+  return ensureGovernedProductionWaterAccess({ jobId: id, surface: 'open' });
 }
 
 export async function authorizeGovernedPullSubmit(jobId: string): Promise<GovernedReadyResult> {
-  return ensureGovernedProductionWaterAccess({ jobId, surface: 'pull' });
+  const id = typeof jobId === 'string' ? jobId.trim() : '';
+  if (!id) {
+    return { ok: true, snapshot: null, kind: 'ok' };
+  }
+  return ensureGovernedProductionWaterAccess({ jobId: id, surface: 'pull' });
 }

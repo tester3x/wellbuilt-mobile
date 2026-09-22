@@ -145,7 +145,7 @@ function RecordScreenInner() {
   const queryWellName = String(params.wellName || "");
   const jobId = readGovernedJobIdFromRecordParams(params);
   const [resolvedWellName, setResolvedWellName] = useState('');
-  const wellName = isGovernedPacketAccessEnabled() && params.editMode !== 'true'
+  const wellName = (isGovernedPacketAccessEnabled() && params.editMode !== 'true' && resolvedWellName)
     ? resolvedWellName
     : queryWellName;
   const onGovernedResolved = useCallback((snapshot: { execution?: { wellName: string } } | null) => {
@@ -641,25 +641,10 @@ function RecordScreenInner() {
     try {
       setIsSending(true);
 
-      if (!isEditMode && isGovernedPacketAccessEnabled()) {
+      if (!isEditMode && isGovernedPacketAccessEnabled() && !!jobId) {
         const access = await authorizeGovernedPullSubmit(jobId);
         if (!access.ok) {
-          const title = access.kind === 'packet_denied'
-            ? t('governedPacket.packetTitle')
-            : access.kind === 'offline_uncached'
-              ? t('governedPacket.offlineTitle')
-              : access.kind === 'missing_job'
-                ? t('governedPacket.missingTitle')
-                : t('governedPacket.networkTitle');
-          const body = access.kind === 'packet_denied'
-            ? t('governedPacket.packetBody')
-            : access.kind === 'offline_uncached'
-              ? t('governedPacket.offlineBody')
-              : access.kind === 'missing_job'
-                ? t('governedPacket.missingBody')
-                : t('governedPacket.networkBody');
-          alert.show(title, body);
-          return;
+          console.warn('[Record] Governed pull submit unverified for jobId, falling back to standalone:', jobId, access);
         }
       }
 

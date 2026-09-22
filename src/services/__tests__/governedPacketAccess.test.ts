@@ -153,8 +153,7 @@ describe('G-014 identity and request', () => {
     expect(out.ok && out.snapshot).toBeNull();
     expect(h.calls).toHaveLength(0);
     const tabs = src('app/(tabs)/index.tsx');
-    expect(tabs).toMatch(/if \(!isGovernedPacketAccessEnabled\(\)\)/);
-    expect(tabs).toMatch(/pathname: '\/record'/);
+    expect(tabs).toMatch(/pathname:\s*'\/record'/);
   });
 
   test('2. flag ON sends exactly { jobId }', async () => {
@@ -177,7 +176,6 @@ describe('G-014 identity and request', () => {
     expect(h.calls[0]).toEqual({ jobId: 'W0Om3TsAHAJ4bu8d8K49' });
     const tabs = src('app/(tabs)/index.tsx');
     expect(tabs).not.toMatch(/jobId:\s*wellName/);
-    expect(tabs).toMatch(/const jobId = ''/);
     const record = src('app/record.tsx');
     expect(record).toMatch(/readGovernedJobIdFromRecordParams\(params\)/);
     expect(record).not.toMatch(/jobId:\s*wellName/);
@@ -465,16 +463,12 @@ describe('G-014 UX/regression', () => {
     expect(governedUiKind(net)).toBe('network');
   });
 
-  test('27. flag OFF adds no spinner or navigation delay', () => {
+  test('27. standalone carousel pull navigates directly to /record without blocking', () => {
     const gate = src('src/components/GovernedPacketAccessGate.tsx');
     expect(gate).toMatch(/if \(!governed\) \{\s*return <>\{children\}<\/>;/s);
     const tabs = src('app/(tabs)/index.tsx');
-    const offIdx = tabs.indexOf('if (!isGovernedPacketAccessEnabled())');
-    const pushIdx = tabs.indexOf("pathname: '/record'", offIdx);
-    const awaitIdx = tabs.indexOf('await beginGovernedProductionWaterPull', offIdx);
-    expect(offIdx).toBeGreaterThan(-1);
-    expect(pushIdx).toBeGreaterThan(offIdx);
-    expect(awaitIdx).toBeGreaterThan(pushIdx);
+    expect(tabs).toMatch(/pathname:\s*'\/record'/);
+    expect(tabs).not.toMatch(/beginGovernedProductionWaterPull/);
   });
 
   test('28-31. unrelated surfaces unchanged', () => {

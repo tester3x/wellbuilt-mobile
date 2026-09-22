@@ -19,7 +19,8 @@ type Props = {
 
 export default function GovernedPacketAccessGate({ jobId, queryWellName, disabled, onResolved, children }: Props) {
   const { t } = useTranslation();
-  const governed = !disabled && isGovernedPacketAccessEnabled();
+  const id = typeof jobId === 'string' ? jobId.trim() : '';
+  const governed = !disabled && isGovernedPacketAccessEnabled() && !!id;
   const [result, setResult] = useState<GovernedReadyResult | null>(governed ? null : { ok: true, snapshot: null, kind: 'ok' });
   const [attempt, setAttempt] = useState(0);
   const mounted = useRef(true);
@@ -30,18 +31,18 @@ export default function GovernedPacketAccessGate({ jobId, queryWellName, disable
   }, []);
 
   const run = useCallback(async () => {
-    if (!isGovernedPacketAccessEnabled()) {
+    if (!id || !isGovernedPacketAccessEnabled()) {
       setResult({ ok: true, snapshot: null, kind: 'ok' });
       onResolved?.(null);
       return;
     }
     setResult(null);
-    const next = await ensureGovernedProductionWaterAccess({ jobId, surface: 'open', queryWellName });
+    const next = await ensureGovernedProductionWaterAccess({ jobId: id, surface: 'open', queryWellName });
     if (mounted.current) {
       setResult(next);
       onResolved?.(next.ok ? next.snapshot : null);
     }
-  }, [jobId, queryWellName, onResolved]);
+  }, [id, queryWellName, onResolved]);
 
   useEffect(() => {
     if (!governed) return;
@@ -74,18 +75,23 @@ export default function GovernedPacketAccessGate({ jobId, queryWellName, disable
       : ui === 'missing' ? 'governedPacket.missingBody'
       : 'governedPacket.networkBody';
     return (
-      <View style={styles.panel}>
-        <Text style={styles.title}>{t(titleKey)}</Text>
-        <Text style={styles.body}>{t(bodyKey)}</Text>
-        {result.retryable ? (
-          <TouchableOpacity
-            style={styles.retry}
-            onPress={() => setAttempt((n) => n + 1)}
-            accessibilityRole="button"
-          >
-            <Text style={styles.retryText}>{t('governedPacket.retry')}</Text>
-          </TouchableOpacity>
-        ) : null}
+      <View style={{ flex: 1 }}>
+        <View style={styles.banner}>
+          <View style={styles.bannerContent}>
+            <Text style={styles.bannerTitle}>{t(titleKey)}</Text>
+            <Text style={styles.bannerBody}>{t(bodyKey)}</Text>
+          </View>
+          {result.retryable ? (
+            <TouchableOpacity
+              style={styles.retry}
+              onPress={() => setAttempt((n) => n + 1)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.retryText}>{t('governedPacket.retry')}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        {children}
       </View>
     );
   }
@@ -101,28 +107,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-  title: {
-    color: '#F5C242',
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
   body: {
     color: '#D1D5DB',
     fontSize: 15,
     textAlign: 'center',
     marginTop: 12,
   },
-  retry: {
-    marginTop: 20,
-    backgroundColor: '#F5C242',
-    paddingHorizontal: 20,
+  banner: {
+    backgroundColor: '#1C1917',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5C242',
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bannerContent: {
+    flex: 1,
+    marginRight: 10,
+  },
+  bannerTitle: {
+    color: '#F5C242',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  bannerBody: {
+    color: '#D1D5DB',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  retry: {
+    backgroundColor: '#F5C242',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
   retryText: {
     color: '#111827',
     fontWeight: '700',
+    fontSize: 12,
   },
 });

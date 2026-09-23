@@ -516,7 +516,7 @@ describe('G-014 UX/regression', () => {
 describe('G-014 contracts and mapping', () => {
   test('exact 0.7.0 and registry-only npmrc', () => {
     const pkg = JSON.parse(src('package.json'));
-    expect(pkg.dependencies['@tester3x/wellbuilt-contracts']).toBe('0.7.0');
+    expect(pkg.dependencies['@tester3x/wellbuilt-contracts']).toBe('file:vendor/tester3x-wellbuilt-contracts-0.7.0.tgz');
     expect(src('.npmrc').trim()).toBe('@tester3x:registry=https://npm.pkg.github.com');
   });
 

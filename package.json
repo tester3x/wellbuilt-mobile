@@ -22,7 +22,7 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
-    "@tester3x/wellbuilt-contracts": "0.7.0",
+    "@tester3x/wellbuilt-contracts": "file:vendor/tester3x-wellbuilt-contracts-0.7.0.tgz",
     "expo": "~54.0.30",
     "expo-auth-session": "~7.0.10",
     "expo-build-properties": "^1.0.10",

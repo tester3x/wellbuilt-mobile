@@ -1,4 +1,5 @@
 import { Slider } from '@miblanchard/react-native-slider';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -2391,39 +2392,50 @@ export default function MainScreen() {
             </TouchableOpacity>
           </View>
           <View style={styles.navSide}>
-            <TouchableOpacity style={styles.navButton} onPress={() => setShowMore(true)}>
-              <Text style={styles.navIcon}>•••</Text>
-              <Text style={styles.navLabel}>{t('nav.more', { defaultValue: 'More' })}</Text>
+            <TouchableOpacity
+              style={styles.navButton}
+              onPress={() => setShowMore(true)}
+              accessibilityRole="button"
+              accessibilityLabel="•••"
+            >
+              <Text style={styles.navDots}>•••</Text>
             </TouchableOpacity>
           </View>
         </View>
-      {/* WB-M "More" sheet — Route Me, Summary, Switch Apps (locked initial items). */}
+      {/* WB-M More Menu (•••) matching WB-T in-form menu styling */}
       <Modal visible={showMore} transparent animationType="fade" onRequestClose={() => setShowMore(false)}>
         <Pressable style={styles.moreBackdrop} onPress={() => setShowMore(false)}>
-          <Pressable style={styles.moreSheet} onPress={() => {}}>
-            <View style={styles.moreHandle} />
+          <View style={styles.moreMenuPopup}>
             <TouchableOpacity
-              style={styles.moreItem}
+              style={styles.moreMenuItem}
               onPress={() => { setShowMore(false); router.push('/route-me'); }}
+              accessibilityRole="button"
+              accessibilityLabel="Route Me"
             >
-              <Text style={styles.moreItemIcon}>🧭</Text>
-              <Text style={styles.moreItemLabel}>{t('nav.routeMe', { defaultValue: 'Route Me' })}</Text>
+              <Ionicons name="navigate-outline" size={20} color="#F9FAFB" />
+              <Text style={styles.moreMenuLabel}>{t('nav.routeMe', { defaultValue: 'Route Me' })}</Text>
             </TouchableOpacity>
+            <View style={styles.moreMenuDivider} />
             <TouchableOpacity
-              style={styles.moreItem}
+              style={styles.moreMenuItem}
               onPress={() => { setShowMore(false); handleSummaryPress(); }}
+              accessibilityRole="button"
+              accessibilityLabel="Summary"
             >
-              <Text style={styles.moreItemIcon}>📊</Text>
-              <Text style={styles.moreItemLabel}>{t('nav.summary')}</Text>
+              <Ionicons name="stats-chart-outline" size={20} color="#F9FAFB" />
+              <Text style={styles.moreMenuLabel}>{t('nav.summary')}</Text>
             </TouchableOpacity>
+            <View style={styles.moreMenuDivider} />
             <TouchableOpacity
-              style={styles.moreItem}
+              style={styles.moreMenuItem}
               onPress={() => { setShowMore(false); DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT); }}
+              accessibilityRole="button"
+              accessibilityLabel="Switch Apps"
             >
-              <Text style={styles.moreItemIcon}>🔀</Text>
-              <Text style={styles.moreItemLabel}>{t('nav.switchApps', { defaultValue: 'Switch Apps' })}</Text>
+              <Ionicons name="apps-outline" size={20} color="#F9FAFB" />
+              <Text style={styles.moreMenuLabel}>{t('nav.switchApps', { defaultValue: 'Switch Apps' })}</Text>
             </TouchableOpacity>
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
       </GestureHandlerRootView>
@@ -2523,40 +2535,51 @@ export default function MainScreen() {
         </View>
 
         <View style={styles.navSide}>
-          <TouchableOpacity style={styles.navButton} onPress={() => setShowMore(true)}>
-            <Text style={styles.navIcon}>•••</Text>
-            <Text style={styles.navLabel}>{t('nav.more', { defaultValue: 'More' })}</Text>
+          <TouchableOpacity
+            style={styles.navButton}
+            onPress={() => setShowMore(true)}
+            accessibilityRole="button"
+            accessibilityLabel="•••"
+          >
+            <Text style={styles.navDots}>•••</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* WB-M "More" sheet — Route Me, Summary, Switch Apps (locked initial items). */}
+      {/* WB-M More Menu (•••) matching WB-T in-form menu styling */}
       <Modal visible={showMore} transparent animationType="fade" onRequestClose={() => setShowMore(false)}>
         <Pressable style={styles.moreBackdrop} onPress={() => setShowMore(false)}>
-          <Pressable style={styles.moreSheet} onPress={() => {}}>
-            <View style={styles.moreHandle} />
+          <View style={styles.moreMenuPopup}>
             <TouchableOpacity
-              style={styles.moreItem}
+              style={styles.moreMenuItem}
               onPress={() => { setShowMore(false); router.push('/route-me'); }}
+              accessibilityRole="button"
+              accessibilityLabel="Route Me"
             >
-              <Text style={styles.moreItemIcon}>🧭</Text>
-              <Text style={styles.moreItemLabel}>{t('nav.routeMe', { defaultValue: 'Route Me' })}</Text>
+              <Ionicons name="navigate-outline" size={20} color="#F9FAFB" />
+              <Text style={styles.moreMenuLabel}>{t('nav.routeMe', { defaultValue: 'Route Me' })}</Text>
             </TouchableOpacity>
+            <View style={styles.moreMenuDivider} />
             <TouchableOpacity
-              style={styles.moreItem}
+              style={styles.moreMenuItem}
               onPress={() => { setShowMore(false); handleSummaryPress(); }}
+              accessibilityRole="button"
+              accessibilityLabel="Summary"
             >
-              <Text style={styles.moreItemIcon}>📊</Text>
-              <Text style={styles.moreItemLabel}>{t('nav.summary')}</Text>
+              <Ionicons name="stats-chart-outline" size={20} color="#F9FAFB" />
+              <Text style={styles.moreMenuLabel}>{t('nav.summary')}</Text>
             </TouchableOpacity>
+            <View style={styles.moreMenuDivider} />
             <TouchableOpacity
-              style={styles.moreItem}
+              style={styles.moreMenuItem}
               onPress={() => { setShowMore(false); DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT); }}
+              accessibilityRole="button"
+              accessibilityLabel="Switch Apps"
             >
-              <Text style={styles.moreItemIcon}>🔀</Text>
-              <Text style={styles.moreItemLabel}>{t('nav.switchApps', { defaultValue: 'Switch Apps' })}</Text>
+              <Ionicons name="apps-outline" size={20} color="#F9FAFB" />
+              <Text style={styles.moreMenuLabel}>{t('nav.switchApps', { defaultValue: 'Switch Apps' })}</Text>
             </TouchableOpacity>
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
 
@@ -3271,38 +3294,50 @@ const styles = StyleSheet.create({
   navLabelAccent: { color: '#C4A574', fontWeight: '700' },
   navIconDisabled: { opacity: 0.4 },
   navLabelDisabled: { color: '#6B7280' },
-  // "More" sheet
+  navDots: {
+    color: '#F9FAFB',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 26,
+    textAlign: 'center',
+  },
   moreBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
   },
-  moreSheet: {
-    backgroundColor: '#111827',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.md,
+  moreMenuPopup: {
+    position: 'absolute',
+    right: 16,
+    bottom: (isTablet ? spacing.xl : SCREEN_HEIGHT * 0.06) + 48,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    paddingVertical: 4,
+    minWidth: 180,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  moreHandle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#374151',
-    marginBottom: spacing.sm,
-  },
-  moreItem: {
+  moreMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1F2937',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 12,
   },
-  moreItemIcon: { fontSize: Math.round(hp('2.4%')) },
-  moreItemLabel: { color: '#F9FAFB', fontSize: Math.round(hp('1.9%')), fontWeight: '600' },
+  moreMenuLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#F9FAFB',
+  },
+  moreMenuDivider: {
+    height: 1,
+    backgroundColor: '#333',
+    marginHorizontal: 12,
+  },
   pullButton: {
     backgroundColor: '#C4A574',
     paddingVertical: spacing.sm,

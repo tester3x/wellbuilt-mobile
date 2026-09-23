@@ -174,27 +174,27 @@ describe('WB-M Field-Test Standalone & Bottom Navigation Verification (Tests 1-1
 
   // ── 15. Route Me, Summary, and Switch Apps remain reachable ──
   test('15. Route Me, Summary, and Switch Apps remain reachable in ••• menu', () => {
-    const indexSrc = src('app/(tabs)/index.tsx');
-    expect(indexSrc).toMatch(/accessibilityLabel="Route Me"/);
-    expect(indexSrc).toMatch(/accessibilityLabel="Summary"/);
-    expect(indexSrc).toMatch(/accessibilityLabel="Switch Apps"/);
-    expect(indexSrc).toMatch(/router\.push\('\/route-me'\)/);
-    expect(indexSrc).toMatch(/handleSummaryPress\(\)/);
-    expect(indexSrc).toMatch(/DeviceEventEmitter\.emit\(OPEN_APP_SWITCHER_EVENT\)/);
+    const combined = src('app/(tabs)/index.tsx') + src('src/components/MoreMenu.tsx');
+    expect(combined).toMatch(/accessibilityLabel="Route Me"/);
+    expect(combined).toMatch(/accessibilityLabel="Summary"/);
+    expect(combined).toMatch(/accessibilityLabel="Switch Apps"/);
+    expect(combined).toMatch(/router\.push\('\/route-me'\)/);
+    expect(combined).toMatch(/handleSummaryPress/);
+    expect(combined).toMatch(/DeviceEventEmitter\.emit\(OPEN_APP_SWITCHER_EVENT\)/);
   });
 
   // ── 16. Menu uses intended WellBuilt-style component, not emoji rows/generic giant sheet ──
   test('16. Menu uses WellBuilt dark popup menu, not emoji rows or generic sheet', () => {
-    const indexSrc = src('app/(tabs)/index.tsx');
-    expect(indexSrc).toMatch(/styles\.moreMenuPopup/);
-    expect(indexSrc).toMatch(/styles\.moreMenuItem/);
-    expect(indexSrc).toMatch(/styles\.moreMenuDivider/);
-    expect(indexSrc).toMatch(/name="navigate-outline"/);
-    expect(indexSrc).toMatch(/name="stats-chart-outline"/);
-    expect(indexSrc).toMatch(/name="apps-outline"/);
-    expect(indexSrc).not.toMatch(/moreSheet/);
-    expect(indexSrc).not.toMatch(/🧭/);
-    expect(indexSrc).not.toMatch(/📊/);
-    expect(indexSrc).not.toMatch(/🔀/);
+    const combined = src('app/(tabs)/index.tsx') + src('src/components/MoreMenu.tsx');
+    expect(combined).toMatch(/moreMenuPopup/);
+    expect(combined).toMatch(/moreMenuItem/);
+    expect(combined).toMatch(/moreMenuDivider/);
+    expect(combined).toMatch(/name="navigate-outline"/);
+    expect(combined).toMatch(/name="stats-chart-outline"/);
+    expect(combined).toMatch(/name="apps-outline"/);
+    expect(combined).not.toMatch(/moreSheet/);
+    expect(combined).not.toMatch(/🧭/);
+    expect(combined).not.toMatch(/📊/);
+    expect(combined).not.toMatch(/🔀/);
   });
 });

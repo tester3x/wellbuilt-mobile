@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -77,6 +78,7 @@ const validatePasscode = (code: string, t: (key: string) => string): { valid: bo
 export default function DriverLoginScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>('checking');
   const [passcode, setPasscode] = useState('');
   const [currentPasscode, setCurrentPasscode] = useState('');
@@ -476,7 +478,7 @@ export default function DriverLoginScreen() {
       {isRegister && (
         <TouchableOpacity
           testID="register-header-back"
-          style={styles.registerBackButton}
+          style={[styles.registerBackButton, { top: insets.top + 8 }]}
           onPress={handleSwitchToLogin}
           accessibilityRole="button"
           accessibilityLabel={t('common.back')}
@@ -489,6 +491,7 @@ export default function DriverLoginScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           isRegister && styles.scrollContentRegister,
+          { paddingBottom: Math.max(insets.bottom, 16) + (isRegister ? 24 : 80) },
         ]}
         keyboardShouldPersistTaps="handled"
       >

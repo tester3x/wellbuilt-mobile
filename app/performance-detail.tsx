@@ -594,7 +594,7 @@ export default function PerformanceDetailScreen() {
         <SectionList
           ref={sectionListRef}
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}
           stickySectionHeadersEnabled={true}
           refreshControl={
             <RefreshControl

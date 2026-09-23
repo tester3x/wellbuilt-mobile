@@ -1260,7 +1260,7 @@ function RecordScreenInner() {
           keypad. Edit mode keeps Submit + Cancel (it has no info box and
           needs a back-out). */}
       {isEditMode && (
-        <View style={styles.buttonBlock}>
+        <View style={[styles.buttonBlock, { paddingBottom: Math.max(insets.bottom, 12) + 12 }]}>
           <TouchableOpacity
             style={[
               styles.button,
@@ -1546,7 +1546,7 @@ const styles = StyleSheet.create({
   buttonText: { color: 'white', fontSize: hp('2%'), fontWeight: '600' },
   buttonBlock: {
     paddingTop: spacing.md,
-    paddingBottom: hp('8%'),  // Extra padding to clear Android navigation bar
+    paddingBottom: 12,
     paddingHorizontal: wp('5%'),
     backgroundColor: '#05060B',
   },

@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -13,6 +14,7 @@ import { hp, spacing, wp } from '../src/ui/layout';
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { t, i18n: i18nInstance } = useTranslation();
   const [quoteIndex, setQuoteIndex] = useState(0);
 
@@ -41,9 +43,9 @@ export default function WelcomeScreen() {
   const isSpanish = (i18nInstance.language || 'en').startsWith('es');
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16) + 20, paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
       {/* Language toggle - top right */}
-      <TouchableOpacity style={styles.langToggle} onPress={toggleLanguage}>
+      <TouchableOpacity style={[styles.langToggle, { top: Math.max(insets.top, 16) + 12 }]} onPress={toggleLanguage}>
         <Text style={styles.langToggleText}>
           {isSpanish ? '🇺🇸 EN' : '🇲🇽 ES'}
         </Text>
@@ -91,15 +93,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#05060B',
-    paddingTop: hp('12%'),
-    paddingBottom: hp('5%'),
+    paddingTop: 20,
+    paddingBottom: 16,
     paddingHorizontal: wp('8%'),
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   langToggle: {
     position: 'absolute',
-    top: hp('6%'),
+    top: 16,
     right: wp('5%'),
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,

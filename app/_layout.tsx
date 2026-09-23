@@ -43,24 +43,25 @@ export default function RootLayout() {
   const { showWhatsNew, changelog, dismissWhatsNew } = useWhatsNew();
 
   useEffect(() => {
-    // Full-screen immersive mode — hide Android navigation bar
-    const hideNavBar = () => {
+    // Configure Android system navigation — keep visible and non-immersive
+    const configureSystemNav = () => {
       if (Platform.OS === 'android') {
-        NavigationBar.setVisibilityAsync('hidden');
-        NavigationBar.setBehaviorAsync('overlay-swipe');
+        NavigationBar.setVisibilityAsync('visible');
+        NavigationBar.setBehaviorAsync('inset-touch');
         NavigationBar.setBackgroundColorAsync('#00000000');
-        StatusBar.setHidden(true);
+        NavigationBar.setButtonStyleAsync('light');
+        StatusBar.setHidden(false);
         StatusBar.setTranslucent(true);
       }
     };
-    hideNavBar();
-    // Re-hide nav bar when app returns to foreground (deep links from WB S can re-show it)
+    configureSystemNav();
+    // Maintain visible navigation bar when app returns to foreground
     // Also check for RTDB logoutAt signal from WB S (silent cascade logout)
     const appStateSub = AppState.addEventListener('change', (state) => {
       // Gate the active-only edit-delivery retry scheduler (foreground = active).
       setDeliveryForeground(state === 'active');
       if (state === 'active') {
-        hideNavBar();
+        configureSystemNav();
         checkCanonicalSsoLogout().then((permit) => {
           if (!permit) return;
           console.log('[WBM] Canonical Suite logoutAt newer than this SSO session');

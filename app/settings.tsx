@@ -663,7 +663,7 @@ export default function SettingsScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}
         scrollEnabled={!isRouteEditMode}
       >
       {/* Simple header */}
@@ -1483,7 +1483,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: wp("5%"),
-    paddingBottom: hp("5%"),
+    paddingBottom: 24,
   },
   headerRow: {
     flexDirection: "row",

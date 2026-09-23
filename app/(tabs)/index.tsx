@@ -37,6 +37,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { TankPelican } from '../../src/components/TankPelican';
 import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MoreMenu, moreMenuStyles } from '../../src/components/MoreMenu';
+import { MORE_MENU_TOKENS } from '../../src/constants/moreMenuTokens';
 import {
   DUCK_FONT_SIZE,
   DUCK_LIFT_PX,
@@ -1526,6 +1529,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 export default function MainScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
   const pickerListRef = useRef<FlatList>(null);
 
@@ -2378,7 +2382,7 @@ export default function MainScreen() {
         </View>
 
         {/* Keep bottom nav accessible so user can still navigate (History | Pull | More) */}
-        <View style={styles.bottomNav}>
+        <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (isTablet ? spacing.md : 6) }]}>
           <View style={styles.navSide}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push('/history')}>
               <Text style={styles.navIcon}>📋</Text>
@@ -2402,42 +2406,14 @@ export default function MainScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      {/* WB-M More Menu (•••) matching WB-T in-form menu styling */}
-      <Modal visible={showMore} transparent animationType="fade" onRequestClose={() => setShowMore(false)}>
-        <Pressable style={styles.moreBackdrop} onPress={() => setShowMore(false)}>
-          <View style={styles.moreMenuPopup}>
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => { setShowMore(false); router.push('/route-me'); }}
-              accessibilityRole="button"
-              accessibilityLabel="Route Me"
-            >
-              <Ionicons name="navigate-outline" size={20} color="#F9FAFB" />
-              <Text style={styles.moreMenuLabel}>{t('nav.routeMe', { defaultValue: 'Route Me' })}</Text>
-            </TouchableOpacity>
-            <View style={styles.moreMenuDivider} />
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => { setShowMore(false); handleSummaryPress(); }}
-              accessibilityRole="button"
-              accessibilityLabel="Summary"
-            >
-              <Ionicons name="stats-chart-outline" size={20} color="#F9FAFB" />
-              <Text style={styles.moreMenuLabel}>{t('nav.summary')}</Text>
-            </TouchableOpacity>
-            <View style={styles.moreMenuDivider} />
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => { setShowMore(false); DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT); }}
-              accessibilityRole="button"
-              accessibilityLabel="Switch Apps"
-            >
-              <Ionicons name="apps-outline" size={20} color="#F9FAFB" />
-              <Text style={styles.moreMenuLabel}>{t('nav.switchApps', { defaultValue: 'Switch Apps' })}</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
+        <MoreMenu
+          visible={showMore}
+          onClose={() => setShowMore(false)}
+          onRouteMe={() => router.push('/route-me')}
+          onSummary={handleSummaryPress}
+          onSwitchApps={() => DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT)}
+          bottomInset={insets.bottom}
+        />
       </GestureHandlerRootView>
     );
   }
@@ -2511,7 +2487,7 @@ export default function MainScreen() {
       />
 
       {/* Bottom nav - History | Pull | More (Summary now lives in the More sheet) */}
-      <View style={styles.bottomNav}>
+      <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (isTablet ? spacing.md : 6) }]}>
         <View style={styles.navSide}>
           <TouchableOpacity style={styles.navButton} onPress={() => router.push('/history')}>
             <Text style={styles.navIcon}>📋</Text>
@@ -2546,42 +2522,14 @@ export default function MainScreen() {
         </View>
       </View>
 
-      {/* WB-M More Menu (•••) matching WB-T in-form menu styling */}
-      <Modal visible={showMore} transparent animationType="fade" onRequestClose={() => setShowMore(false)}>
-        <Pressable style={styles.moreBackdrop} onPress={() => setShowMore(false)}>
-          <View style={styles.moreMenuPopup}>
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => { setShowMore(false); router.push('/route-me'); }}
-              accessibilityRole="button"
-              accessibilityLabel="Route Me"
-            >
-              <Ionicons name="navigate-outline" size={20} color="#F9FAFB" />
-              <Text style={styles.moreMenuLabel}>{t('nav.routeMe', { defaultValue: 'Route Me' })}</Text>
-            </TouchableOpacity>
-            <View style={styles.moreMenuDivider} />
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => { setShowMore(false); handleSummaryPress(); }}
-              accessibilityRole="button"
-              accessibilityLabel="Summary"
-            >
-              <Ionicons name="stats-chart-outline" size={20} color="#F9FAFB" />
-              <Text style={styles.moreMenuLabel}>{t('nav.summary')}</Text>
-            </TouchableOpacity>
-            <View style={styles.moreMenuDivider} />
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => { setShowMore(false); DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT); }}
-              accessibilityRole="button"
-              accessibilityLabel="Switch Apps"
-            >
-              <Ionicons name="apps-outline" size={20} color="#F9FAFB" />
-              <Text style={styles.moreMenuLabel}>{t('nav.switchApps', { defaultValue: 'Switch Apps' })}</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
+      <MoreMenu
+        visible={showMore}
+        onClose={() => setShowMore(false)}
+        onRouteMe={() => router.push('/route-me')}
+        onSummary={handleSummaryPress}
+        onSwitchApps={() => DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT)}
+        bottomInset={insets.bottom}
+      />
 
       {/* Well picker modal - works for both platforms */}
       <Modal visible={showPicker} transparent animationType="fade">
@@ -3270,7 +3218,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: isTablet ? spacing.md : SCREEN_HEIGHT * 0.015,
     paddingHorizontal: isTablet ? wp('15%') : spacing.md,
-    paddingBottom: isTablet ? spacing.xl : SCREEN_HEIGHT * 0.06,
+    paddingBottom: isTablet ? spacing.xl : 16,
   },
   navSide: {
     flex: 1,
@@ -3295,49 +3243,17 @@ const styles = StyleSheet.create({
   navIconDisabled: { opacity: 0.4 },
   navLabelDisabled: { color: '#6B7280' },
   navDots: {
-    color: '#F9FAFB',
+    color: '#fff',
     fontSize: 22,
     fontWeight: '700',
-    lineHeight: 26,
+    lineHeight: 24,
     textAlign: 'center',
   },
-  moreBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  moreMenuPopup: {
-    position: 'absolute',
-    right: 16,
-    bottom: (isTablet ? spacing.xl : SCREEN_HEIGHT * 0.06) + 48,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#333',
-    paddingVertical: 4,
-    minWidth: 180,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  moreMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  moreMenuLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#F9FAFB',
-  },
-  moreMenuDivider: {
-    height: 1,
-    backgroundColor: '#333',
-    marginHorizontal: 12,
-  },
+  moreBackdrop: MORE_MENU_TOKENS.backdrop,
+  moreMenuPopup: MORE_MENU_TOKENS.popup,
+  moreMenuItem: MORE_MENU_TOKENS.item,
+  moreMenuLabel: MORE_MENU_TOKENS.label,
+  moreMenuDivider: MORE_MENU_TOKENS.divider,
   pullButton: {
     backgroundColor: '#C4A574',
     paddingVertical: spacing.sm,

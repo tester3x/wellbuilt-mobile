@@ -144,6 +144,7 @@ export default function SyncStatusScreen() {
 
       <ScrollView
         style={styles.list}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 20 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
       >
         {(() => {

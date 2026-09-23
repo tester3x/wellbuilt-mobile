@@ -689,7 +689,7 @@ export default function HistoryScreen() {
       {/* History List */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -849,7 +849,7 @@ export default function HistoryScreen() {
 
               <ScrollView
                 style={styles.allWellsScroll}
-                contentContainerStyle={{ paddingBottom: spacing.md }}
+                contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + spacing.md }}
                 keyboardShouldPersistTaps="handled"
               >
                 {allConfigWells
@@ -1188,7 +1188,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: wp("5%"),
-    paddingBottom: hp("5%"),
+    paddingBottom: 24,
   },
   emptyContainer: {
     alignItems: "center",

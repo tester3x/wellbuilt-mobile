@@ -887,7 +887,7 @@ export default function SummaryScreen() {
       )}
 
       {/* Footer slider */}
-      <View style={styles.sliderFooter}>
+      <View style={[styles.sliderFooter, { paddingBottom: Math.max(insets.bottom, 12) + spacing.md }]}>
         <View style={styles.sliderLabelRow}>
           <Text style={styles.sliderEndLabelLeft}>
             {sliderMode === 'feet' ? formatFeetInches(MIN_SLIDER_FEET) : t('summary.now')}
@@ -1259,7 +1259,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#05060B",
     paddingHorizontal: wp("5%"),
     paddingTop: spacing.md,
-    paddingBottom: Platform.OS === 'ios' ? hp("4%") : hp("8%"),
+    paddingBottom: spacing.md,
   },
   sliderLabelRow: {
     flexDirection: "row",

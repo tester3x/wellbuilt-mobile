@@ -207,7 +207,7 @@ export default function PerformanceScreen() {
           renderItem={renderWellRow}
           keyExtractor={(item) => item.name}
           style={styles.flatList}
-          contentContainerStyle={styles.flatListContent}
+          contentContainerStyle={[styles.flatListContent, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
   },
   flatListContent: {
     paddingHorizontal: wp("5%"),
-    paddingBottom: hp("5%"),
+    paddingBottom: 20,
   },
   wellRow: {
     flexDirection: "row",

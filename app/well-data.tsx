@@ -560,7 +560,7 @@ export default function WellDataScreen() {
             keyExtractor={(item, index) => `${item.dateTime}_${index}`}
             extraData={sortColumn + sortDirection}
             style={styles.flatList}
-            contentContainerStyle={styles.flatListContent}
+            contentContainerStyle={[styles.flatListContent, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}
             refreshing={refreshing}
             onRefresh={handleRefresh}
             ListEmptyComponent={
@@ -776,7 +776,7 @@ const styles = StyleSheet.create({
   flatListContent: {
     paddingHorizontal: wp("3%"),
     paddingTop: spacing.xs,
-    paddingBottom: hp("5%"),
+    paddingBottom: 20,
   },
   // Data Rows
   dataRow: {

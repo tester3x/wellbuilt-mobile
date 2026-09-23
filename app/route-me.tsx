@@ -145,13 +145,13 @@ export default function RouteMeScreen() {
           keyExtractor={(w) => `${w.companyId}:${w.wellId || w.wellName}`}
           renderItem={renderItem}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#C4A574" />}
-          contentContainerStyle={{ paddingBottom: spacing.xl * 3 }}
+          contentContainerStyle={{ paddingBottom: spacing.xl * 3 + Math.max(insets.bottom, 16) }}
         />
       )}
 
       {/* Sticky DDJD action — Phase 1: visible but DISABLED (visual-only pilot). */}
       {caps?.canViewRouteMe && ddjd && (
-        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) + spacing.md }]}>
           <TouchableOpacity disabled style={[styles.ddjdBtn, styles.ddjdBtnDisabled]} accessibilityState={{ disabled: true }}>
             <Text style={styles.ddjdBtnText}>{ddjd.label}</Text>
           </TouchableOpacity>

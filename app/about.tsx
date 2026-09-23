@@ -72,7 +72,7 @@ export default function AboutScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}>
         {/* App Identity */}
         <View style={styles.heroSection}>
           <Text style={styles.appName}>WellBuilt</Text>
@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: wp('6%'),
-    paddingBottom: hp('5%'),
+    paddingBottom: 20,
   },
   // Hero section
   heroSection: {

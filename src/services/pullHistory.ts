@@ -7,6 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDriverId, getDriverName } from "./driverAuth";
 import { packetShowsEditBadge } from "./editMarkers";
 import { normalizeTrustedHistoryIds, pullBelongsToDriver } from "./trustedHistoryKeys";
+import { collapseLogicalPulls } from "./pullHistoryCollapse";
 
 const STORAGE_KEY = "@wellbuilt_pull_history";
 const SETTINGS_KEY = "@wellbuilt_pull_history_days";
@@ -690,11 +691,13 @@ export async function getPullHistory(daysBack?: number): Promise<PullHistoryEntr
   }
   
   if (daysBack === undefined) {
-    return cachedHistory;
+    // Collapse idem_ Depart + bare Close to one display row per pull (cache
+    // keeps both for audit + per-packetId sync tracking).
+    return collapseLogicalPulls(cachedHistory);
   }
-  
+
   const cutoff = Date.now() - (daysBack * 24 * 60 * 60 * 1000);
-  return cachedHistory.filter(entry => entry.sentAt >= cutoff);
+  return collapseLogicalPulls(cachedHistory.filter(entry => entry.sentAt >= cutoff));
 }
 
 /**
@@ -708,8 +711,8 @@ export async function getTodaysPulls(): Promise<PullHistoryEntry[]> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const startOfDay = today.getTime();
-  
-  return cachedHistory.filter(entry => entry.sentAt >= startOfDay);
+
+  return collapseLogicalPulls(cachedHistory.filter(entry => entry.sentAt >= startOfDay));
 }
 
 /**
@@ -753,7 +756,7 @@ export async function getPullHistoryByDay(): Promise<{ date: string; pulls: Pull
 
   const grouped: { [key: string]: PullHistoryEntry[] } = {};
 
-  for (const entry of cachedHistory) {
+  for (const entry of collapseLogicalPulls(cachedHistory)) {
     // Use dateTime (what driver entered) instead of sentAt (when packet was sent)
     const date = parseDateTimeString(entry.dateTime) || new Date(entry.sentAt);
     const dateKey = date.toLocaleDateString('en-US', {
@@ -1178,7 +1181,9 @@ export async function getAverageBblsPerPull(): Promise<number> {
  */
 export async function getPullHistoryByWell(wellName: string): Promise<PullHistoryEntry[]> {
   const history = await loadPullHistory();
-  return history.filter(entry => entry.wellName === wellName);
+  // Collapse so per-well stats (count/bbls/avg/lastPull) reflect logical pulls,
+  // not doubled idem_ Depart + bare Close pairs.
+  return collapseLogicalPulls(history).filter(entry => entry.wellName === wellName);
 }
 
 /**

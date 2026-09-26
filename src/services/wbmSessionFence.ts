@@ -131,6 +131,6 @@ export function bootstrapResponseAdmissible(input: {
 export function permitGenerationCurrent(permit: SessionLogoutPermit): boolean {
   return permit.generation === generation
     && !!permit.driverId
-    && !!permit.authUid
+    && permit.authUid !== undefined
     && !!permit.driverVerifiedAt;
 }

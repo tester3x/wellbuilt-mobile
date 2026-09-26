@@ -740,8 +740,14 @@ export async function revalidateDriverSessionClassified(): Promise<Revalidation>
       return 'revoked';
     }
     return 'unknown';
-  } catch (error) {
+  } catch (error: any) {
     console.error("[DriverAuth] Server revalidation failed:", error);
+    if (
+      error?.name === 'AuthSessionError' &&
+      (error?.reason === 'missing' || error?.reason === 'revoked' || error?.message === 'missing' || error?.message === 'revoked')
+    ) {
+      return 'revoked';
+    }
     return 'unknown';
   }
 }
@@ -954,14 +960,14 @@ async function readLiveSessionFields(): Promise<{
 
 export async function captureCurrentSessionPermit(): Promise<SessionLogoutPermit | null> {
   const live = await readLiveSessionFields();
-  if (!live.driverId || !live.authMethod || !live.driverVerifiedAt || !live.authUid) return null;
+  if (!live.driverId || !live.authMethod || !live.driverVerifiedAt) return null;
   return {
     generation: getSessionGeneration(),
     driverId: live.driverId,
     companyId: live.companyId || '',
     authMethod: live.authMethod,
     driverVerifiedAt: live.driverVerifiedAt,
-    authUid: live.authUid,
+    authUid: live.authUid || '',
   };
 }
 
@@ -973,7 +979,7 @@ function identityMatchesPermit(
     && permit.companyId === (live.companyId || '')
     && permit.authMethod === live.authMethod
     && permit.driverVerifiedAt === live.driverVerifiedAt
-    && permit.authUid === live.authUid;
+    && permit.authUid === (live.authUid || '');
 }
 
 async function sessionStolenByOther(permit: SessionLogoutPermit): Promise<boolean> {
@@ -988,7 +994,7 @@ async function deleteOwnedSecureStore(permit: SessionLogoutPermit): Promise<bool
   const driverId = await SecureStore.getItemAsync('driverId');
   if (driverId && driverId !== permit.driverId) return false;
   const uid = await SecureStore.getItemAsync('wb_auth_uid');
-  if (uid && uid !== permit.authUid) return false;
+  if (uid && permit.authUid && uid !== permit.authUid) return false;
   for (const key of SESSION_SECURE_KEYS) {
     await SecureStore.deleteItemAsync(key);
   }
@@ -1040,7 +1046,7 @@ export async function performPermittedLogout(permit: SessionLogoutPermit): Promi
     } catch {
       uid = null;
     }
-    if (uid !== permit.authUid) return false;
+    if (uid !== null && uid !== permit.authUid) return false;
 
     await clearAuthSession();
 

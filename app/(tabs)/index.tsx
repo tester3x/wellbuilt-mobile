@@ -521,204 +521,230 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
   // Load data and check for pending pull on mount/refresh
   useEffect(() => {
+    let isMounted = true;
     const loadData = async () => {
-      // Clear stale data from previous well immediately to prevent showing wrong well's info
-      setLastPullInfo(null);
-      // Don't clear levelSnapshot here - it causes flickering. Instead rely on proper loading.
+      try {
+        // Clear stale data from previous well immediately to prevent showing wrong well's info
+        setLastPullInfo(null);
+        // Don't clear levelSnapshot here - it causes flickering. Instead rely on proper loading.
 
-      // Load well config - MUST await since it's async
-      const config = await getWellConfig(wellName);
-      setWellConfig(config);
+        // Load well config - MUST await since it's async
+        const config = await getWellConfig(wellName);
+        if (!isMounted) return;
+        setWellConfig(config);
 
-      // Load level snapshot (flow rate is now stored with snapshot, not separately)
-      const snapshot = await getLevelSnapshot(wellName);
+        // Load level snapshot (flow rate is now stored with snapshot, not separately)
+        const snapshot = await getLevelSnapshot(wellName);
+        if (!isMounted) return;
 
-      // Pre-check for pending pull BEFORE setting levelSnapshot.
-      // setLevelSnapshot triggers the live update useEffect — if there's a pending pull,
-      // we need drainAnimationActive=true BEFORE that effect runs, otherwise
-      // the live update starts a competing 500ms animation (the "double animation" bug).
-      const pending = await getPendingPull(wellName);
-      if (pending) {
-        drainAnimationActive.current = true;
-      }
-
-      setLevelSnapshot(snapshot);
-      if (snapshot?.unavailable) {
-        setIsLoadingInitial(false);
-        return;
-      }
-
-      // Load last pull record
-      const pull = await getWellPull(wellName);
-      setPullRecord(pull);
-
-      // Calculate bblsPerFoot for level calculations — use the Dashboard-saved
-      // effective bbl/ft (same source of truth as Record Load), not 20×tanks.
-      const bblsPerFoot = getBblPerFootSync(wellName);
-
-      // Build lastPullInfo - prefer snapshot data from VBA (has levels directly)
-      let lastPullDateTime = '';
-      // ISO UTC counterpart — preferred input for the h:mm AM/PM display
-      // formatter because the local string can be over-truncated upstream.
-      let lastPullDateTimeUTC: string | undefined;
-      let lastPullBbls = 0;
-      let lastPullTopLevel: string | undefined;
-      let lastPullBottomLevel: string | undefined;
-
-      // Priority 1: Use levels from snapshot (VBA sends them directly now)
-      if (snapshot?.lastPullDateTime) {
-        lastPullDateTime = snapshot.lastPullDateTime;
-        lastPullDateTimeUTC = snapshot.lastPullDateTimeUTC;
-        lastPullBbls = snapshot.lastPullBbls || 0;
-
-        // VBA sends top/bottom levels directly - use them if available
-        if (snapshot.lastPullTopLevel && snapshot.lastPullTopLevel !== 'Unknown') {
-          lastPullTopLevel = snapshot.lastPullTopLevel;
-        }
-        if (snapshot.lastPullBottomLevel && snapshot.lastPullBottomLevel !== 'Unknown') {
-          lastPullBottomLevel = snapshot.lastPullBottomLevel;
-        }
-      }
-
-      // Fallback: Calculate from local pull record if VBA levels are missing
-      if ((!lastPullTopLevel || !lastPullBottomLevel) && pull) {
-        if (!lastPullDateTime) {
-          lastPullDateTime = pull.dateTime || '';
-        }
-        if (!lastPullBbls) {
-          lastPullBbls = pull.bblsTaken || 0;
-        }
-        const bottomLevel = pull.levelFeet;
-        const topLevel = bottomLevel + (lastPullBbls / bblsPerFoot);
-        lastPullTopLevel = lastPullTopLevel || formatFeetInches(topLevel);
-        lastPullBottomLevel = lastPullBottomLevel || formatFeetInches(bottomLevel);
-      }
-
-      if (lastPullDateTime) {
-        setLastPullInfo({
-          dateTime: lastPullDateTime,
-          dateTimeUTC: lastPullDateTimeUTC,
-          bbls: lastPullBbls,
-          topLevel: lastPullTopLevel,
-          bottomLevel: lastPullBottomLevel,
-        });
-      }
-
-      // Load persisted slider position (keeps driver's last setting)
-      const savedSliderPos = await getSliderPosition(wellName);
-      setSliderFeet(savedSliderPos);
-
-      // Use pending pull from pre-check above (already fetched before setLevelSnapshot)
-      if (pending) {
-        setPendingPull(pending);
-
-        // Always start drain animation — backgroundSync handles the response:
-        // 1. Saves snapshot (saveLevelSnapshot)
-        // 2. Clears pending pull (clearPendingPull)
-        // 3. Notifies listeners → refreshTrigger bumps → loadData re-runs
-        // On re-run, pending is null → falls into else branch below
-        const bblPerFoot = getBblPerFootSync(wellName);
-        const topLevel = pending.topLevel || 10;
-        const targetLevel = pending.wellDown ? topLevel : Math.max(topLevel - (pending.bblsTaken / bblPerFoot), 0);
-
-        // Calculate how much time has elapsed since submission
-        const elapsedMs = Date.now() - pending.timestamp;
-        const remainingMs = Math.max(DROP_ANIMATION_MS - elapsedMs, 500);
-
-        // Track animation start time for drain duration calculation
-        animationStartTimeRef.current = pending.timestamp;
-        drainAnimationActive.current = true;
-
-        if (pending.bblsTaken === 0) {
-          // Zero-BBL check pull: animate FROM current displayed level TO new read level
-          // Don't reset waterFraction — keep old level as starting point
-          waterFraction.value = withTiming(
-            clampFraction(topLevel / FULL_TANK_FEET),
-            { duration: remainingMs, easing: Easing.linear }
-          );
-        } else {
-          // Normal pull: animate drain from top level down to estimated bottom
-          const animationProgress = Math.min(elapsedMs / DROP_ANIMATION_MS, 1);
-          const currentAnimatedLevel = topLevel - (animationProgress * (topLevel - targetLevel));
-          waterFraction.value = clampFraction(currentAnimatedLevel / FULL_TANK_FEET);
-          waterFraction.value = withTiming(
-            clampFraction(targetLevel / FULL_TANK_FEET),
-            { duration: remainingMs, easing: Easing.linear }
-          );
+        // Pre-check for pending pull BEFORE setting levelSnapshot.
+        // setLevelSnapshot triggers the live update useEffect — if there's a pending pull,
+        // we need drainAnimationActive=true BEFORE that effect runs, otherwise
+        // the live update starts a competing 500ms animation (the "double animation" bug).
+        const pending = await getPendingPull(wellName);
+        if (!isMounted) return;
+        if (pending) {
+          drainAnimationActive.current = true;
         }
 
-        hasAnimated.current = true;
-        setIsLoadingInitial(false);
-      } else if (drainAnimationActive.current) {
-        // Drain animation still playing but backgroundSync already cleared the pending pull.
-        // DON'T touch waterFraction — let the drain finish undisturbed.
-        // Just update React state so UI text (level, flow rate, etc.) reflects new data.
-        const elapsed = Date.now() - animationStartTimeRef.current;
-        const remaining = Math.max(DROP_ANIMATION_MS - elapsed, 0);
-        setTimeout(() => {
-          drainAnimationActive.current = false;
-          animationStartTimeRef.current = 0;
-          // Signal live update effect to re-run now that drain is complete
-          setDrainCompleteSignal(prev => prev + 1);
-        }, remaining + 100); // Wait for drain to finish + small buffer
+        setLevelSnapshot(snapshot);
+        if (snapshot?.unavailable) {
+          setIsLoadingInitial(false);
+          return;
+        }
 
-        // Update targetFraction so live update knows the correct level when it starts
-        if (snapshot) {
-          const startingLevel = startingLevelFromSnapshot(snapshot);
-          let currentLevel = startingLevel;
-          const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
-          if (flowMins > 0 && !snapshot.isDown) {
-            const minutesSincePull = (Date.now() - snapshot.timestamp) / (1000 * 60);
-            if (minutesSincePull > 0 && minutesSincePull < 10080) {
-              currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
-            }
+        // Load last pull record
+        const pull = await getWellPull(wellName);
+        if (!isMounted) return;
+        setPullRecord(pull);
+
+        // Calculate bblsPerFoot for level calculations — use the Dashboard-saved
+        // effective bbl/ft (same source of truth as Record Load), not 20×tanks.
+        const bblsPerFoot = getBblPerFootSync(wellName);
+
+        // Build lastPullInfo - prefer snapshot data from VBA (has levels directly)
+        let lastPullDateTime = '';
+        // ISO UTC counterpart — preferred input for the h:mm AM/PM display
+        // formatter because the local string can be over-truncated upstream.
+        let lastPullDateTimeUTC: string | undefined;
+        let lastPullBbls = 0;
+        let lastPullTopLevel: string | undefined;
+        let lastPullBottomLevel: string | undefined;
+
+        // Priority 1: Use levels from snapshot (VBA sends them directly now)
+        if (snapshot?.lastPullDateTime) {
+          lastPullDateTime = snapshot.lastPullDateTime;
+          lastPullDateTimeUTC = snapshot.lastPullDateTimeUTC;
+          lastPullBbls = snapshot.lastPullBbls || 0;
+
+          // VBA sends top/bottom levels directly - use them if available
+          if (snapshot.lastPullTopLevel && snapshot.lastPullTopLevel !== 'Unknown') {
+            lastPullTopLevel = snapshot.lastPullTopLevel;
           }
-          setTargetFraction(clampFraction(currentLevel / FULL_TANK_FEET));
-        }
-        setIsLoadingInitial(false);
-      } else {
-        // Normal path: no drain animation, no pending pull
-        // Calculate estimated current level from snapshot
-        const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
-
-        if (snapshot && (startingLevelFromSnapshot(snapshot) > 0 || snapshot.isDown)) {
-          const startingLevel = startingLevelFromSnapshot(snapshot);
-          let currentLevel = startingLevel;
-
-          if (flowMins > 0 && !snapshot.isDown) {
-            const minutesSincePull = (Date.now() - snapshot.timestamp) / (1000 * 60);
-            if (minutesSincePull > 0 && minutesSincePull < 10080) {
-              currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
-            }
+          if (snapshot.lastPullBottomLevel && snapshot.lastPullBottomLevel !== 'Unknown') {
+            lastPullBottomLevel = snapshot.lastPullBottomLevel;
           }
+        }
 
-          const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
+        // Fallback: Calculate from local pull record if VBA levels are missing
+        if ((!lastPullTopLevel || !lastPullBottomLevel) && pull) {
+          if (!lastPullDateTime) {
+            lastPullDateTime = pull.dateTime || '';
+          }
+          if (!lastPullBbls) {
+            lastPullBbls = pull.bblsTaken || 0;
+          }
+          const bottomLevel = pull.levelFeet;
+          const topLevel = bottomLevel + (lastPullBbls / bblsPerFoot);
+          lastPullTopLevel = lastPullTopLevel || formatFeetInches(topLevel);
+          lastPullBottomLevel = lastPullBottomLevel || formatFeetInches(bottomLevel);
+        }
 
-          // Always apply the accepted snapshot — including after a foreground
-          // sync on an already-mounted well. Do not wait for a later swipe.
-          if (!hasAnimated.current && isActive) {
-            const prevLevel = getPreviousLevel();
-            waterFraction.value = prevLevel;
-            waterFraction.value = withTiming(fraction, {
-              duration: 800,
-              easing: Easing.inOut(Easing.ease),
-            });
-          } else if (isActive) {
-            waterFraction.value = snapshot.isDown
-              ? fraction
-              : withTiming(fraction, { duration: 400, easing: Easing.out(Easing.ease) });
+        if (lastPullDateTime) {
+          setLastPullInfo({
+            dateTime: lastPullDateTime,
+            dateTimeUTC: lastPullDateTimeUTC,
+            bbls: lastPullBbls,
+            topLevel: lastPullTopLevel,
+            bottomLevel: lastPullBottomLevel,
+          });
+        }
+
+        // Load persisted slider position (keeps driver's last setting)
+        const savedSliderPos = await getSliderPosition(wellName);
+        if (!isMounted) return;
+        setSliderFeet(savedSliderPos);
+
+        // Use pending pull from pre-check above (already fetched before setLevelSnapshot)
+        if (pending) {
+          setPendingPull(pending);
+
+          // Always start drain animation — backgroundSync handles the response:
+          // 1. Saves snapshot (saveLevelSnapshot)
+          // 2. Clears pending pull (clearPendingPull)
+          // 3. Notifies listeners → refreshTrigger bumps → loadData re-runs
+          // On re-run, pending is null → falls into else branch below
+          const bblPerFoot = getBblPerFootSync(wellName);
+          const topLevel = pending.topLevel || 10;
+          const targetLevel = pending.wellDown ? topLevel : Math.max(topLevel - (pending.bblsTaken / bblPerFoot), 0);
+
+          // Calculate how much time has elapsed since submission
+          const elapsedMs = Date.now() - pending.timestamp;
+          const remainingMs = Math.max(DROP_ANIMATION_MS - elapsedMs, 500);
+
+          // Track animation start time for drain duration calculation
+          animationStartTimeRef.current = pending.timestamp;
+          drainAnimationActive.current = true;
+
+          if (pending.bblsTaken === 0) {
+            // Zero-BBL check pull: animate FROM current displayed level TO new read level
+            // Don't reset waterFraction — keep old level as starting point
+            waterFraction.value = withTiming(
+              clampFraction(topLevel / FULL_TANK_FEET),
+              { duration: remainingMs, easing: Easing.linear }
+            );
           } else {
-            waterFraction.value = fraction;
+            // Normal pull: animate drain from top level down to estimated bottom
+            const animationProgress = Math.min(elapsedMs / DROP_ANIMATION_MS, 1);
+            const currentAnimatedLevel = topLevel - (animationProgress * (topLevel - targetLevel));
+            waterFraction.value = clampFraction(currentAnimatedLevel / FULL_TANK_FEET);
+            waterFraction.value = withTiming(
+              clampFraction(targetLevel / FULL_TANK_FEET),
+              { duration: remainingMs, easing: Easing.linear }
+            );
           }
-          hasAnimated.current = true;
 
-          setTargetFraction(fraction);
+          hasAnimated.current = true;
+          setIsLoadingInitial(false);
+        } else if (drainAnimationActive.current) {
+          // Drain animation still playing but backgroundSync already cleared the pending pull.
+          // DON'T touch waterFraction — let the drain finish undisturbed.
+          // Just update React state so UI text (level, flow rate, etc.) reflects new data.
+          const elapsed = Date.now() - animationStartTimeRef.current;
+          const remaining = Math.max(DROP_ANIMATION_MS - elapsed, 0);
+          setTimeout(() => {
+            drainAnimationActive.current = false;
+            animationStartTimeRef.current = 0;
+            // Signal live update effect to re-run now that drain is complete
+            setDrainCompleteSignal(prev => prev + 1);
+          }, remaining + 100); // Wait for drain to finish + small buffer
+
+          // Update targetFraction so live update knows the correct level when it starts
+          if (snapshot) {
+            const startingLevel = startingLevelFromSnapshot(snapshot);
+            let currentLevel = startingLevel;
+            const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
+            if (flowMins > 0 && !snapshot.isDown) {
+              const minutesSincePull = (Date.now() - snapshot.timestamp) / (1000 * 60);
+              if (minutesSincePull > 0 && minutesSincePull < 10080) {
+                currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
+              }
+            }
+            setTargetFraction(clampFraction(currentLevel / FULL_TANK_FEET));
+          }
+          setIsLoadingInitial(false);
+        } else {
+          // Normal path: no drain animation, no pending pull
+          // Calculate estimated current level from snapshot
+          const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
+
+          if (snapshot && (startingLevelFromSnapshot(snapshot) > 0 || snapshot.isDown)) {
+            const startingLevel = startingLevelFromSnapshot(snapshot);
+            let currentLevel = startingLevel;
+
+            if (flowMins > 0 && !snapshot.isDown) {
+              const minutesSincePull = (Date.now() - snapshot.timestamp) / (1000 * 60);
+              if (minutesSincePull > 0 && minutesSincePull < 10080) {
+                currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
+              }
+            }
+
+            const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
+
+            // Always apply the accepted snapshot — including after a foreground
+            // sync on an already-mounted well. Do not wait for a later swipe.
+            if (!hasAnimated.current && isActive) {
+              const prevLevel = getPreviousLevel();
+              waterFraction.value = prevLevel;
+              waterFraction.value = withTiming(fraction, {
+                duration: 800,
+                easing: Easing.inOut(Easing.ease),
+              });
+            } else if (isActive) {
+              waterFraction.value = snapshot.isDown
+                ? fraction
+                : withTiming(fraction, { duration: 400, easing: Easing.out(Easing.ease) });
+            } else {
+              waterFraction.value = fraction;
+            }
+            hasAnimated.current = true;
+
+            setTargetFraction(fraction);
+          }
+          setIsLoadingInitial(false);
         }
-        setIsLoadingInitial(false);
+      } catch (error) {
+        console.error(`[WellView] Failed to load well data for "${wellName}":`, error);
+      } finally {
+        if (isMounted) {
+          setIsLoadingInitial(false);
+        }
       }
     };
     
+    // Safety watchdog: ensure initial loading overlay does not hang forever
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setIsLoadingInitial(false);
+      }
+    }, 5000);
+
     loadData();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimer);
+    };
   }, [wellName, refreshTrigger, isActive, getPreviousLevel, waterFraction]);
 
   // Live level update based on flow rate (now stored in levelSnapshot)

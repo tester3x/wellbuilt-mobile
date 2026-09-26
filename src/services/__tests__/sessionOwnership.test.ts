@@ -38,6 +38,7 @@ jest.mock('../firebaseAuthSession', () => ({
   clearAuthSession: () => mocks.clearAuthSession(),
   persistCustomTokenSession: (token: string) => mocks.persistCustomTokenSession(token),
   authorizedCallable: (...args: unknown[]) => mockCallable(...args),
+  verifySessionOnServer: () => mockCallable('verifyDriverSession', {}),
   getFirebaseAuth: () => ({ currentUser: mockUser }),
 }));
 
@@ -48,6 +49,7 @@ import {
   clearDriverSession,
   completeAuthenticatedSession,
   performPermittedLogout,
+  revalidateDriverSessionClassified,
   setAfterSignInPauseForTests,
   setLogoutAfterRereadPauseForTests,
   setLogoutDuringNthLiveReadPauseForTests,
@@ -394,4 +396,89 @@ describe('end-to-end session ownership', () => {
     expect(await durableDriverId()).toBe('driver-b');
     expect(peekWellConfigCacheForTests().envelope?.driverId).toBe('driver-b');
   });
+
+  it('stale session recovery: performPermittedLogout succeeds and clears SecureStore when Firebase Auth is missing', async () => {
+    // Session exists in SecureStore for driver-a, but Firebase user is null
+    mockUser = null;
+    expect(mockSecure.driverId).toBe('driver-a');
+    expect(mockSecure.wb_auth_uid).toBe('uid-a');
+
+    const permit = await captureCurrentSessionPermit();
+    expect(permit).not.toBeNull();
+    expect(permit?.driverId).toBe('driver-a');
+
+    const loggedOut = await performPermittedLogout(permit!);
+    expect(loggedOut).toBe(true);
+    expect(mockSecure.driverId).toBeUndefined();
+    expect(mockSecure.authMethod).toBeUndefined();
+    expect(mockSecure.wb_auth_uid).toBeUndefined();
+    expect(peekWellConfigCacheForTests().envelope).toBeNull();
+  });
+
+  it('stale session recovery: manual clearDriverSession clears zombie session when Firebase Auth is dead', async () => {
+    mockUser = null;
+    mockSecure.driverId = 'driver-a';
+    mockSecure.driverName = 'Driver A';
+    mockSecure.companyId = 'liquid-gold';
+    mockSecure.authMethod = 'sso';
+    mockSecure.driverVerifiedAt = String(verified);
+    mockSecure.wb_auth_uid = 'uid-a';
+
+    await clearDriverSession();
+    expect(mockSecure.driverId).toBeUndefined();
+    expect(mockSecure.wb_auth_uid).toBeUndefined();
+  });
+
+  it('stale session recovery: orphaned session without wb_auth_uid can still capture permit and logout', async () => {
+    mockUser = null;
+    mockSecure.driverId = 'driver-a';
+    mockSecure.driverName = 'Driver A';
+    mockSecure.companyId = 'liquid-gold';
+    mockSecure.authMethod = 'sso';
+    mockSecure.driverVerifiedAt = String(verified);
+    delete mockSecure.wb_auth_uid;
+
+    const permit = await captureCurrentSessionPermit();
+    expect(permit).not.toBeNull();
+    expect(permit?.authUid).toBe('');
+
+    const loggedOut = await performPermittedLogout(permit!);
+    expect(loggedOut).toBe(true);
+    expect(mockSecure.driverId).toBeUndefined();
+  });
+
+  it('stale session recovery: revalidateDriverSessionClassified returns revoked when AuthSessionError missing occurs', async () => {
+    mockSecure.driverId = 'driver-a';
+    mockSecure.driverName = 'Driver A';
+    mockCallable.mockRejectedValueOnce(
+      Object.assign(new Error('missing'), { name: 'AuthSessionError', reason: 'missing' })
+    );
+
+    const revalidation = await revalidateDriverSessionClassified();
+    expect(revalidation).toBe('revoked');
+  });
+
+  it('safety fence preserved: performPermittedLogout rejects if Firebase Auth holds a different driver user', async () => {
+    mockUser = { uid: 'uid-b' }; // Driver B is signed in to Firebase Auth
+    mockSecure.driverId = 'driver-a';
+    mockSecure.driverName = 'Driver A';
+    mockSecure.companyId = 'liquid-gold';
+    mockSecure.authMethod = 'sso';
+    mockSecure.driverVerifiedAt = String(verified);
+    mockSecure.wb_auth_uid = 'uid-a';
+
+    const permitA = {
+      generation: getSessionGeneration(),
+      driverId: 'driver-a',
+      companyId: 'liquid-gold',
+      authMethod: 'sso',
+      driverVerifiedAt: String(verified),
+      authUid: 'uid-a',
+    };
+
+    const loggedOut = await performPermittedLogout(permitA);
+    expect(loggedOut).toBe(false);
+    expect(mockUser.uid).toBe('uid-b');
+  });
 });
+

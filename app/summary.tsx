@@ -22,8 +22,11 @@ import {
   getLevelSnapshot,
   loadLevelSnapshots,
 } from "../src/services/wellHistory";
-import { loadWellConfig, WellConfigMap } from "../src/services/wellConfig";
+import { loadWellConfig, WellConfigMap, fetchDriverRouteAssignment, scopedWellsForDisplay } from "../src/services/wellConfig";
 import { hp, spacing, wp } from "../src/ui/layout";
+import { summaryCurrentLevel as getCurrentLevel, summaryLevelAtTime as getLevelAtTime } from '../src/services/summaryWellLevel';
+import { startingLevelFromSnapshot } from '../src/services/downSnapshot';
+import { selectSummaryWellNames } from '../src/services/summaryWellSelection';
 
 const STORAGE_KEY_SELECTED_WELLS = "wellbuilt_selected_wells";
 const STORAGE_KEY_EXPANDED_ROUTES = "wellbuilt_summary_expanded";
@@ -126,27 +129,6 @@ function formatDateTimeSplit(date: Date): { time: string; date: string } {
   }
 }
 
-// Calculate current estimated level based on snapshot and flow rate
-// CRITICAL: Cap at 20' (full tank) to prevent insane values from bad timestamps
-const FULL_TANK_FEET = 20;
-
-function getCurrentLevel(well: WellSummaryData): number {
-  if (well.flowRateMinutes <= 0) return Math.min(well.levelFeet, FULL_TANK_FEET);
-  
-  // Validate timestamp - if it's too old (before 2024) or in future, just use base level
-  const now = Date.now();
-  const jan2024 = new Date('2024-01-01').getTime();
-  if (well.snapshotTimestamp < jan2024 || well.snapshotTimestamp > now) {
-    return Math.min(well.levelFeet, FULL_TANK_FEET);
-  }
-  
-  const minutesSinceSnapshot = (now - well.snapshotTimestamp) / 60000;
-  const feetRisen = minutesSinceSnapshot / well.flowRateMinutes;
-  
-  // Cap at full tank
-  return Math.min(well.levelFeet + feetRisen, FULL_TANK_FEET);
-}
-
 // Calculate ready level based on pullBbls and well config
 // Uses allowedBottom - can't pull below that without permission
 function getReadyLevel(well: WellSummaryData, pullBbls: number): number {
@@ -156,9 +138,9 @@ function getReadyLevel(well: WellSummaryData, pullBbls: number): number {
 
 // Calculate datetime when well will hit target level
 function getTimeAtLevel(well: WellSummaryData, targetFeet: number): Date | null {
-  if (well.flowRateMinutes <= 0) return null;
   const currentLevel = getCurrentLevel(well);
   if (currentLevel >= targetFeet) return new Date(); // Already there
+  if (well.isDown || well.flowRateMinutes <= 0) return null;
   const feetToGo = targetFeet - currentLevel;
   const minutesToGo = feetToGo * well.flowRateMinutes;
   return new Date(Date.now() + minutesToGo * 60000);
@@ -167,7 +149,7 @@ function getTimeAtLevel(well: WellSummaryData, targetFeet: number): Date | null 
 // Calculate when well originally became ready (for frozen ready time display)
 // This calculates backwards from current level to find when it crossed the ready threshold
 function getTimeWhenBecameReady(well: WellSummaryData, readyLevel: number): Date | null {
-  if (well.flowRateMinutes <= 0) return null;
+  if (well.isDown || well.flowRateMinutes <= 0) return null;
   const currentLevel = getCurrentLevel(well);
   if (currentLevel < readyLevel) return null; // Not ready yet
 
@@ -176,14 +158,6 @@ function getTimeWhenBecameReady(well: WellSummaryData, readyLevel: number): Date
   // Calculate how many minutes ago we crossed the ready threshold
   const minutesAgo = feetAboveReady * well.flowRateMinutes;
   return new Date(Date.now() - minutesAgo * 60000);
-}
-
-// Calculate level at a future time
-function getLevelAtTime(well: WellSummaryData, hoursFromNow: number): number {
-  if (well.flowRateMinutes <= 0) return getCurrentLevel(well);
-  const currentLevel = getCurrentLevel(well);
-  const feetGained = (hoursFromNow * 60) / well.flowRateMinutes;
-  return Math.min(currentLevel + feetGained, 20); // Cap at 20'
 }
 
 // Fetch well_config from Firebase (via wellConfig service)
@@ -264,22 +238,32 @@ export default function SummaryScreen() {
         return;
       }
 
-      // Load well config for route info
-      const wellConfig = await fetchWellConfig();
+      // Use the same assignment boundary as Settings and the well pages.
+      const config = await fetchWellConfig();
+      const assignment = await fetchDriverRouteAssignment();
+      const wellConfig = scopedWellsForDisplay(config || {}, assignment);
 
       // Load cached data (flow rate is now in level snapshots)
       await loadLevelSnapshots();
+      const snapshots = new Map(await Promise.all(Object.keys(wellConfig).map(async name =>
+        [name, await getLevelSnapshot(name)] as const,
+      )));
+      const downWells = new Set(Object.keys(wellConfig).filter(name =>
+        snapshots.get(name)?.isDown ?? wellConfig[name]?.isDown ?? false,
+      ));
+      const summaryWellNames = selectSummaryWellNames(selectedWells, wellConfig, downWells);
 
       // Build summary data for each well
       const summaryData: WellSummaryData[] = [];
 
-      for (const wellName of selectedWells) {
+      for (const wellName of summaryWellNames) {
         const config = wellConfig?.[wellName];
-        const snapshot = await getLevelSnapshot(wellName);
+        const snapshot = snapshots.get(wellName);
 
         const route = config?.route || "Unknown";
         const routeColor = getRouteColor(route);
-        const levelFeet = snapshot?.levelFeet || 0;
+        // Same immutable last-pull baseline as the individual well page.
+        const levelFeet = snapshot ? startingLevelFromSnapshot(snapshot) : 0;
         const isDown = snapshot?.isDown ?? config?.isDown ?? false;
         // Flow rate now stored in snapshot (not separately cached)
         const flowRateMinutes = snapshot?.flowRateMinutes || config?.avgFlowRateMinutes || 0;
@@ -564,12 +548,14 @@ export default function SummaryScreen() {
       }
     } else {
       const levelAtTime = getLevelAtTime(well, sliderHours);
-      atParts = { time: well.isDown ? '--' : formatFeetInches(levelAtTime), date: '' };
+      atParts = { time: formatFeetInches(levelAtTime), date: '' };
     }
 
     let readyParts: { time: string; date: string };
     if (well.isDown) {
-      readyParts = { time: t('summary.down'), date: '' };
+      readyParts = isReady
+        ? { time: t('summary.columnReady'), date: t('summary.down') }
+        : { time: t('summary.down'), date: '' };
     } else if (readyTime) {
       readyParts = formatDateTimeSplit(readyTime);
     } else {
@@ -580,7 +566,7 @@ export default function SummaryScreen() {
     const tanksText = t('summary.tanksCount', { count: well.numTanks });
     const bblsAvailable = getBblsAvailable(well);
     const bblsText = `${bblsAvailable} ${t('units.bbl')}`;
-    const flowText = formatFlowRateCompact(well.flowRateMinutes);
+    const flowText = well.isDown ? t('summary.down') : formatFlowRateCompact(well.flowRateMinutes);
 
     return (
       <TouchableOpacity
@@ -617,7 +603,7 @@ export default function SummaryScreen() {
               style={[
                 styles.wellText,
                 well.isDown && styles.textDown,
-                isReady && !well.isDown && styles.textReady,
+                isReady && styles.textReady,
               ]}
               numberOfLines={1}
             >
@@ -651,8 +637,8 @@ export default function SummaryScreen() {
             if (m > 0) return `${m}m ${secs}s`;
             return `${secs}s`;
           };
-          const oneInchFlow = formatFlowTime(oneInchMins);
-          const oneFootFlow = formatFlowTime(well.flowRateMinutes);
+          const oneInchFlow = well.isDown ? '--' : formatFlowTime(oneInchMins);
+          const oneFootFlow = well.isDown ? '--' : formatFlowTime(well.flowRateMinutes);
 
           // Calculate BBL production rates
           // Use window-averaged from Cloud Function (daily window), fall back to AFR-derived
@@ -660,7 +646,7 @@ export default function SummaryScreen() {
           const afrBblPerDay = well.flowRateMinutes > 0
             ? Math.round((60 / well.flowRateMinutes) * bblPerFoot * 24)
             : 0;
-          const bblPerDay = well.windowBblsDay > 0 ? well.windowBblsDay : afrBblPerDay;
+          const bblPerDay = well.isDown ? 0 : well.windowBblsDay > 0 ? well.windowBblsDay : afrBblPerDay;
           const bblPerHour = bblPerDay > 0 ? bblPerDay / 24 : 0;
 
           return (
@@ -728,7 +714,7 @@ export default function SummaryScreen() {
       // Down wells go to bottom
       if (a.isDown && !b.isDown) return 1;
       if (!a.isDown && b.isDown) return -1;
-      if (a.isDown && b.isDown) return a.wellName.localeCompare(b.wellName);
+      if (a.isDown && b.isDown) return getCurrentLevel(b) - getCurrentLevel(a) || a.wellName.localeCompare(b.wellName);
 
       const readyLevelA = getReadyLevel(a, pullBbls);
       const readyLevelB = getReadyLevel(b, pullBbls);
@@ -1172,10 +1158,11 @@ const styles = StyleSheet.create({
   },
   colTwoLine: {
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
   },
   dateSubText: {
     fontSize: hp("1.1%"),
+    lineHeight: hp("1.5%"),
     color: "#9CA3AF",
     marginTop: 1,
   },
@@ -1188,7 +1175,8 @@ const styles = StyleSheet.create({
   },
   wellRowMain: {
     flexDirection: "row",
-    alignItems: "center",
+    // Align names, levels and times on their first line; dates sit below it.
+    alignItems: "flex-start",
   },
   wellRowDetail: {
     flexDirection: "row",
@@ -1205,6 +1193,7 @@ const styles = StyleSheet.create({
   },
   wellText: {
     fontSize: hp("1.5%"),
+    lineHeight: hp("2%"),
     color: "#E5E7EB",
   },
   detailText: {

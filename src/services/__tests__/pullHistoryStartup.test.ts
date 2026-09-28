@@ -51,6 +51,9 @@ jest.mock('../wellConfig', () => ({
 import {
   PullHistoryEntry,
   getPullHistory,
+  getFilteredHistory,
+  getAllTimeStats,
+  getTopWells,
   loadPullHistory,
   clearPullHistory,
   getLastBackfillStatus,
@@ -115,6 +118,27 @@ afterEach(async () => {
 });
 
 describe('pullHistory startup-hang fix', () => {
+  test('server bare/idem pair displays as one pull and counts final values once', async () => {
+    const baseId = '20260927_223147_TestWell_885098';
+    const makePacket = (bblsTaken: number) => ({
+      companyId: 'co-1', driverId: 'driver-123', wellName: 'Test Well',
+      dateTimeUTC: new Date(RECENT).toISOString(), bblsTaken, tankLevelFeet: 9,
+      requestType: 'pull',
+    });
+    (global as any).fetch = httpFetch(200, {
+      [`idem_${baseId}`]: makePacket(30),
+      [baseId]: makePacket(40),
+    });
+
+    expect(await refreshFromServer()).toBe('ok');
+    expect(readStored()).toHaveLength(2); // retain both server records for delivery tracking
+    expect((await getFilteredHistory('all')).map(e => e.packetId)).toEqual([baseId]);
+    expect(await getAllTimeStats()).toEqual({ pulls: 1, bbls: 40 });
+    expect(await getTopWells()).toEqual([
+      { wellName: 'Test Well', pulls: 1, bbls: 40, avgBbls: 40 },
+    ]);
+  });
+
   test('fetch that NEVER resolves → getPullHistory returns local promptly; scan aborts on timeout; local preserved', async () => {
     seedLocal([localEntry()]);
     (global as any).fetch = neverResolvingFetch();

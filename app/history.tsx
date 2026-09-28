@@ -37,6 +37,7 @@ import {
   getUniqueWells,
   getWellStats,
   PullHistoryEntry,
+  refreshFromServer,
 } from "../src/services/pullHistory";
 import { getBblPerFootSync, getAllWellNames, loadWellConfig } from "../src/services/wellConfig";
 import { deriveBottomInches } from "../src/domain/wbmEditForm";
@@ -449,8 +450,12 @@ export default function HistoryScreen() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadHistory();
-    setIsRefreshing(false);
+    try {
+      await refreshFromServer();
+      await loadHistory();
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const handleEdit = (entry: PullHistoryEntry) => {

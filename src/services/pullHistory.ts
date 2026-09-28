@@ -1052,7 +1052,7 @@ export async function getTodayStats(): Promise<{ pulls: number; bbls: number }> 
  * Get total BBLs and pull count for all history
  */
 export async function getAllTimeStats(): Promise<{ pulls: number; bbls: number }> {
-  const history = await loadPullHistory();
+  const history = await loadLogicalPullHistory();
   return {
     pulls: history.length,
     bbls: history.reduce((sum, entry) => sum + entry.bblsTaken, 0),
@@ -1063,7 +1063,7 @@ export async function getAllTimeStats(): Promise<{ pulls: number; bbls: number }
  * Get stats grouped by day (for daily totals in history view)
  */
 export async function getStatsByDay(): Promise<{ [date: string]: { pulls: number; bbls: number } }> {
-  const history = await loadPullHistory();
+  const history = await loadLogicalPullHistory();
   const statsByDay: { [date: string]: { pulls: number; bbls: number } } = {};
 
   for (const entry of history) {
@@ -1083,7 +1083,7 @@ export async function getStatsByDay(): Promise<{ [date: string]: { pulls: number
  * Get stats for this week (Sunday to Saturday)
  */
 export async function getThisWeekStats(): Promise<{ pulls: number; bbls: number }> {
-  const history = await loadPullHistory();
+  const history = await loadLogicalPullHistory();
 
   // Get start of this week (Sunday)
   const now = new Date();
@@ -1103,7 +1103,7 @@ export async function getThisWeekStats(): Promise<{ pulls: number; bbls: number 
  * Get stats for this month
  */
 export async function getThisMonthStats(): Promise<{ pulls: number; bbls: number }> {
-  const history = await loadPullHistory();
+  const history = await loadLogicalPullHistory();
 
   // Get start of this month
   const now = new Date();
@@ -1124,7 +1124,7 @@ export async function getTopWells(
   limit: number = 5,
   sortBy: 'pulls' | 'bbls' = 'pulls'
 ): Promise<{ wellName: string; pulls: number; bbls: number; avgBbls: number }[]> {
-  const history = await loadPullHistory();
+  const history = await loadLogicalPullHistory();
 
   // Group by well
   const wellStats: { [wellName: string]: { pulls: number; bbls: number } } = {};
@@ -1154,7 +1154,7 @@ export async function getTopWells(
  * Get list of unique wells in history (for filter dropdown)
  */
 export async function getUniqueWells(): Promise<string[]> {
-  const history = await loadPullHistory();
+  const history = await loadLogicalPullHistory();
   const wells = new Set<string>();
 
   for (const entry of history) {
@@ -1169,7 +1169,7 @@ export async function getUniqueWells(): Promise<string[]> {
  * Get average BBLs per pull
  */
 export async function getAverageBblsPerPull(): Promise<number> {
-  const history = await loadPullHistory();
+  const history = await loadLogicalPullHistory();
   if (history.length === 0) return 0;
 
   const totalBbls = history.reduce((sum, entry) => sum + entry.bblsTaken, 0);
@@ -1180,10 +1180,8 @@ export async function getAverageBblsPerPull(): Promise<number> {
  * Get filtered history by well name
  */
 export async function getPullHistoryByWell(wellName: string): Promise<PullHistoryEntry[]> {
-  const history = await loadPullHistory();
-  // Collapse so per-well stats (count/bbls/avg/lastPull) reflect logical pulls,
-  // not doubled idem_ Depart + bare Close pairs.
-  return collapseLogicalPulls(history).filter(entry => entry.wellName === wellName);
+  const history = await loadLogicalPullHistory();
+  return history.filter(entry => entry.wellName === wellName);
 }
 
 /**
@@ -1216,6 +1214,12 @@ export async function getWellStats(wellName: string): Promise<{
 
 export type DateFilter = 'today' | 'week' | 'month' | 'all';
 
+/** Keep the raw cache for per-packet delivery tracking; public history and
+ *  summaries count one physical pull for each bare/idem_ pair. */
+async function loadLogicalPullHistory(): Promise<PullHistoryEntry[]> {
+  return collapseLogicalPulls(await loadPullHistory());
+}
+
 /**
  * Get filtered history by date range
  */
@@ -1223,7 +1227,7 @@ export async function getFilteredHistory(
   dateFilter: DateFilter,
   wellFilter?: string
 ): Promise<PullHistoryEntry[]> {
-  let history = await loadPullHistory();
+  let history = await loadLogicalPullHistory();
 
   // Apply well filter
   if (wellFilter && wellFilter !== 'all') {

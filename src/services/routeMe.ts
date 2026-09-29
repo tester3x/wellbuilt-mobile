@@ -140,6 +140,8 @@ export interface RouteMePlannedJob {
   disposal?: string;
   status: 'active' | 'paused' | 'pending' | 'unbuilt';
   isCardBuilt: boolean;
+  syncStatus?: 'confirmed' | 'queued_offline';
+  syncLabel?: string;
   currentLevelFeet?: number;
   currentLevelDisplay?: string;
   readyLevelFeet?: number;
@@ -230,6 +232,8 @@ export function buildRouteMeDayPlanFromSummary(input: {
       disposal: d.disposal || d.hauledTo || '',
       status: isJobActive ? 'active' : (isJobPaused ? 'paused' : 'pending'),
       isCardBuilt: true,
+      syncStatus: d.syncStatus || 'confirmed',
+      syncLabel: d.syncLabel,
       currentLevelFeet: summaryCurrentLevel(lvlInput, now),
       currentLevelDisplay: formatFeetInches(summaryCurrentLevel(lvlInput, now)),
       readyTimeDisplay: readyInfo.time,
@@ -331,13 +335,106 @@ export function reorderPlannedJobs(
   return { ok: true, reordered: next };
 }
 
+let cachedGovernedRevision: number | null = null;
+
+export function setGovernedRevisionForTests(rev: number | null): void {
+  cachedGovernedRevision = rev;
+}
+
+export async function resolveWbmPacketRevision(packageId = 'water-hauling'): Promise<number | null> {
+  if (cachedGovernedRevision && cachedGovernedRevision > 0) {
+    return cachedGovernedRevision;
+  }
+  try {
+    const { authorizedCallable } = await import('./firebaseAuthSession');
+    const bundle = await authorizedCallable<{
+      ok?: boolean;
+      governedPackageProfiles?: Array<{ packageId: string; packetRevision: number }>;
+    }>('getDriverReferenceBundle', {});
+    if (bundle && Array.isArray(bundle.governedPackageProfiles)) {
+      const match = bundle.governedPackageProfiles.find(
+        (p) => p.packageId === packageId && typeof p.packetRevision === 'number' && p.packetRevision > 0,
+      );
+      if (match) {
+        cachedGovernedRevision = match.packetRevision;
+        return match.packetRevision;
+      }
+    }
+  } catch (err) {
+    console.warn('[RouteMe] Unable to resolve packet revision from reference bundle:', err);
+  }
+  return null;
+}
+
+export function isPermanentWbmAuthorityRejection(err: unknown): boolean {
+  const msg = String(
+    (err as any)?.message ||
+    (err as any)?.details ||
+    (err as any)?.code ||
+    (err as any)?.callableStatus ||
+    err || ''
+  ).toLowerCase();
+  return (
+    msg.includes('packet_revision_unresolved') ||
+    msg.includes('unauthenticated') ||
+    msg.includes('permission-denied') ||
+    msg.includes('permission_denied') ||
+    msg.includes('failed-precondition') ||
+    msg.includes('caller_package_id_not_authority') ||
+    msg.includes('unauthorized') ||
+    msg.includes('unexpected field') ||
+    msg.includes('unknown_job_type') ||
+    msg.includes('invalid-argument') ||
+    msg.includes('not-found') ||
+    msg.includes('unscoped_driver') ||
+    msg.includes('revision_not_found') ||
+    msg.includes('disposal_not_eligible') ||
+    msg.includes('disposal_required') ||
+    msg.includes('conflict')
+  );
+}
+
+export function isWbmNetworkOrOfflineError(err: unknown): boolean {
+  const msg = String(
+    (err as any)?.message ||
+    (err as any)?.details ||
+    (err as any)?.code ||
+    (err as any)?.callableStatus ||
+    err || ''
+  ).toLowerCase();
+  return (
+    msg.includes('network') ||
+    msg.includes('offline') ||
+    msg.includes('unavailable') ||
+    msg.includes('timeout') ||
+    msg.includes('deadline-exceeded') ||
+    msg.includes('not connected') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('econnrefused') ||
+    msg.includes('enetunreach')
+  );
+}
+
+export type WbmDriverDispatchResult = {
+  ok: boolean;
+  status?: 'created' | 'already_exists' | 'queued';
+  dispatchId?: string;
+  error?: string;
+};
+
 /**
  * Governed Build Job dispatch creation:
  * - Prevents duplicates.
  * - Does not start automatically (status: 'pending').
  * - Bypasses Plans and Job Builder drawers.
  * - Requires explicit success or failure result.
- * - Suggests drop-off from driver's history only when SWD is verified eligible and available (no guessing).
+ * - Sourced disposal validation: for PW, requires verified eligible & available drop-off (rejects if absent/ineligible).
+ * - For SW, does not assume destination is an SWD (drop-off is optional / non-SWD).
+ * - Requires published packet revision (never hardcodes revision 1).
+ * - Calls server callable createDriverDispatchIfAbsent FIRST.
+ * - If server rejects (authority, validation, not-found, etc.), fails visibly and NEVER creates a phantom card.
+ * - If offline / network error, queues locally with honest label ('queued_offline') and returns status 'queued'.
+ * - On server success, persists locally with syncStatus 'confirmed' and returns status 'created'.
  */
 export async function createWbmDriverDispatch(input: {
   wellName: string;
@@ -345,64 +442,121 @@ export async function createWbmDriverDispatch(input: {
   jobType?: 'pw' | 'sw';
   disposal?: string;
   eligibleDisposals?: string[];
-}): Promise<{ ok: boolean; dispatchId?: string; error?: string }> {
-  const { wellName, operator, jobType = 'pw', disposal, eligibleDisposals } = input;
-  if (!wellName) return { ok: false, error: 'well_name_required' };
-
-  // Drop-off verification: if disposal is passed, ensure it is eligible when an eligible list is provided
-  if (disposal && eligibleDisposals && eligibleDisposals.length > 0) {
-    const normDisp = disposal.trim().toLowerCase();
-    const isEligible = eligibleDisposals.some((d) => d.trim().toLowerCase() === normDisp);
-    if (!isEligible) {
-      return { ok: false, error: 'disposal_not_eligible' };
-    }
+  packetRevision?: number;
+  packageId?: string;
+}): Promise<WbmDriverDispatchResult> {
+  const { wellName, operator, jobType = 'pw', disposal, eligibleDisposals, packageId = 'water-hauling' } = input;
+  if (!wellName || !wellName.trim()) {
+    return { ok: false, error: 'well_name_required' };
   }
 
-  // Load existing dispatches to check for duplicate
+  const isPw = (jobType || 'pw').toLowerCase() === 'pw';
+
+  // 1. Sourced disposal validation:
+  // PW requires a verified eligible, available drop-off.
+  if (isPw) {
+    if (!disposal || !disposal.trim() || disposal.trim() === 'No verified drop-off') {
+      return { ok: false, error: 'disposal_required: verified eligible drop-off required for produced water' };
+    }
+    if (eligibleDisposals && eligibleDisposals.length > 0) {
+      const normDisp = disposal.trim().toLowerCase();
+      const isEligible = eligibleDisposals.some((d) => d.trim().toLowerCase() === normDisp);
+      if (!isEligible) {
+        return { ok: false, error: 'disposal_not_eligible' };
+      }
+    }
+  }
+  // Note: For SW (Service Work), drop-off is not mandatory and not assumed to be an SWD.
+
+  // 2. Read-only pre-check: duplicate card in local dispatches
   const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
   const existing: any[] = raw ? JSON.parse(raw) : [];
   if (isCardAlreadyBuilt(wellName, existing)) {
     return { ok: false, error: 'duplicate_card_exists' };
   }
 
+  // 3. Resolve published packet revision (never hardcode revision 1)
+  const resolvedRevision =
+    typeof input.packetRevision === 'number' && Number.isInteger(input.packetRevision) && input.packetRevision > 0
+      ? input.packetRevision
+      : await resolveWbmPacketRevision(packageId);
+
+  if (!resolvedRevision || !Number.isInteger(resolvedRevision) || resolvedRevision < 1) {
+    return { ok: false, error: 'packet_revision_unresolved: governed packetRevision is required before dispatch creation' };
+  }
+
   const dispatchId = `wbm_disp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const record: Record<string, unknown> = {
+    wellName: wellName.trim(),
+    operator: operator?.trim() || '',
+    jobType: isPw ? 'pw' : 'service',
+    jobTypeId: isPw ? 'pw' : 'service',
+    disposal: disposal?.trim() || '',
+    hauledTo: disposal?.trim() || '',
+  };
+
+  // 4. Call server callable FIRST — never write a local card before server or offline verification
+  let serverResult: { ok: boolean; result?: 'created' | 'already_exists'; dispatchId?: string } | null = null;
+  let isOffline = false;
+
+  try {
+    const { authorizedCallable } = await import('./firebaseAuthSession');
+    serverResult = await authorizedCallable('createDriverDispatchIfAbsent', {
+      dispatchId,
+      record,
+      packetRef: { packageId, revision: resolvedRevision },
+    });
+  } catch (err: any) {
+    if (isPermanentWbmAuthorityRejection(err)) {
+      // Governed authority or validation rejection: fail visibly, NEVER create local card
+      console.warn('[RouteMe] Server rejected dispatch creation:', err);
+      return { ok: false, error: err?.message || 'governed_authority_rejection' };
+    }
+
+    if (isWbmNetworkOrOfflineError(err)) {
+      // Offline / network failure: mark for honest offline queuing
+      console.log('[RouteMe] Network offline during dispatch creation, queuing locally:', err);
+      isOffline = true;
+    } else {
+      // Unknown server error: fail visibly, do NOT save phantom card
+      console.error('[RouteMe] createDriverDispatchIfAbsent unexpected error:', err);
+      return { ok: false, error: err?.message || 'server_dispatch_failed' };
+    }
+  }
+
+  // 5. Handle server duplicate response
+  if (serverResult && serverResult.result === 'already_exists') {
+    return { ok: true, status: 'already_exists', dispatchId: serverResult.dispatchId || dispatchId };
+  }
+
+  // 6. Persist to local storage with honest syncStatus
   const dispatchRecord = {
     id: dispatchId,
     dispatchId,
-    wellName,
-    operator: operator || '',
-    jobType,
-    disposal: disposal || '',
-    hauledTo: disposal || '',
+    wellName: wellName.trim(),
+    operator: operator?.trim() || '',
+    jobType: isPw ? 'pw' : 'sw',
+    disposal: disposal?.trim() || '',
+    hauledTo: disposal?.trim() || '',
     status: 'pending', // startImmediately: false -> status 'pending'
+    syncStatus: isOffline ? 'queued_offline' : 'confirmed',
+    syncLabel: isOffline ? 'Queued for later (offline)' : undefined,
+    packetRevision: resolvedRevision,
+    packageId,
     loadCount: 1,
     loadsCompleted: 0,
     source: 'driver',
     createdAt: new Date().toISOString(),
   };
 
-  // Persist locally first
-  existing.push(dispatchRecord);
-  await AsyncStorage.setItem(STORAGE_KEY_DRIVER_DISPATCHES, JSON.stringify(existing));
+  const freshRaw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+  const currentDispatches: any[] = freshRaw ? JSON.parse(freshRaw) : [];
+  currentDispatches.push(dispatchRecord);
+  await AsyncStorage.setItem(STORAGE_KEY_DRIVER_DISPATCHES, JSON.stringify(currentDispatches));
 
-  // Attempt governed callable in background
-  try {
-    const { authorizedCallable } = await import('./firebaseAuthSession');
-    await authorizedCallable('createDriverDispatchIfAbsent', {
-      dispatchId,
-      record: {
-        wellName,
-        operator: operator || '',
-        jobType,
-        disposal: disposal || '',
-        hauledTo: disposal || '',
-      },
-      packetRef: { packageId: 'water-hauling', packetRevision: 1 },
-    });
-  } catch (err) {
-    // Non-fatal if offline — local dispatch persists and remains visible in DDJD queue
-    console.log('[RouteMe] Server callable createDriverDispatchIfAbsent deferred:', err);
-  }
-
-  return { ok: true, dispatchId };
+  return {
+    ok: true,
+    status: isOffline ? 'queued' : 'created',
+    dispatchId,
+  };
 }

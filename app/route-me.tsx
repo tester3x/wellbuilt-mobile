@@ -62,6 +62,7 @@ export default function RouteMeScreen() {
   const [candidateWells, setCandidateWells] = useState<RouteMePlannedJob[]>([]);
   const [buildingWell, setBuildingWell] = useState<string | null>(null);
   const [serverDisposalMap, setServerDisposalMap] = useState<Record<string, string>>({});
+  const [eligibleDisposals, setEligibleDisposals] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -86,12 +87,17 @@ export default function RouteMeScreen() {
         const srv = await fetchRouteMe();
         if (srv && srv.wells) {
           const map: Record<string, string> = {};
+          const eligibleList: string[] = [];
           for (const w of srv.wells) {
             if (w.recommendedDisposal && w.recommendedDisposal !== 'No verified drop-off') {
               map[w.wellName] = w.recommendedDisposal;
+              if (!eligibleList.includes(w.recommendedDisposal)) {
+                eligibleList.push(w.recommendedDisposal);
+              }
             }
           }
           setServerDisposalMap(map);
+          setEligibleDisposals(eligibleList);
         }
       } catch {
         // Non-fatal if server route service is not ready
@@ -171,33 +177,76 @@ export default function RouteMeScreen() {
   };
 
   // Governed Build Job creation: bypasses drawers, status 'pending', prevents duplicates
-  const handleBuildJob = async (item: RouteMePlannedJob) => {
+  const executeBuild = async (item: RouteMePlannedJob, disposal?: string) => {
     setBuildingWell(item.wellName);
     try {
-      const disposal = serverDisposalMap[item.wellName] || item.disposal;
       const res = await createWbmDriverDispatch({
         wellName: item.wellName,
         operator: item.operator,
         jobType: item.jobType,
         disposal,
+        eligibleDisposals,
       });
 
       if (!res.ok) {
         if (res.error === 'duplicate_card_exists') {
           Alert.alert('Card Already Exists', `A job card for "${item.wellName}" is already built or active.`);
+        } else if (res.error?.includes('disposal_required')) {
+          Alert.alert('Drop-off Required', 'Produced water jobs require a verified eligible SWD drop-off.');
+        } else if (res.error === 'disposal_not_eligible') {
+          Alert.alert('Ineligible Drop-off', 'Selected drop-off is not on the verified eligible list.');
         } else {
           Alert.alert('Build Failed', `Could not build job card: ${res.error}`);
         }
         return;
       }
 
-      Alert.alert('Job Card Created', `Created pending DDJD card for "${item.wellName}". Added to planned queue.`);
+      if (res.status === 'already_exists') {
+        Alert.alert('Card Already Exists', `A job card for "${item.wellName}" is already registered on the server.`);
+      } else if (res.status === 'queued') {
+        Alert.alert(
+          'Queued Offline',
+          `Device is offline. Pending card for "${item.wellName}" queued locally and will sync when connection returns.`,
+        );
+      } else {
+        Alert.alert('Job Card Created', `Created pending DDJD card for "${item.wellName}". Added to planned queue.`);
+      }
       await load();
     } catch (err) {
       Alert.alert('Error', `Failed to build job card: ${err}`);
     } finally {
       setBuildingWell(null);
     }
+  };
+
+  const handleBuildJob = async (item: RouteMePlannedJob) => {
+    const isPw = (item.jobType || 'pw').toLowerCase() === 'pw';
+    const verifiedDropOff = serverDisposalMap[item.wellName] || item.disposal;
+
+    if (isPw && (!verifiedDropOff || verifiedDropOff === 'No verified drop-off')) {
+      if (eligibleDisposals.length > 0) {
+        Alert.alert(
+          'Select Verified Drop-off',
+          `Produced water requires a verified SWD. Choose destination for "${item.wellName}":`,
+          [
+            ...eligibleDisposals.slice(0, 3).map((d) => ({
+              text: d,
+              onPress: () => executeBuild(item, d),
+            })),
+            { text: 'Cancel', style: 'cancel' },
+          ],
+        );
+        return;
+      } else {
+        Alert.alert(
+          'No Verified Drop-off',
+          `Cannot build job card for "${item.wellName}". Produced water jobs require a verified eligible SWD drop-off.`,
+        );
+        return;
+      }
+    }
+
+    await executeBuild(item, verifiedDropOff);
   };
 
   const renderPinnedItem = (item: RouteMePlannedJob) => (
@@ -253,7 +302,14 @@ export default function RouteMeScreen() {
         <Text style={styles.cardMeta}>
           Level: {item.currentLevelDisplay || '—'} · {item.readyTimeDisplay || 'Ready'}
         </Text>
-        <Text style={styles.jobTypeBadge}>{(item.jobType || 'PW').toUpperCase()}</Text>
+        <View style={styles.badgeRow}>
+          {item.syncStatus === 'queued_offline' && (
+            <View style={styles.badgeOffline}>
+              <Text style={styles.badgeOfflineText}>QUEUED OFFLINE</Text>
+            </View>
+          )}
+          <Text style={styles.jobTypeBadge}>{(item.jobType || 'PW').toUpperCase()}</Text>
+        </View>
       </View>
       {item.splitGroupId && (
         <Text style={styles.splitText}>
@@ -522,6 +578,18 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   cardMeta: { color: '#94A3B8', fontSize: Math.round(hp('1.4%')) },
+  badgeRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  badgeOffline: {
+    backgroundColor: '#78350F',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgeOfflineText: {
+    color: '#FDE68A',
+    fontSize: Math.round(hp('1.1%')),
+    fontWeight: '800',
+  },
   jobTypeBadge: {
     color: '#C4A574',
     fontSize: Math.round(hp('1.3%')),

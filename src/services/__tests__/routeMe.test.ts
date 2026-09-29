@@ -106,6 +106,7 @@ import {
   isCardAlreadyBuilt,
   reorderPlannedJobs,
   createWbmDriverDispatch,
+  setGovernedRevisionForTests,
   STORAGE_KEY_DRIVER_DISPATCHES,
   type RouteMePlannedJob,
 } from '../routeMe';
@@ -114,6 +115,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 describe('Route Me Day Planning Surface', () => {
   beforeEach(async () => {
     await AsyncStorage.clear();
+    setGovernedRevisionForTests(null);
   });
 
   test('buildRouteMeDayPlanFromSummary pins active/paused jobs at top, computes Summary metrics, and distinguishes unbuilt wells', () => {
@@ -179,42 +181,140 @@ describe('Route Me Day Planning Surface', () => {
     expect(rInvalid.error).toMatch(/split_ticket_sequence_violation/);
   });
 
-  test('createWbmDriverDispatch creates pending DDJD card directly and prevents duplicate cards', async () => {
-    // 1. First build succeeds
-    const res1 = await createWbmDriverDispatch({
+  test('createWbmDriverDispatch fails closed when packetRevision is unresolved', async () => {
+    setGovernedRevisionForTests(null);
+    mockCallable.mockResolvedValueOnce({ ok: true, governedPackageProfiles: [] });
+
+    const res = await createWbmDriverDispatch({
       wellName: 'NEW WELL 1',
-      operator: 'OPERATOR X',
-      jobType: 'pw',
       disposal: 'HYDRO CLEAR SWD',
-      eligibleDisposals: ['HYDRO CLEAR SWD'],
     });
-    expect(res1.ok).toBe(true);
-    expect(res1.dispatchId).toBeTruthy();
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/packet_revision_unresolved/);
 
-    // Stored dispatch doc is pending (startImmediately: false)
+    // No local card created
     const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
-    const stored = JSON.parse(raw || '[]');
-    expect(stored).toHaveLength(1);
-    expect(stored[0].status).toBe('pending');
-    expect(stored[0].loadCount).toBe(1);
-    expect(stored[0].loadsCompleted).toBe(0);
+    expect(raw).toBeNull();
+  });
 
-    // 2. Duplicate build is prevented
-    const resDup = await createWbmDriverDispatch({
-      wellName: 'NEW WELL 1',
-      operator: 'OPERATOR X',
+  test('createWbmDriverDispatch requires verified eligible drop-off for PW and rejects absent or ineligible disposal', async () => {
+    setGovernedRevisionForTests(3);
+
+    // 1. Missing disposal for PW
+    const resMissing = await createWbmDriverDispatch({
+      wellName: 'PW WELL 1',
       jobType: 'pw',
     });
-    expect(resDup.ok).toBe(false);
-    expect(resDup.error).toBe('duplicate_card_exists');
+    expect(resMissing.ok).toBe(false);
+    expect(resMissing.error).toMatch(/disposal_required/);
 
-    // 3. Ineligible disposal is rejected (no guessing)
+    // 2. Ineligible disposal for PW
     const resIneligible = await createWbmDriverDispatch({
-      wellName: 'OTHER WELL',
+      wellName: 'PW WELL 1',
+      jobType: 'pw',
       disposal: 'UNAPPROVED SWD',
       eligibleDisposals: ['HYDRO CLEAR SWD'],
     });
     expect(resIneligible.ok).toBe(false);
     expect(resIneligible.error).toBe('disposal_not_eligible');
+
+    // 3. Service Work (SW) does NOT require an SWD drop-off
+    mockCallable.mockResolvedValueOnce({ ok: true, result: 'created', dispatchId: 'wbm_sw_1' });
+    const resSw = await createWbmDriverDispatch({
+      wellName: 'SW WELL 1',
+      jobType: 'sw',
+    });
+    expect(resSw.ok).toBe(true);
+    expect(resSw.status).toBe('created');
+  });
+
+  test('createWbmDriverDispatch calls server callable FIRST and never shows a phantom card on failure', async () => {
+    setGovernedRevisionForTests(3);
+    mockCallable.mockRejectedValueOnce(new Error('failed-precondition: unscoped_driver'));
+
+    const res = await createWbmDriverDispatch({
+      wellName: 'PW WELL FAIL',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/unscoped_driver/);
+
+    // NO phantom card saved to local storage
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const stored = JSON.parse(raw || '[]');
+    expect(stored.find((d: any) => d.wellName === 'PW WELL FAIL')).toBeUndefined();
+  });
+
+  test('createWbmDriverDispatch queues locally with honest label on offline network error', async () => {
+    setGovernedRevisionForTests(3);
+    mockCallable.mockRejectedValueOnce(new Error('Network request failed'));
+
+    const res = await createWbmDriverDispatch({
+      wellName: 'PW WELL OFFLINE',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe('queued');
+    expect(res.dispatchId).toBeTruthy();
+
+    // Stored dispatch doc is pending with honest offline status
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const stored = JSON.parse(raw || '[]');
+    const offlineCard = stored.find((d: any) => d.wellName === 'PW WELL OFFLINE');
+    expect(offlineCard).toBeDefined();
+    expect(offlineCard.status).toBe('pending');
+    expect(offlineCard.syncStatus).toBe('queued_offline');
+    expect(offlineCard.syncLabel).toBe('Queued for later (offline)');
+    expect(offlineCard.packetRevision).toBe(3);
+  });
+
+  test('createWbmDriverDispatch creates pending DDJD card with confirmed syncStatus on server success', async () => {
+    setGovernedRevisionForTests(3);
+    mockCallable.mockResolvedValueOnce({ ok: true, result: 'created', dispatchId: 'wbm_disp_123' });
+
+    const res1 = await createWbmDriverDispatch({
+      wellName: 'CONFIRMED WELL',
+      operator: 'OPERATOR X',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+
+    expect(res1.ok).toBe(true);
+    expect(res1.status).toBe('created');
+    expect(mockCallable).toHaveBeenCalledWith('createDriverDispatchIfAbsent', expect.objectContaining({
+      packetRef: { packageId: 'water-hauling', revision: 3 },
+      record: expect.objectContaining({
+        wellName: 'CONFIRMED WELL',
+        operator: 'OPERATOR X',
+        jobType: 'pw',
+        disposal: 'HYDRO CLEAR SWD',
+      }),
+    }));
+
+    // Stored dispatch doc is pending with confirmed syncStatus
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const stored = JSON.parse(raw || '[]');
+    const card = stored.find((d: any) => d.wellName === 'CONFIRMED WELL');
+    expect(card).toBeDefined();
+    expect(card.status).toBe('pending');
+    expect(card.syncStatus).toBe('confirmed');
+    expect(card.packetRevision).toBe(3);
+
+    // Duplicate build is prevented
+    const resDup = await createWbmDriverDispatch({
+      wellName: 'CONFIRMED WELL',
+      operator: 'OPERATOR X',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+    });
+    expect(resDup.ok).toBe(false);
+    expect(resDup.error).toBe('duplicate_card_exists');
   });
 });

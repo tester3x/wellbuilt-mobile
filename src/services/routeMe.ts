@@ -417,7 +417,7 @@ export function isWbmNetworkOrOfflineError(err: unknown): boolean {
 
 export type WbmDriverDispatchResult = {
   ok: boolean;
-  status?: 'created' | 'already_exists' | 'queued';
+  status?: 'created' | 'already_exists';
   dispatchId?: string;
   error?: string;
 };
@@ -431,9 +431,10 @@ export type WbmDriverDispatchResult = {
  * - Sourced disposal validation: for PW, requires verified eligible & available drop-off (rejects if absent/ineligible).
  * - For SW, does not assume destination is an SWD (drop-off is optional / non-SWD).
  * - Requires published packet revision (never hardcodes revision 1).
+ * - Uses canonical authorized jobTypeId ('pw' for PW, 'service-work' for SW).
  * - Calls server callable createDriverDispatchIfAbsent FIRST.
  * - If server rejects (authority, validation, not-found, etc.), fails visibly and NEVER creates a phantom card.
- * - If offline / network error, queues locally with honest label ('queued_offline') and returns status 'queued'.
+ * - If offline / network error, fails closed honestly reporting offline_unavailable (NEVER creates a phantom card).
  * - On server success, persists locally with syncStatus 'confirmed' and returns status 'created'.
  */
 export async function createWbmDriverDispatch(input: {
@@ -485,19 +486,19 @@ export async function createWbmDriverDispatch(input: {
     return { ok: false, error: 'packet_revision_unresolved: governed packetRevision is required before dispatch creation' };
   }
 
+  const canonicalJobTypeId = isPw ? 'pw' : 'service-work';
   const dispatchId = `wbm_disp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const record: Record<string, unknown> = {
     wellName: wellName.trim(),
     operator: operator?.trim() || '',
     jobType: isPw ? 'pw' : 'service',
-    jobTypeId: isPw ? 'pw' : 'service',
+    jobTypeId: canonicalJobTypeId,
     disposal: disposal?.trim() || '',
     hauledTo: disposal?.trim() || '',
   };
 
-  // 4. Call server callable FIRST — never write a local card before server or offline verification
+  // 4. Call server callable FIRST — never write a local card before server confirmation
   let serverResult: { ok: boolean; result?: 'created' | 'already_exists'; dispatchId?: string } | null = null;
-  let isOffline = false;
 
   try {
     const { authorizedCallable } = await import('./firebaseAuthSession');
@@ -514,14 +515,17 @@ export async function createWbmDriverDispatch(input: {
     }
 
     if (isWbmNetworkOrOfflineError(err)) {
-      // Offline / network failure: mark for honest offline queuing
-      console.log('[RouteMe] Network offline during dispatch creation, queuing locally:', err);
-      isOffline = true;
-    } else {
-      // Unknown server error: fail visibly, do NOT save phantom card
-      console.error('[RouteMe] createDriverDispatchIfAbsent unexpected error:', err);
-      return { ok: false, error: err?.message || 'server_dispatch_failed' };
+      // Offline / network failure: report unavailable, never create phantom card
+      console.warn('[RouteMe] Network offline during dispatch creation, failing closed (no phantom card):', err);
+      return {
+        ok: false,
+        error: 'offline_unavailable: Network connection required to create governed DDJD cards. Creation was not queued.',
+      };
     }
+
+    // Unknown server error: fail visibly, do NOT save phantom card
+    console.error('[RouteMe] createDriverDispatchIfAbsent unexpected error:', err);
+    return { ok: false, error: err?.message || 'server_dispatch_failed' };
   }
 
   // 5. Handle server duplicate response
@@ -529,18 +533,18 @@ export async function createWbmDriverDispatch(input: {
     return { ok: true, status: 'already_exists', dispatchId: serverResult.dispatchId || dispatchId };
   }
 
-  // 6. Persist to local storage with honest syncStatus
+  // 6. Persist to local storage only after server confirmation
   const dispatchRecord = {
     id: dispatchId,
     dispatchId,
     wellName: wellName.trim(),
     operator: operator?.trim() || '',
     jobType: isPw ? 'pw' : 'sw',
+    jobTypeId: canonicalJobTypeId,
     disposal: disposal?.trim() || '',
     hauledTo: disposal?.trim() || '',
     status: 'pending', // startImmediately: false -> status 'pending'
-    syncStatus: isOffline ? 'queued_offline' : 'confirmed',
-    syncLabel: isOffline ? 'Queued for later (offline)' : undefined,
+    syncStatus: 'confirmed',
     packetRevision: resolvedRevision,
     packageId,
     loadCount: 1,
@@ -556,7 +560,7 @@ export async function createWbmDriverDispatch(input: {
 
   return {
     ok: true,
-    status: isOffline ? 'queued' : 'created',
+    status: 'created',
     dispatchId,
   };
 }

@@ -218,7 +218,7 @@ describe('Route Me Day Planning Surface', () => {
     expect(resIneligible.ok).toBe(false);
     expect(resIneligible.error).toBe('disposal_not_eligible');
 
-    // 3. Service Work (SW) does NOT require an SWD drop-off
+    // 3. Service Work (SW) does NOT require an SWD drop-off and binds canonical jobTypeId: 'service-work'
     mockCallable.mockResolvedValueOnce({ ok: true, result: 'created', dispatchId: 'wbm_sw_1' });
     const resSw = await createWbmDriverDispatch({
       wellName: 'SW WELL 1',
@@ -226,6 +226,14 @@ describe('Route Me Day Planning Surface', () => {
     });
     expect(resSw.ok).toBe(true);
     expect(resSw.status).toBe('created');
+    expect(mockCallable).toHaveBeenCalledWith('createDriverDispatchIfAbsent', expect.objectContaining({
+      packetRef: { packageId: 'water-hauling', revision: 3 },
+      record: expect.objectContaining({
+        wellName: 'SW WELL 1',
+        jobType: 'service',
+        jobTypeId: 'service-work',
+      }),
+    }));
   });
 
   test('createWbmDriverDispatch calls server callable FIRST and never shows a phantom card on failure', async () => {
@@ -248,7 +256,7 @@ describe('Route Me Day Planning Surface', () => {
     expect(stored.find((d: any) => d.wellName === 'PW WELL FAIL')).toBeUndefined();
   });
 
-  test('createWbmDriverDispatch queues locally with honest label on offline network error', async () => {
+  test('createWbmDriverDispatch fails closed on offline network error without creating phantom cards', async () => {
     setGovernedRevisionForTests(3);
     mockCallable.mockRejectedValueOnce(new Error('Network request failed'));
 
@@ -259,19 +267,13 @@ describe('Route Me Day Planning Surface', () => {
       eligibleDisposals: ['HYDRO CLEAR SWD'],
     });
 
-    expect(res.ok).toBe(true);
-    expect(res.status).toBe('queued');
-    expect(res.dispatchId).toBeTruthy();
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/offline_unavailable/);
 
-    // Stored dispatch doc is pending with honest offline status
+    // Stored dispatch doc is NOT created (no phantom cards)
     const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
     const stored = JSON.parse(raw || '[]');
-    const offlineCard = stored.find((d: any) => d.wellName === 'PW WELL OFFLINE');
-    expect(offlineCard).toBeDefined();
-    expect(offlineCard.status).toBe('pending');
-    expect(offlineCard.syncStatus).toBe('queued_offline');
-    expect(offlineCard.syncLabel).toBe('Queued for later (offline)');
-    expect(offlineCard.packetRevision).toBe(3);
+    expect(stored.find((d: any) => d.wellName === 'PW WELL OFFLINE')).toBeUndefined();
   });
 
   test('createWbmDriverDispatch creates pending DDJD card with confirmed syncStatus on server success', async () => {
@@ -294,6 +296,7 @@ describe('Route Me Day Planning Surface', () => {
         wellName: 'CONFIRMED WELL',
         operator: 'OPERATOR X',
         jobType: 'pw',
+        jobTypeId: 'pw',
         disposal: 'HYDRO CLEAR SWD',
       }),
     }));

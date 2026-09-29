@@ -195,6 +195,11 @@ export default function RouteMeScreen() {
           Alert.alert('Drop-off Required', 'Produced water jobs require a verified eligible SWD drop-off.');
         } else if (res.error === 'disposal_not_eligible') {
           Alert.alert('Ineligible Drop-off', 'Selected drop-off is not on the verified eligible list.');
+        } else if (res.error?.includes('offline_unavailable')) {
+          Alert.alert(
+            'Network Required',
+            'Network connection is required to create a governed DDJD card. Please connect to a network and try again.',
+          );
         } else {
           Alert.alert('Build Failed', `Could not build job card: ${res.error}`);
         }
@@ -203,11 +208,6 @@ export default function RouteMeScreen() {
 
       if (res.status === 'already_exists') {
         Alert.alert('Card Already Exists', `A job card for "${item.wellName}" is already registered on the server.`);
-      } else if (res.status === 'queued') {
-        Alert.alert(
-          'Queued Offline',
-          `Device is offline. Pending card for "${item.wellName}" queued locally and will sync when connection returns.`,
-        );
       } else {
         Alert.alert('Job Card Created', `Created pending DDJD card for "${item.wellName}". Added to planned queue.`);
       }
@@ -303,11 +303,6 @@ export default function RouteMeScreen() {
           Level: {item.currentLevelDisplay || '—'} · {item.readyTimeDisplay || 'Ready'}
         </Text>
         <View style={styles.badgeRow}>
-          {item.syncStatus === 'queued_offline' && (
-            <View style={styles.badgeOffline}>
-              <Text style={styles.badgeOfflineText}>QUEUED OFFLINE</Text>
-            </View>
-          )}
           <Text style={styles.jobTypeBadge}>{(item.jobType || 'PW').toUpperCase()}</Text>
         </View>
       </View>

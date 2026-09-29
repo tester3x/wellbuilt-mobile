@@ -1,5 +1,16 @@
-// Route Me client contract (WB-M Phase 1 visual-only pilot):
-// fail-closed fetch, always-disabled DDJD, non-selectable muted/assigned wells.
+const mockStore: Record<string, string> = {};
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    __store: mockStore,
+    getItem: jest.fn(async (k: string) => (k in mockStore ? mockStore[k] : null)),
+    setItem: jest.fn(async (k: string, v: string) => { mockStore[k] = v; }),
+    removeItem: jest.fn(async (k: string) => { delete mockStore[k]; }),
+    clear: jest.fn(async () => {
+      for (const k of Object.keys(mockStore)) delete mockStore[k];
+    }),
+  },
+}));
 
 const mockCallable = jest.fn();
 jest.mock('../firebaseAuthSession', () => ({
@@ -86,4 +97,124 @@ test('fetchRouteMe fails closed when server denies entitlement (canViewRouteMe f
   mockCallable.mockResolvedValueOnce({ ok: true, capabilities: caps({ canViewRouteMe: false }), wells: [], asOfMs: null });
   const r = await fetchRouteMe();
   expect(r.capabilities.canViewRouteMe).toBe(false);
+});
+
+// ── Day Planning Tests ──
+
+import {
+  buildRouteMeDayPlanFromSummary,
+  isCardAlreadyBuilt,
+  reorderPlannedJobs,
+  createWbmDriverDispatch,
+  STORAGE_KEY_DRIVER_DISPATCHES,
+  type RouteMePlannedJob,
+} from '../routeMe';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+describe('Route Me Day Planning Surface', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  test('buildRouteMeDayPlanFromSummary pins active/paused jobs at top, computes Summary metrics, and distinguishes unbuilt wells', () => {
+    const wellConfig = {
+      'GABRIEL 1-36-25H': { operator: 'CONTINENTAL', numTanks: 2, loadLine: 1.33, allowedBottom: 1.33, avgFlowRateMinutes: 60 },
+      'DAHL 1-12H': { operator: 'HESS', numTanks: 1, loadLine: 1.33, allowedBottom: 1.33, avgFlowRateMinutes: 45 },
+      'UNBUILT WELL 3': { operator: 'WHITING', numTanks: 2, loadLine: 1.33, allowedBottom: 1.33, avgFlowRateMinutes: 90 },
+    };
+    const now = Date.parse('2026-09-28T12:00:00Z');
+    const snapshots = new Map<string, any>([
+      ['GABRIEL 1-36-25H', { levelFeet: 10, lastPullBottomLevelFeet: 10, flowRateMinutes: 60, timestamp: now - 3600000, isDown: false }],
+      ['DAHL 1-12H', { levelFeet: 8, lastPullBottomLevelFeet: 8, flowRateMinutes: 45, timestamp: now - 3600000, isDown: false }],
+      ['UNBUILT WELL 3', { levelFeet: 6, lastPullBottomLevelFeet: 6, flowRateMinutes: 90, timestamp: now - 3600000, isDown: false }],
+    ]);
+
+    const existingDispatches = [
+      { id: 'disp_act', wellName: 'GABRIEL 1-36-25H', status: 'active', jobType: 'pw' },
+      { id: 'disp_pau', wellName: 'DAHL 1-12H', status: 'paused', jobType: 'sw' },
+    ];
+
+    const plan = buildRouteMeDayPlanFromSummary({
+      wellConfig,
+      snapshots,
+      existingDispatches,
+      pullBbls: 140,
+      now,
+    });
+
+    // Pinned active / paused at top
+    expect(plan.pinnedJobs).toHaveLength(2);
+    expect(plan.pinnedJobs[0].wellName).toBe('GABRIEL 1-36-25H');
+    expect(plan.pinnedJobs[0].status).toBe('active');
+    expect(plan.pinnedJobs[1].wellName).toBe('DAHL 1-12H');
+    expect(plan.pinnedJobs[1].status).toBe('paused');
+
+    // Summary calculations on candidate wells
+    const candG1 = plan.candidateWells.find(w => w.wellName === 'GABRIEL 1-36-25H');
+    const candUnbuilt = plan.candidateWells.find(w => w.wellName === 'UNBUILT WELL 3');
+    expect(candG1?.isCardBuilt).toBe(true);
+    expect(candUnbuilt?.isCardBuilt).toBe(false);
+    expect(candUnbuilt?.status).toBe('unbuilt');
+    expect(candUnbuilt?.bblsAvailable).toBeGreaterThan(0);
+    expect(candUnbuilt?.currentLevelDisplay).toBeTruthy();
+    expect(candUnbuilt?.readyTimeDisplay).toBeTruthy();
+  });
+
+  test('reorderPlannedJobs permits SW and PW reordering but blocks split-ticket sequence violations', () => {
+    const jobs: RouteMePlannedJob[] = [
+      { id: '1', kind: 'pending_dispatch', wellName: 'WELL 1', jobType: 'pw', status: 'pending', isCardBuilt: true },
+      { id: '2', kind: 'pending_dispatch', wellName: 'WELL 2', jobType: 'sw', status: 'pending', isCardBuilt: true },
+      { id: '3', kind: 'pending_dispatch', wellName: 'SPLIT A', jobType: 'sw', status: 'pending', isCardBuilt: true, splitGroupId: 'grp1', splitSequence: 1 },
+      { id: '4', kind: 'pending_dispatch', wellName: 'SPLIT B', jobType: 'sw', status: 'pending', isCardBuilt: true, splitGroupId: 'grp1', splitSequence: 2 },
+    ];
+
+    // Reorder non-split jobs
+    const r1 = reorderPlannedJobs(jobs, 1, 0);
+    expect(r1.ok).toBe(true);
+    expect(r1.reordered[0].id).toBe('2');
+
+    // Reorder split leg 2 before leg 1 -> BLOCKED
+    const rInvalid = reorderPlannedJobs(jobs, 3, 2);
+    expect(rInvalid.ok).toBe(false);
+    expect(rInvalid.error).toMatch(/split_ticket_sequence_violation/);
+  });
+
+  test('createWbmDriverDispatch creates pending DDJD card directly and prevents duplicate cards', async () => {
+    // 1. First build succeeds
+    const res1 = await createWbmDriverDispatch({
+      wellName: 'NEW WELL 1',
+      operator: 'OPERATOR X',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+    expect(res1.ok).toBe(true);
+    expect(res1.dispatchId).toBeTruthy();
+
+    // Stored dispatch doc is pending (startImmediately: false)
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const stored = JSON.parse(raw || '[]');
+    expect(stored).toHaveLength(1);
+    expect(stored[0].status).toBe('pending');
+    expect(stored[0].loadCount).toBe(1);
+    expect(stored[0].loadsCompleted).toBe(0);
+
+    // 2. Duplicate build is prevented
+    const resDup = await createWbmDriverDispatch({
+      wellName: 'NEW WELL 1',
+      operator: 'OPERATOR X',
+      jobType: 'pw',
+    });
+    expect(resDup.ok).toBe(false);
+    expect(resDup.error).toBe('duplicate_card_exists');
+
+    // 3. Ineligible disposal is rejected (no guessing)
+    const resIneligible = await createWbmDriverDispatch({
+      wellName: 'OTHER WELL',
+      disposal: 'UNAPPROVED SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+    expect(resIneligible.ok).toBe(false);
+    expect(resIneligible.error).toBe('disposal_not_eligible');
+  });
 });

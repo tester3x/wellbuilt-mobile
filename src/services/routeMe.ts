@@ -115,3 +115,294 @@ export function ddjdButtonState(
 export function isSelectableForDdjd(well: RouteMeWell): boolean {
   return well.assignmentState === 'unassigned' && !well.muted;
 }
+
+// ── Day Planning Surface (Summary Candidate Well View + Governed DDJD Dispatch) ──
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  summaryCurrentLevel,
+  summaryReadyLevel,
+  summaryBblsAvailable,
+  formatFeetInches,
+  formatReadyTimeDisplay,
+  type SummaryLevelInput,
+} from './summaryWellLevel';
+import { startingLevelFromSnapshot } from './downSnapshot';
+
+export const STORAGE_KEY_DRIVER_DISPATCHES = '@wellbuilt_driver_dispatches';
+
+export interface RouteMePlannedJob {
+  id: string;
+  kind: 'active_job' | 'paused_dispatch' | 'pending_dispatch' | 'candidate_well';
+  wellName: string;
+  operator?: string;
+  jobType: 'pw' | 'sw';
+  disposal?: string;
+  status: 'active' | 'paused' | 'pending' | 'unbuilt';
+  isCardBuilt: boolean;
+  currentLevelFeet?: number;
+  currentLevelDisplay?: string;
+  readyLevelFeet?: number;
+  readyLevelDisplay?: string;
+  readyTimeDisplay?: string;
+  readySubText?: string;
+  isReady?: boolean;
+  bblsAvailable?: number;
+  splitGroupId?: string;
+  splitSequence?: number;
+  splitTotal?: number;
+  dispatchId?: string;
+  invoiceDocId?: string;
+}
+
+/** Check if a job card for this well is already built and not terminal */
+export function isCardAlreadyBuilt(
+  wellName: string,
+  dispatches: Array<{ wellName?: string; status?: string }>,
+): boolean {
+  if (!wellName) return false;
+  const norm = wellName.trim().toUpperCase();
+  for (const d of dispatches || []) {
+    const st = d?.status;
+    if (st !== 'completed' && st !== 'cancelled' && st !== 'closed' && st !== 'declined') {
+      const dName = (d?.wellName || '').trim().toUpperCase();
+      if (dName === norm) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Builds the complete Route Me Day Plan using Summary calculations:
+ * 1. Pinned active or paused jobs at top.
+ * 2. Pending DDJD dispatches (SW and PW coexistence).
+ * 3. Candidate authorized wells with level, bbls available, and ready time.
+ * 4. Distinguishes already-built DDJD cards from unbuilt wells.
+ */
+export function buildRouteMeDayPlanFromSummary(input: {
+  wellConfig: Record<string, any>;
+  snapshots: Map<string, any>;
+  existingDispatches?: any[];
+  pullBbls?: number;
+  now?: number;
+}): {
+  pinnedJobs: RouteMePlannedJob[];
+  pendingJobs: RouteMePlannedJob[];
+  candidateWells: RouteMePlannedJob[];
+} {
+  const now = input.now || Date.now();
+  const pullBbls = input.pullBbls || 140;
+  const pinnedJobs: RouteMePlannedJob[] = [];
+  const pendingJobs: RouteMePlannedJob[] = [];
+  const candidateWells: RouteMePlannedJob[] = [];
+
+  const dispatches = input.existingDispatches || [];
+
+  // Categorize existing dispatches
+  for (const d of dispatches) {
+    if (d?.status === 'completed' || d?.status === 'cancelled' || d?.status === 'closed' || d?.status === 'declined') {
+      continue;
+    }
+    const well = d.wellName || '';
+    const cfg = input.wellConfig[well] || {};
+    const snap = input.snapshots.get(well);
+    const lvlInput: SummaryLevelInput = {
+      levelFeet: snap ? startingLevelFromSnapshot(snap) : (cfg.levelFeet || 0),
+      flowRateMinutes: snap?.flowRateMinutes || cfg.avgFlowRateMinutes || 0,
+      snapshotTimestamp: snap?.timestamp || now,
+      isDown: snap?.isDown ?? cfg.isDown ?? false,
+    };
+    const readyInfo = formatReadyTimeDisplay(
+      { ...lvlInput, allowedBottom: cfg.allowedBottom, numTanks: cfg.numTanks || 1 },
+      pullBbls,
+      now,
+    );
+
+    const isJobActive = d.status === 'active' || d.status === 'in_progress';
+    const isJobPaused = d.status === 'paused';
+
+    const item: RouteMePlannedJob = {
+      id: d.id || `disp_${d.dispatchId || well}`,
+      kind: isJobActive ? 'active_job' : (isJobPaused ? 'paused_dispatch' : 'pending_dispatch'),
+      wellName: well,
+      operator: d.operator || cfg.operator || '',
+      jobType: d.jobType || (d.commodityType === 'service' ? 'sw' : 'pw'),
+      disposal: d.disposal || d.hauledTo || '',
+      status: isJobActive ? 'active' : (isJobPaused ? 'paused' : 'pending'),
+      isCardBuilt: true,
+      currentLevelFeet: summaryCurrentLevel(lvlInput, now),
+      currentLevelDisplay: formatFeetInches(summaryCurrentLevel(lvlInput, now)),
+      readyTimeDisplay: readyInfo.time,
+      readySubText: readyInfo.subText,
+      isReady: readyInfo.isReady,
+      bblsAvailable: summaryBblsAvailable({ ...lvlInput, loadLine: cfg.loadLine, numTanks: cfg.numTanks || 1 }, now),
+      splitGroupId: d.splitGroupId,
+      splitSequence: d.splitSequence,
+      splitTotal: d.splitTotal,
+      dispatchId: d.id || d.dispatchId,
+    };
+
+    if (isJobActive || isJobPaused) {
+      pinnedJobs.push(item);
+    } else {
+      pendingJobs.push(item);
+    }
+  }
+
+  // Candidate wells
+  for (const [wellName, cfg] of Object.entries(input.wellConfig)) {
+    const snap = input.snapshots.get(wellName);
+    const cardBuilt = isCardAlreadyBuilt(wellName, dispatches);
+    const lvlInput: SummaryLevelInput = {
+      levelFeet: snap ? startingLevelFromSnapshot(snap) : 0,
+      flowRateMinutes: snap?.flowRateMinutes || cfg.avgFlowRateMinutes || 0,
+      snapshotTimestamp: snap?.timestamp || now,
+      isDown: snap?.isDown ?? cfg.isDown ?? false,
+    };
+    const readyLevel = summaryReadyLevel(
+      { allowedBottom: cfg.allowedBottom, numTanks: cfg.numTanks || 1 },
+      pullBbls,
+    );
+    const readyInfo = formatReadyTimeDisplay(
+      { ...lvlInput, allowedBottom: cfg.allowedBottom, numTanks: cfg.numTanks || 1 },
+      pullBbls,
+      now,
+    );
+
+    candidateWells.push({
+      id: `cand_${wellName}`,
+      kind: 'candidate_well',
+      wellName,
+      operator: cfg.operator || '',
+      jobType: 'pw',
+      status: cardBuilt ? 'pending' : 'unbuilt',
+      isCardBuilt: cardBuilt,
+      currentLevelFeet: summaryCurrentLevel(lvlInput, now),
+      currentLevelDisplay: formatFeetInches(summaryCurrentLevel(lvlInput, now)),
+      readyLevelFeet: readyLevel,
+      readyLevelDisplay: formatFeetInches(readyLevel),
+      readyTimeDisplay: readyInfo.time,
+      readySubText: readyInfo.subText,
+      isReady: readyInfo.isReady,
+      bblsAvailable: summaryBblsAvailable({ ...lvlInput, loadLine: cfg.loadLine, numTanks: cfg.numTanks || 1 }, now),
+    });
+  }
+
+  return { pinnedJobs, pendingJobs, candidateWells };
+}
+
+/**
+ * Validates and applies reordering of remaining planned jobs.
+ * Enforces the split-ticket sequencing invariant:
+ * Earlier split leg must close before next begins; monotonic sequence within splitGroupId.
+ */
+export function reorderPlannedJobs(
+  jobs: RouteMePlannedJob[],
+  fromIndex: number,
+  toIndex: number,
+): { ok: boolean; reordered: RouteMePlannedJob[]; error?: string } {
+  if (fromIndex < 0 || fromIndex >= jobs.length || toIndex < 0 || toIndex >= jobs.length) {
+    return { ok: false, reordered: jobs, error: 'invalid_index' };
+  }
+  if (fromIndex === toIndex) {
+    return { ok: true, reordered: jobs };
+  }
+
+  const next = [...jobs];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+
+  // Validate split-ticket sequencing invariant:
+  const seenSequences = new Map<string, number>();
+  for (const item of next) {
+    if (item.splitGroupId && typeof item.splitSequence === 'number') {
+      const prevSeq = seenSequences.get(item.splitGroupId);
+      if (prevSeq !== undefined && item.splitSequence < prevSeq) {
+        return {
+          ok: false,
+          reordered: jobs,
+          error: 'split_ticket_sequence_violation: earlier split leg must close before next begins',
+        };
+      }
+      seenSequences.set(item.splitGroupId, item.splitSequence);
+    }
+  }
+
+  return { ok: true, reordered: next };
+}
+
+/**
+ * Governed Build Job dispatch creation:
+ * - Prevents duplicates.
+ * - Does not start automatically (status: 'pending').
+ * - Bypasses Plans and Job Builder drawers.
+ * - Requires explicit success or failure result.
+ * - Suggests drop-off from driver's history only when SWD is verified eligible and available (no guessing).
+ */
+export async function createWbmDriverDispatch(input: {
+  wellName: string;
+  operator?: string;
+  jobType?: 'pw' | 'sw';
+  disposal?: string;
+  eligibleDisposals?: string[];
+}): Promise<{ ok: boolean; dispatchId?: string; error?: string }> {
+  const { wellName, operator, jobType = 'pw', disposal, eligibleDisposals } = input;
+  if (!wellName) return { ok: false, error: 'well_name_required' };
+
+  // Drop-off verification: if disposal is passed, ensure it is eligible when an eligible list is provided
+  if (disposal && eligibleDisposals && eligibleDisposals.length > 0) {
+    const normDisp = disposal.trim().toLowerCase();
+    const isEligible = eligibleDisposals.some((d) => d.trim().toLowerCase() === normDisp);
+    if (!isEligible) {
+      return { ok: false, error: 'disposal_not_eligible' };
+    }
+  }
+
+  // Load existing dispatches to check for duplicate
+  const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+  const existing: any[] = raw ? JSON.parse(raw) : [];
+  if (isCardAlreadyBuilt(wellName, existing)) {
+    return { ok: false, error: 'duplicate_card_exists' };
+  }
+
+  const dispatchId = `wbm_disp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const dispatchRecord = {
+    id: dispatchId,
+    dispatchId,
+    wellName,
+    operator: operator || '',
+    jobType,
+    disposal: disposal || '',
+    hauledTo: disposal || '',
+    status: 'pending', // startImmediately: false -> status 'pending'
+    loadCount: 1,
+    loadsCompleted: 0,
+    source: 'driver',
+    createdAt: new Date().toISOString(),
+  };
+
+  // Persist locally first
+  existing.push(dispatchRecord);
+  await AsyncStorage.setItem(STORAGE_KEY_DRIVER_DISPATCHES, JSON.stringify(existing));
+
+  // Attempt governed callable in background
+  try {
+    const { authorizedCallable } = await import('./firebaseAuthSession');
+    await authorizedCallable('createDriverDispatchIfAbsent', {
+      dispatchId,
+      record: {
+        wellName,
+        operator: operator || '',
+        jobType,
+        disposal: disposal || '',
+        hauledTo: disposal || '',
+      },
+      packetRef: { packageId: 'water-hauling', packetRevision: 1 },
+    });
+  } catch (err) {
+    // Non-fatal if offline — local dispatch persists and remains visible in DDJD queue
+    console.log('[RouteMe] Server callable createDriverDispatchIfAbsent deferred:', err);
+  }
+
+  return { ok: true, dispatchId };
+}

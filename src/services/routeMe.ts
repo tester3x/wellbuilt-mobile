@@ -394,7 +394,7 @@ export function isPermanentWbmAuthorityRejection(err: unknown): boolean {
   );
 }
 
-export function isWbmNetworkOrOfflineError(err: unknown): boolean {
+export function isWbmDefiniteOfflineError(err: unknown): boolean {
   const msg = String(
     (err as any)?.message ||
     (err as any)?.details ||
@@ -403,21 +403,77 @@ export function isWbmNetworkOrOfflineError(err: unknown): boolean {
     err || ''
   ).toLowerCase();
   return (
-    msg.includes('network') ||
     msg.includes('offline') ||
-    msg.includes('unavailable') ||
+    msg.includes('not connected') ||
+    msg.includes('enetunreach') ||
+    msg.includes('econnrefused')
+  );
+}
+
+export function isWbmTimeoutOrAmbiguousNetworkError(err: unknown): boolean {
+  const msg = String(
+    (err as any)?.message ||
+    (err as any)?.details ||
+    (err as any)?.code ||
+    (err as any)?.callableStatus ||
+    err || ''
+  ).toLowerCase();
+  return (
     msg.includes('timeout') ||
     msg.includes('deadline-exceeded') ||
-    msg.includes('not connected') ||
+    msg.includes('deadline_exceeded') ||
+    msg.includes('network request failed') ||
+    msg.includes('network') ||
+    msg.includes('unavailable') ||
     msg.includes('failed to fetch') ||
-    msg.includes('econnrefused') ||
-    msg.includes('enetunreach')
+    msg.includes('response dropped') ||
+    msg.includes('econnreset')
   );
+}
+
+export const STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS = '@wbm_pending_dispatch_attempts';
+
+function attemptKeyForWell(wellName: string): string {
+  return (wellName || '').trim().toLowerCase();
+}
+
+export async function getPendingDispatchAttemptId(wellName: string): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
+    if (!raw) return null;
+    const map = JSON.parse(raw);
+    return map[attemptKeyForWell(wellName)] || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function recordPendingDispatchAttempt(wellName: string, dispatchId: string): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
+    const map = raw ? JSON.parse(raw) : {};
+    map[attemptKeyForWell(wellName)] = dispatchId;
+    await AsyncStorage.setItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS, JSON.stringify(map));
+  } catch (err) {
+    console.warn('[RouteMe] Failed to record pending dispatch attempt:', err);
+  }
+}
+
+export async function clearPendingDispatchAttempt(wellName: string): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
+    if (!raw) return;
+    const map = JSON.parse(raw);
+    delete map[attemptKeyForWell(wellName)];
+    await AsyncStorage.setItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS, JSON.stringify(map));
+  } catch (err) {
+    console.warn('[RouteMe] Failed to clear pending dispatch attempt:', err);
+  }
 }
 
 export type WbmDriverDispatchResult = {
   ok: boolean;
-  status?: 'created' | 'already_exists';
+  status?: 'created' | 'already_exists' | 'unknown';
   dispatchId?: string;
   error?: string;
 };
@@ -427,15 +483,18 @@ export type WbmDriverDispatchResult = {
  * - Prevents duplicates.
  * - Does not start automatically (status: 'pending').
  * - Bypasses Plans and Job Builder drawers.
- * - Requires explicit success or failure result.
  * - Sourced disposal validation: for PW, requires verified eligible & available drop-off (rejects if absent/ineligible).
  * - For SW, does not assume destination is an SWD (drop-off is optional / non-SWD).
  * - Requires published packet revision (never hardcodes revision 1).
  * - Uses canonical authorized jobTypeId ('pw' for PW, 'service-work' for SW).
+ * - Preserves/reuses a stable, identity-scoped dispatchId across attempts until reconciled.
  * - Calls server callable createDriverDispatchIfAbsent FIRST.
  * - If server rejects (authority, validation, not-found, etc.), fails visibly and NEVER creates a phantom card.
- * - If offline / network error, fails closed honestly reporting offline_unavailable (NEVER creates a phantom card).
- * - On server success, persists locally with syncStatus 'confirmed' and returns status 'created'.
+ * - If definite offline failure, fails closed honestly reporting offline_unavailable (NEVER creates a phantom card).
+ * - If ambiguous network outcome / timeout / dropped response, models outcome as unknown (NEVER creates a phantom card),
+ *   preserving the stable request ID for idempotent retry.
+ * - Validates server result shape before local confirmed persistence.
+ * - On server confirmation ('created' or 'already_exists'), persists locally with syncStatus 'confirmed'.
  */
 export async function createWbmDriverDispatch(input: {
   wellName: string;
@@ -445,6 +504,7 @@ export async function createWbmDriverDispatch(input: {
   eligibleDisposals?: string[];
   packetRevision?: number;
   packageId?: string;
+  dispatchId?: string;
 }): Promise<WbmDriverDispatchResult> {
   const { wellName, operator, jobType = 'pw', disposal, eligibleDisposals, packageId = 'water-hauling' } = input;
   if (!wellName || !wellName.trim()) {
@@ -486,8 +546,14 @@ export async function createWbmDriverDispatch(input: {
     return { ok: false, error: 'packet_revision_unresolved: governed packetRevision is required before dispatch creation' };
   }
 
+  // 4. Stable request ID: reuse pending attempt ID if an un-reconciled attempt exists for this well
+  let dispatchId = input.dispatchId || (await getPendingDispatchAttemptId(wellName));
+  if (!dispatchId) {
+    dispatchId = `wbm_disp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await recordPendingDispatchAttempt(wellName, dispatchId);
+  }
+
   const canonicalJobTypeId = isPw ? 'pw' : 'service-work';
-  const dispatchId = `wbm_disp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const record: Record<string, unknown> = {
     wellName: wellName.trim(),
     operator: operator?.trim() || '',
@@ -497,7 +563,7 @@ export async function createWbmDriverDispatch(input: {
     hauledTo: disposal?.trim() || '',
   };
 
-  // 4. Call server callable FIRST — never write a local card before server confirmation
+  // 5. Call server callable FIRST — never write a local card before server confirmation
   let serverResult: { ok: boolean; result?: 'created' | 'already_exists'; dispatchId?: string } | null = null;
 
   try {
@@ -509,17 +575,31 @@ export async function createWbmDriverDispatch(input: {
     });
   } catch (err: any) {
     if (isPermanentWbmAuthorityRejection(err)) {
-      // Governed authority or validation rejection: fail visibly, NEVER create local card
+      // Governed authority or validation rejection: fail visibly, clear attempt, NEVER create local card
       console.warn('[RouteMe] Server rejected dispatch creation:', err);
+      await clearPendingDispatchAttempt(wellName);
       return { ok: false, error: err?.message || 'governed_authority_rejection' };
     }
 
-    if (isWbmNetworkOrOfflineError(err)) {
-      // Offline / network failure: report unavailable, never create phantom card
-      console.warn('[RouteMe] Network offline during dispatch creation, failing closed (no phantom card):', err);
+    if (isWbmDefiniteOfflineError(err)) {
+      // Definite disconnected-before-send failure: network interface down / offline
+      console.warn('[RouteMe] Definite offline error during dispatch creation (no phantom card):', err);
       return {
         ok: false,
-        error: 'offline_unavailable: Network connection required to create governed DDJD cards. Creation was not queued.',
+        error: 'offline_unavailable: Network connection required to create governed DDJD cards. Please connect to a network and try again.',
+      };
+    }
+
+    if (isWbmTimeoutOrAmbiguousNetworkError(err)) {
+      // Ambiguous network outcome / lost response after send:
+      // The server may have committed the transaction before connection dropped!
+      // Keep the stable dispatchId in pending attempts for idempotent retry reconciliation.
+      console.warn('[RouteMe] Network timeout or response dropped during dispatch creation, modeling as unknown outcome:', err);
+      return {
+        ok: false,
+        status: 'unknown',
+        dispatchId,
+        error: 'unknown_outcome: Network request timed out or response was lost. The server may have created the dispatch. Retrying will reconcile using the same request ID.',
       };
     }
 
@@ -528,15 +608,19 @@ export async function createWbmDriverDispatch(input: {
     return { ok: false, error: err?.message || 'server_dispatch_failed' };
   }
 
-  // 5. Handle server duplicate response
-  if (serverResult && serverResult.result === 'already_exists') {
-    return { ok: true, status: 'already_exists', dispatchId: serverResult.dispatchId || dispatchId };
+  // 6. Check server result shape
+  if (!serverResult || serverResult.ok !== true || (serverResult.result !== 'created' && serverResult.result !== 'already_exists')) {
+    console.error('[RouteMe] createDriverDispatchIfAbsent invalid result shape:', serverResult);
+    return { ok: false, error: 'invalid_server_result_shape' };
   }
 
-  // 6. Persist to local storage only after server confirmation
+  // 7. Successful server confirmation: clear pending attempt and persist locally
+  await clearPendingDispatchAttempt(wellName);
+
+  const confirmedDispatchId = serverResult.dispatchId || dispatchId;
   const dispatchRecord = {
-    id: dispatchId,
-    dispatchId,
+    id: confirmedDispatchId,
+    dispatchId: confirmedDispatchId,
     wellName: wellName.trim(),
     operator: operator?.trim() || '',
     jobType: isPw ? 'pw' : 'sw',
@@ -555,12 +639,19 @@ export async function createWbmDriverDispatch(input: {
 
   const freshRaw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
   const currentDispatches: any[] = freshRaw ? JSON.parse(freshRaw) : [];
-  currentDispatches.push(dispatchRecord);
+  const existingIdx = currentDispatches.findIndex(
+    (d: any) => (d.id || d.dispatchId) === confirmedDispatchId || d.wellName === wellName.trim(),
+  );
+  if (existingIdx >= 0) {
+    currentDispatches[existingIdx] = { ...currentDispatches[existingIdx], ...dispatchRecord };
+  } else {
+    currentDispatches.push(dispatchRecord);
+  }
   await AsyncStorage.setItem(STORAGE_KEY_DRIVER_DISPATCHES, JSON.stringify(currentDispatches));
 
   return {
     ok: true,
-    status: 'created',
-    dispatchId,
+    status: serverResult.result,
+    dispatchId: confirmedDispatchId,
   };
 }

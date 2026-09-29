@@ -195,6 +195,11 @@ export default function RouteMeScreen() {
           Alert.alert('Drop-off Required', 'Produced water jobs require a verified eligible SWD drop-off.');
         } else if (res.error === 'disposal_not_eligible') {
           Alert.alert('Ineligible Drop-off', 'Selected drop-off is not on the verified eligible list.');
+        } else if (res.error?.includes('unknown_outcome')) {
+          Alert.alert(
+            'Connection Interrupted',
+            `Network response was lost for "${item.wellName}". The card may already exist on the server. Please tap Build Job again to reconcile.`,
+          );
         } else if (res.error?.includes('offline_unavailable')) {
           Alert.alert(
             'Network Required',
@@ -207,7 +212,7 @@ export default function RouteMeScreen() {
       }
 
       if (res.status === 'already_exists') {
-        Alert.alert('Card Already Exists', `A job card for "${item.wellName}" is already registered on the server.`);
+        Alert.alert('Card Reconciled', `DDJD card for "${item.wellName}" was verified on the server and added to your planned queue.`);
       } else {
         Alert.alert('Job Card Created', `Created pending DDJD card for "${item.wellName}". Added to planned queue.`);
       }

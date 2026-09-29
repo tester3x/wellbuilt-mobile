@@ -256,9 +256,9 @@ describe('Route Me Day Planning Surface', () => {
     expect(stored.find((d: any) => d.wellName === 'PW WELL FAIL')).toBeUndefined();
   });
 
-  test('createWbmDriverDispatch fails closed on offline network error without creating phantom cards', async () => {
+  test('createWbmDriverDispatch fails closed on definite offline error without creating phantom cards', async () => {
     setGovernedRevisionForTests(3);
-    mockCallable.mockRejectedValueOnce(new Error('Network request failed'));
+    mockCallable.mockRejectedValueOnce(new Error('Device is offline'));
 
     const res = await createWbmDriverDispatch({
       wellName: 'PW WELL OFFLINE',
@@ -274,6 +274,95 @@ describe('Route Me Day Planning Surface', () => {
     const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
     const stored = JSON.parse(raw || '[]');
     expect(stored.find((d: any) => d.wellName === 'PW WELL OFFLINE')).toBeUndefined();
+  });
+
+  test('lost response then retry reconciles with stable dispatchId: exactly one server dispatch and one local card', async () => {
+    setGovernedRevisionForTests(3);
+    const serverDispatches = new Map<string, any>();
+    let callCount = 0;
+
+    mockCallable.mockImplementation(async (method: string, payload: any) => {
+      if (method === 'createDriverDispatchIfAbsent') {
+        callCount++;
+        const { dispatchId, record } = payload;
+        if (serverDispatches.has(dispatchId)) {
+          return { ok: true, result: 'already_exists', dispatchId };
+        }
+        // First attempt: Server creates the record, then response is dropped / times out
+        serverDispatches.set(dispatchId, record);
+        throw new Error('deadline-exceeded: Response timed out after server commit');
+      }
+      return { ok: true };
+    });
+
+    // 1. First attempt: call times out with ambiguous outcome
+    const res1 = await createWbmDriverDispatch({
+      wellName: 'TIMEOUT WELL',
+      operator: 'OPERATOR A',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+
+    expect(res1.ok).toBe(false);
+    expect(res1.status).toBe('unknown');
+    expect(res1.error).toMatch(/unknown_outcome/);
+
+    // Assert: No phantom card saved locally
+    const rawAfterAttempt1 = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const localCards1 = JSON.parse(rawAfterAttempt1 || '[]');
+    expect(localCards1.find((c: any) => c.wellName === 'TIMEOUT WELL')).toBeUndefined();
+
+    // Assert: Server has exactly 1 dispatch
+    expect(serverDispatches.size).toBe(1);
+    const originalDispatchId = Array.from(serverDispatches.keys())[0];
+
+    // 2. Retry: User retries building the same well
+    const res2 = await createWbmDriverDispatch({
+      wellName: 'TIMEOUT WELL',
+      operator: 'OPERATOR A',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+
+    expect(res2.ok).toBe(true);
+    expect(res2.status).toBe('already_exists');
+    expect(res2.dispatchId).toBe(originalDispatchId);
+
+    // Assert: Exactly ONE server dispatch (idempotency preserved, did not create second card)
+    expect(serverDispatches.size).toBe(1);
+    expect(callCount).toBe(2);
+
+    // Assert: Exactly ONE local card saved with confirmed status
+    const rawAfterAttempt2 = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const localCards2 = JSON.parse(rawAfterAttempt2 || '[]');
+    const savedCard = localCards2.find((c: any) => c.wellName === 'TIMEOUT WELL');
+    expect(savedCard).toBeDefined();
+    expect(savedCard.dispatchId).toBe(originalDispatchId);
+    expect(savedCard.status).toBe('pending');
+    expect(savedCard.syncStatus).toBe('confirmed');
+    expect(localCards2.filter((c: any) => c.wellName === 'TIMEOUT WELL')).toHaveLength(1);
+  });
+
+  test('createWbmDriverDispatch validates server result shape before local persistence', async () => {
+    setGovernedRevisionForTests(3);
+    mockCallable.mockResolvedValueOnce({ ok: true, result: 'unexpected_result_status' });
+
+    const res = await createWbmDriverDispatch({
+      wellName: 'BAD SHAPE WELL',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('invalid_server_result_shape');
+
+    // No local card saved
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const stored = JSON.parse(raw || '[]');
+    expect(stored.find((d: any) => d.wellName === 'BAD SHAPE WELL')).toBeUndefined();
   });
 
   test('createWbmDriverDispatch creates pending DDJD card with confirmed syncStatus on server success', async () => {

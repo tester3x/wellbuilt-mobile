@@ -107,7 +107,10 @@ import {
   reorderPlannedJobs,
   createWbmDriverDispatch,
   setGovernedRevisionForTests,
+  setDriverIdentityForTests,
+  clearInFlightDispatchesForTests,
   STORAGE_KEY_DRIVER_DISPATCHES,
+  STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS,
   type RouteMePlannedJob,
 } from '../routeMe';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -116,6 +119,8 @@ describe('Route Me Day Planning Surface', () => {
   beforeEach(async () => {
     await AsyncStorage.clear();
     setGovernedRevisionForTests(null);
+    setDriverIdentityForTests(null);
+    clearInFlightDispatchesForTests();
   });
 
   test('buildRouteMeDayPlanFromSummary pins active/paused jobs at top, computes Summary metrics, and distinguishes unbuilt wells', () => {
@@ -408,5 +413,199 @@ describe('Route Me Day Planning Surface', () => {
     });
     expect(resDup.ok).toBe(false);
     expect(resDup.error).toBe('duplicate_card_exists');
+  });
+
+  test('failure window: aborts before server call when pending attempt cannot be persisted to storage', async () => {
+    setGovernedRevisionForTests(3);
+    const origSetItem = AsyncStorage.setItem;
+    (AsyncStorage.setItem as jest.Mock).mockImplementationOnce(async (key: string) => {
+      if (key === STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS) {
+        throw new Error('disk_full: cannot write pending attempt');
+      }
+    });
+
+    const res = await createWbmDriverDispatch({
+      wellName: 'STORAGE FAIL WELL',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+
+    // Aborts and fails closed
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/storage_failure/);
+
+    // Server was NOT called
+    expect(mockCallable).not.toHaveBeenCalled();
+
+    // No local card saved
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    expect(raw).toBeNull();
+  });
+
+  test('account switch: different driver identities get distinct dispatch IDs and isolated attempts', async () => {
+    setGovernedRevisionForTests(3);
+
+    // Driver A attempts dispatch, which encounters a network timeout
+    mockCallable.mockRejectedValueOnce(new Error('deadline-exceeded: timeout'));
+    const resA = await createWbmDriverDispatch({
+      wellName: 'SHARED WELL',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+      driverId: 'driver_A',
+    });
+    expect(resA.ok).toBe(false);
+    expect(resA.status).toBe('unknown');
+    const dispatchIdA = resA.dispatchId;
+    expect(dispatchIdA).toBeTruthy();
+
+    // Now Driver B logs in and attempts dispatch on the same well
+    mockCallable.mockResolvedValueOnce({ ok: true, result: 'created', dispatchId: 'disp_driver_B' });
+    const resB = await createWbmDriverDispatch({
+      wellName: 'SHARED WELL',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+      driverId: 'driver_B',
+    });
+    expect(resB.ok).toBe(true);
+    expect(resB.dispatchId).toBe('disp_driver_B');
+
+    // Verify Driver B's call used a distinct dispatchId sent to server, NOT Driver A's ID
+    expect(mockCallable).toHaveBeenLastCalledWith('createDriverDispatchIfAbsent', expect.objectContaining({
+      dispatchId: expect.not.stringMatching(dispatchIdA!),
+    }));
+  });
+
+  test('changed payload: allocates a fresh dispatch ID rather than reusing the ID for different details', async () => {
+    setGovernedRevisionForTests(3);
+
+    // First attempt with disposal 1 encounters a timeout
+    mockCallable.mockRejectedValueOnce(new Error('deadline-exceeded: timeout'));
+    const res1 = await createWbmDriverDispatch({
+      wellName: 'CHANGED PAYLOAD WELL',
+      jobType: 'pw',
+      disposal: 'DISPOSAL 1 SWD',
+      eligibleDisposals: ['DISPOSAL 1 SWD', 'DISPOSAL 2 SWD'],
+      driverId: 'driver_X',
+    });
+    expect(res1.ok).toBe(false);
+    expect(res1.status).toBe('unknown');
+    const origDispatchId = res1.dispatchId;
+    expect(origDispatchId).toBeTruthy();
+
+    // User changes disposal to DISPOSAL 2 SWD and attempts again
+    mockCallable.mockResolvedValueOnce({ ok: true, result: 'created', dispatchId: 'fresh_disp_id' });
+    const res2 = await createWbmDriverDispatch({
+      wellName: 'CHANGED PAYLOAD WELL',
+      jobType: 'pw',
+      disposal: 'DISPOSAL 2 SWD',
+      eligibleDisposals: ['DISPOSAL 1 SWD', 'DISPOSAL 2 SWD'],
+      driverId: 'driver_X',
+    });
+    expect(res2.ok).toBe(true);
+
+    // The call to the server must NOT have reused origDispatchId because the payload changed
+    expect(mockCallable).toHaveBeenLastCalledWith('createDriverDispatchIfAbsent', expect.objectContaining({
+      dispatchId: expect.not.stringMatching(origDispatchId!),
+      record: expect.objectContaining({
+        disposal: 'DISPOSAL 2 SWD',
+      }),
+    }));
+  });
+
+  test('concurrent createWbmDriverDispatch calls for the same intent share one durable ID and call server once', async () => {
+    setGovernedRevisionForTests(3);
+    let callableCalls = 0;
+    mockCallable.mockImplementation(async () => {
+      callableCalls++;
+      // Simulate asynchronous server round-trip latency
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return { ok: true, result: 'created', dispatchId: 'shared_concurrent_disp_id' };
+    });
+
+    const [res1, res2] = await Promise.all([
+      createWbmDriverDispatch({
+        wellName: 'CONCURRENT WELL',
+        jobType: 'pw',
+        disposal: 'HYDRO CLEAR SWD',
+        eligibleDisposals: ['HYDRO CLEAR SWD'],
+      }),
+      createWbmDriverDispatch({
+        wellName: 'CONCURRENT WELL',
+        jobType: 'pw',
+        disposal: 'HYDRO CLEAR SWD',
+        eligibleDisposals: ['HYDRO CLEAR SWD'],
+      }),
+    ]);
+
+    expect(res1.ok).toBe(true);
+    expect(res2.ok).toBe(true);
+    expect(res1.dispatchId).toBe('shared_concurrent_disp_id');
+    expect(res2.dispatchId).toBe('shared_concurrent_disp_id');
+    expect(callableCalls).toBe(1);
+
+    // Exactly one card saved in local storage
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const stored = JSON.parse(raw || '[]');
+    expect(stored.filter((d: any) => d.wellName === 'CONCURRENT WELL')).toHaveLength(1);
+  });
+
+  test('failure window: local confirmed persistence failure preserves pending attempt for retry', async () => {
+    setGovernedRevisionForTests(3);
+    mockCallable.mockResolvedValueOnce({ ok: true, result: 'created', dispatchId: 'wbm_disp_recov' });
+
+    // Mock AsyncStorage.setItem to fail only when saving STORAGE_KEY_DRIVER_DISPATCHES
+    (AsyncStorage.setItem as jest.Mock).mockImplementation(async (key: string, val: string) => {
+      if (key === STORAGE_KEY_DRIVER_DISPATCHES) {
+        throw new Error('sqlite_write_error: disk write failed');
+      }
+      mockStore[key] = val;
+    });
+
+    const res = await createWbmDriverDispatch({
+      wellName: 'RECOVERY WELL',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+      dispatchId: 'wbm_disp_recov',
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe('unknown');
+    expect(res.error).toMatch(/local_persistence_failed/);
+
+    // Restore setItem
+    (AsyncStorage.setItem as jest.Mock).mockImplementation(async (key: string, val: string) => {
+      mockStore[key] = val;
+    });
+
+    // Verify pending attempt was NOT cleared (preserved for retry)
+    const rawAttempts = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
+    expect(rawAttempts).toBeTruthy();
+    expect(rawAttempts).toContain('wbm_disp_recov');
+
+    // On retry, server says 'already_exists', local storage succeeds
+    mockCallable.mockResolvedValueOnce({ ok: true, result: 'already_exists', dispatchId: 'wbm_disp_recov' });
+    const retryRes = await createWbmDriverDispatch({
+      wellName: 'RECOVERY WELL',
+      jobType: 'pw',
+      disposal: 'HYDRO CLEAR SWD',
+      eligibleDisposals: ['HYDRO CLEAR SWD'],
+    });
+
+    expect(retryRes.ok).toBe(true);
+    expect(retryRes.status).toBe('already_exists');
+    expect(retryRes.dispatchId).toBe('wbm_disp_recov');
+
+    // Local card is now confirmed and saved
+    const rawDispatches = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const stored = JSON.parse(rawDispatches || '[]');
+    expect(stored.find((d: any) => d.dispatchId === 'wbm_disp_recov')).toBeDefined();
+
+    // Pending attempt is now cleared
+    const rawAttemptsAfter = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
+    expect(rawAttemptsAfter).not.toContain('wbm_disp_recov');
   });
 });

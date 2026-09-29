@@ -433,42 +433,174 @@ export function isWbmTimeoutOrAmbiguousNetworkError(err: unknown): boolean {
 
 export const STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS = '@wbm_pending_dispatch_attempts';
 
-function attemptKeyForWell(wellName: string): string {
-  return (wellName || '').trim().toLowerCase();
+let testDriverIdentity: { driverId: string; companyId: string } | null = null;
+
+export function setDriverIdentityForTests(identity: { driverId: string; companyId?: string } | null): void {
+  if (!identity) {
+    testDriverIdentity = null;
+  } else {
+    testDriverIdentity = {
+      driverId: identity.driverId.trim(),
+      companyId: (identity.companyId || '').trim(),
+    };
+  }
 }
 
-export async function getPendingDispatchAttemptId(wellName: string): Promise<string | null> {
+export async function resolveCurrentDriverIdentity(
+  explicitDriverId?: string,
+  explicitCompanyId?: string,
+): Promise<{ driverId: string; companyId: string }> {
+  if (explicitDriverId && explicitDriverId.trim()) {
+    return {
+      driverId: explicitDriverId.trim(),
+      companyId: (explicitCompanyId || '').trim(),
+    };
+  }
+  if (testDriverIdentity) {
+    return testDriverIdentity;
+  }
+  try {
+    const { getDriverId, getDriverSession } = await import('./driverAuth');
+    const dId = await getDriverId();
+    if (dId && dId.trim()) {
+      const sess = await getDriverSession().catch(() => null);
+      return {
+        driverId: dId.trim(),
+        companyId: (sess?.companyId || '').trim(),
+      };
+    }
+  } catch {
+    // fall through
+  }
+  try {
+    const SecureStore = await import('expo-secure-store');
+    const dId = await SecureStore.getItemAsync('driverId');
+    const cId = await SecureStore.getItemAsync('companyId');
+    if (dId && dId.trim()) {
+      return {
+        driverId: dId.trim(),
+        companyId: (cId || '').trim(),
+      };
+    }
+  } catch {
+    // fall through
+  }
+  return {
+    driverId: 'default_driver',
+    companyId: '',
+  };
+}
+
+export interface WbmDispatchIntent {
+  driverId: string;
+  companyId?: string;
+  wellName: string;
+  jobType: 'pw' | 'service';
+  jobTypeId: string;
+  disposal: string;
+  packetRevision: number;
+  packageId: string;
+}
+
+export interface PendingDispatchAttempt {
+  dispatchId: string;
+  intent: WbmDispatchIntent;
+  createdAt: number;
+}
+
+export function buildAttemptKey(
+  driverId: string,
+  companyId: string | undefined,
+  wellName: string,
+): string {
+  const normDriver = (driverId || 'default_driver').trim().toLowerCase();
+  const normCompany = (companyId || '').trim().toLowerCase();
+  const normWell = (wellName || '').trim().toLowerCase();
+  return `${normDriver}:${normCompany}:${normWell}`;
+}
+
+export function isSameDispatchIntent(a: WbmDispatchIntent, b: WbmDispatchIntent): boolean {
+  if (!a || !b) return false;
+  return (
+    (a.driverId || '').trim().toLowerCase() === (b.driverId || '').trim().toLowerCase() &&
+    (a.companyId || '').trim().toLowerCase() === (b.companyId || '').trim().toLowerCase() &&
+    (a.wellName || '').trim().toLowerCase() === (b.wellName || '').trim().toLowerCase() &&
+    (a.jobType || '') === (b.jobType || '') &&
+    (a.jobTypeId || '') === (b.jobTypeId || '') &&
+    (a.disposal || '').trim().toLowerCase() === (b.disposal || '').trim().toLowerCase() &&
+    a.packetRevision === b.packetRevision &&
+    (a.packageId || '').trim().toLowerCase() === (b.packageId || '').trim().toLowerCase()
+  );
+}
+
+export async function getPendingDispatchAttempt(
+  attemptKey: string,
+): Promise<PendingDispatchAttempt | null> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
     if (!raw) return null;
     const map = JSON.parse(raw);
-    return map[attemptKeyForWell(wellName)] || null;
+    const entry = map[attemptKey];
+    if (!entry) return null;
+    if (typeof entry === 'string') {
+      // Legacy format backwards compatibility
+      return {
+        dispatchId: entry,
+        intent: {} as any,
+        createdAt: Date.now(),
+      };
+    }
+    return entry as PendingDispatchAttempt;
   } catch {
     return null;
   }
 }
 
-export async function recordPendingDispatchAttempt(wellName: string, dispatchId: string): Promise<void> {
+export async function getPendingDispatchAttemptId(
+  wellName: string,
+  driverId?: string,
+  companyId?: string,
+): Promise<string | null> {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
-    const map = raw ? JSON.parse(raw) : {};
-    map[attemptKeyForWell(wellName)] = dispatchId;
-    await AsyncStorage.setItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS, JSON.stringify(map));
-  } catch (err) {
-    console.warn('[RouteMe] Failed to record pending dispatch attempt:', err);
+    const ident = await resolveCurrentDriverIdentity(driverId, companyId);
+    const key = buildAttemptKey(ident.driverId, ident.companyId, wellName);
+    const attempt = await getPendingDispatchAttempt(key);
+    return attempt?.dispatchId || null;
+  } catch {
+    return null;
   }
 }
 
-export async function clearPendingDispatchAttempt(wellName: string): Promise<void> {
+export async function recordPendingDispatchAttempt(
+  attemptKey: string,
+  attempt: PendingDispatchAttempt,
+): Promise<void> {
+  const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
+  const map = raw ? JSON.parse(raw) : {};
+  map[attemptKey] = attempt;
+  await AsyncStorage.setItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS, JSON.stringify(map));
+}
+
+export async function clearPendingDispatchAttempt(attemptKey: string): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS);
     if (!raw) return;
     const map = JSON.parse(raw);
-    delete map[attemptKeyForWell(wellName)];
+    delete map[attemptKey];
     await AsyncStorage.setItem(STORAGE_KEY_PENDING_DISPATCH_ATTEMPTS, JSON.stringify(map));
   } catch (err) {
     console.warn('[RouteMe] Failed to clear pending dispatch attempt:', err);
   }
+}
+
+const inFlightDispatches = new Map<string, Promise<WbmDriverDispatchResult>>();
+
+export function getInFlightDispatchCountForTests(): number {
+  return inFlightDispatches.size;
+}
+
+export function clearInFlightDispatchesForTests(): void {
+  inFlightDispatches.clear();
 }
 
 export type WbmDriverDispatchResult = {
@@ -488,13 +620,16 @@ export type WbmDriverDispatchResult = {
  * - Requires published packet revision (never hardcodes revision 1).
  * - Uses canonical authorized jobTypeId ('pw' for PW, 'service-work' for SW).
  * - Preserves/reuses a stable, identity-scoped dispatchId across attempts until reconciled.
+ * - Deduplicates concurrent calls for the same intent using in-flight promise sharing.
+ * - Persists durable intent to storage before calling the server (aborts if persistence fails).
  * - Calls server callable createDriverDispatchIfAbsent FIRST.
  * - If server rejects (authority, validation, not-found, etc.), fails visibly and NEVER creates a phantom card.
  * - If definite offline failure, fails closed honestly reporting offline_unavailable (NEVER creates a phantom card).
  * - If ambiguous network outcome / timeout / dropped response, models outcome as unknown (NEVER creates a phantom card),
  *   preserving the stable request ID for idempotent retry.
  * - Validates server result shape before local confirmed persistence.
- * - On server confirmation ('created' or 'already_exists'), persists locally with syncStatus 'confirmed'.
+ * - On server confirmation ('created' or 'already_exists'), persists locally FIRST with syncStatus 'confirmed',
+ *   and ONLY clears the pending attempt after local persistence succeeds.
  */
 export async function createWbmDriverDispatch(input: {
   wellName: string;
@@ -505,6 +640,8 @@ export async function createWbmDriverDispatch(input: {
   packetRevision?: number;
   packageId?: string;
   dispatchId?: string;
+  driverId?: string;
+  companyId?: string;
 }): Promise<WbmDriverDispatchResult> {
   const { wellName, operator, jobType = 'pw', disposal, eligibleDisposals, packageId = 'water-hauling' } = input;
   if (!wellName || !wellName.trim()) {
@@ -514,7 +651,6 @@ export async function createWbmDriverDispatch(input: {
   const isPw = (jobType || 'pw').toLowerCase() === 'pw';
 
   // 1. Sourced disposal validation:
-  // PW requires a verified eligible, available drop-off.
   if (isPw) {
     if (!disposal || !disposal.trim() || disposal.trim() === 'No verified drop-off') {
       return { ok: false, error: 'disposal_required: verified eligible drop-off required for produced water' };
@@ -527,7 +663,6 @@ export async function createWbmDriverDispatch(input: {
       }
     }
   }
-  // Note: For SW (Service Work), drop-off is not mandatory and not assumed to be an SWD.
 
   // 2. Read-only pre-check: duplicate card in local dispatches
   const raw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
@@ -536,7 +671,7 @@ export async function createWbmDriverDispatch(input: {
     return { ok: false, error: 'duplicate_card_exists' };
   }
 
-  // 3. Resolve published packet revision (never hardcode revision 1)
+  // 3. Resolve published packet revision
   const resolvedRevision =
     typeof input.packetRevision === 'number' && Number.isInteger(input.packetRevision) && input.packetRevision > 0
       ? input.packetRevision
@@ -546,24 +681,137 @@ export async function createWbmDriverDispatch(input: {
     return { ok: false, error: 'packet_revision_unresolved: governed packetRevision is required before dispatch creation' };
   }
 
-  // 4. Stable request ID: reuse pending attempt ID if an un-reconciled attempt exists for this well
-  let dispatchId = input.dispatchId || (await getPendingDispatchAttemptId(wellName));
-  if (!dispatchId) {
-    dispatchId = `wbm_disp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    await recordPendingDispatchAttempt(wellName, dispatchId);
-  }
-
+  // 4. Resolve driver/company identity and build scoped attempt key
+  const identity = await resolveCurrentDriverIdentity(input.driverId, input.companyId);
   const canonicalJobTypeId = isPw ? 'pw' : 'service-work';
-  const record: Record<string, unknown> = {
+  const currentIntent: WbmDispatchIntent = {
+    driverId: identity.driverId,
+    companyId: identity.companyId,
     wellName: wellName.trim(),
-    operator: operator?.trim() || '',
     jobType: isPw ? 'pw' : 'service',
     jobTypeId: canonicalJobTypeId,
     disposal: disposal?.trim() || '',
-    hauledTo: disposal?.trim() || '',
+    packetRevision: resolvedRevision,
+    packageId,
+  };
+  const attemptKey = buildAttemptKey(identity.driverId, identity.companyId, wellName);
+
+  // 5. In-flight concurrency deduplication / mutex:
+  // Simultaneous calls for the same driver/company/well share the active in-flight promise
+  const existingInFlight = inFlightDispatches.get(attemptKey);
+  if (existingInFlight) {
+    return existingInFlight;
+  }
+
+  const dispatchPromise = (async () => {
+    try {
+      return await executeCreateWbmDriverDispatch({
+        input,
+        wellName: wellName.trim(),
+        operator: operator?.trim() || '',
+        isPw,
+        canonicalJobTypeId,
+        disposal: disposal?.trim() || '',
+        packageId,
+        resolvedRevision,
+        identity,
+        currentIntent,
+        attemptKey,
+      });
+    } finally {
+      inFlightDispatches.delete(attemptKey);
+    }
+  })();
+
+  inFlightDispatches.set(attemptKey, dispatchPromise);
+  return dispatchPromise;
+}
+
+async function executeCreateWbmDriverDispatch(params: {
+  input: {
+    wellName: string;
+    operator?: string;
+    jobType?: 'pw' | 'sw';
+    disposal?: string;
+    eligibleDisposals?: string[];
+    packetRevision?: number;
+    packageId?: string;
+    dispatchId?: string;
+    driverId?: string;
+    companyId?: string;
+  };
+  wellName: string;
+  operator: string;
+  isPw: boolean;
+  canonicalJobTypeId: string;
+  disposal: string;
+  packageId: string;
+  resolvedRevision: number;
+  identity: { driverId: string; companyId: string };
+  currentIntent: WbmDispatchIntent;
+  attemptKey: string;
+}): Promise<WbmDriverDispatchResult> {
+  const {
+    input,
+    wellName,
+    operator,
+    isPw,
+    canonicalJobTypeId,
+    disposal,
+    packageId,
+    resolvedRevision,
+    currentIntent,
+    attemptKey,
+  } = params;
+
+  // Determine dispatchId:
+  // Check if an un-reconciled attempt exists for this driver + well
+  let dispatchId = input.dispatchId;
+  if (!dispatchId) {
+    const existingAttempt = await getPendingDispatchAttempt(attemptKey);
+    if (existingAttempt && existingAttempt.dispatchId) {
+      if (existingAttempt.intent && isSameDispatchIntent(existingAttempt.intent, currentIntent)) {
+        // Same unresolved request: reuse original ID and payload
+        dispatchId = existingAttempt.dispatchId;
+      } else if (!existingAttempt.intent || !existingAttempt.intent.wellName) {
+        // Legacy attempt record without intent payload: reuse ID
+        dispatchId = existingAttempt.dispatchId;
+      } else {
+        // Changed request! Allocate a new ID for the new details
+        dispatchId = `wbm_disp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      }
+    } else {
+      dispatchId = `wbm_disp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+  }
+
+  // Durable intent persistence:
+  // Must persist attempt to storage BEFORE calling server.
+  // If write fails, ABORT before calling the server!
+  try {
+    await recordPendingDispatchAttempt(attemptKey, {
+      dispatchId,
+      intent: currentIntent,
+      createdAt: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('[RouteMe] Storage failure recording pending dispatch attempt:', err);
+    return {
+      ok: false,
+      error: `storage_failure: Failed to persist durable dispatch attempt: ${err?.message || err}`,
+    };
+  }
+
+  const record: Record<string, unknown> = {
+    wellName,
+    operator,
+    jobType: isPw ? 'pw' : 'service',
+    jobTypeId: canonicalJobTypeId,
+    disposal,
+    hauledTo: disposal,
   };
 
-  // 5. Call server callable FIRST — never write a local card before server confirmation
+  // Call server callable FIRST — never write a local card before server confirmation
   let serverResult: { ok: boolean; result?: 'created' | 'already_exists'; dispatchId?: string } | null = null;
 
   try {
@@ -577,7 +825,7 @@ export async function createWbmDriverDispatch(input: {
     if (isPermanentWbmAuthorityRejection(err)) {
       // Governed authority or validation rejection: fail visibly, clear attempt, NEVER create local card
       console.warn('[RouteMe] Server rejected dispatch creation:', err);
-      await clearPendingDispatchAttempt(wellName);
+      await clearPendingDispatchAttempt(attemptKey);
       return { ok: false, error: err?.message || 'governed_authority_rejection' };
     }
 
@@ -592,7 +840,6 @@ export async function createWbmDriverDispatch(input: {
 
     if (isWbmTimeoutOrAmbiguousNetworkError(err)) {
       // Ambiguous network outcome / lost response after send:
-      // The server may have committed the transaction before connection dropped!
       // Keep the stable dispatchId in pending attempts for idempotent retry reconciliation.
       console.warn('[RouteMe] Network timeout or response dropped during dispatch creation, modeling as unknown outcome:', err);
       return {
@@ -608,25 +855,22 @@ export async function createWbmDriverDispatch(input: {
     return { ok: false, error: err?.message || 'server_dispatch_failed' };
   }
 
-  // 6. Check server result shape
+  // Check server result shape
   if (!serverResult || serverResult.ok !== true || (serverResult.result !== 'created' && serverResult.result !== 'already_exists')) {
     console.error('[RouteMe] createDriverDispatchIfAbsent invalid result shape:', serverResult);
     return { ok: false, error: 'invalid_server_result_shape' };
   }
 
-  // 7. Successful server confirmation: clear pending attempt and persist locally
-  await clearPendingDispatchAttempt(wellName);
-
   const confirmedDispatchId = serverResult.dispatchId || dispatchId;
   const dispatchRecord = {
     id: confirmedDispatchId,
     dispatchId: confirmedDispatchId,
-    wellName: wellName.trim(),
-    operator: operator?.trim() || '',
+    wellName,
+    operator,
     jobType: isPw ? 'pw' : 'sw',
     jobTypeId: canonicalJobTypeId,
-    disposal: disposal?.trim() || '',
-    hauledTo: disposal?.trim() || '',
+    disposal,
+    hauledTo: disposal,
     status: 'pending', // startImmediately: false -> status 'pending'
     syncStatus: 'confirmed',
     packetRevision: resolvedRevision,
@@ -637,17 +881,32 @@ export async function createWbmDriverDispatch(input: {
     createdAt: new Date().toISOString(),
   };
 
-  const freshRaw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
-  const currentDispatches: any[] = freshRaw ? JSON.parse(freshRaw) : [];
-  const existingIdx = currentDispatches.findIndex(
-    (d: any) => (d.id || d.dispatchId) === confirmedDispatchId || d.wellName === wellName.trim(),
-  );
-  if (existingIdx >= 0) {
-    currentDispatches[existingIdx] = { ...currentDispatches[existingIdx], ...dispatchRecord };
-  } else {
-    currentDispatches.push(dispatchRecord);
+  // Local confirmed persistence FIRST before clearing the pending attempt
+  try {
+    const freshRaw = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_DISPATCHES);
+    const currentDispatches: any[] = freshRaw ? JSON.parse(freshRaw) : [];
+    const existingIdx = currentDispatches.findIndex(
+      (d: any) => (d.id || d.dispatchId) === confirmedDispatchId || d.wellName === wellName,
+    );
+    if (existingIdx >= 0) {
+      currentDispatches[existingIdx] = { ...currentDispatches[existingIdx], ...dispatchRecord };
+    } else {
+      currentDispatches.push(dispatchRecord);
+    }
+    await AsyncStorage.setItem(STORAGE_KEY_DRIVER_DISPATCHES, JSON.stringify(currentDispatches));
+  } catch (err: any) {
+    console.error('[RouteMe] Failed to persist confirmed dispatch locally:', err);
+    // Note: Pending attempt is NOT cleared, allowing recoverable retry
+    return {
+      ok: false,
+      status: 'unknown',
+      dispatchId: confirmedDispatchId,
+      error: `local_persistence_failed: Server confirmed dispatch, but failed to save card locally: ${err?.message || err}. Retrying will recover card.`,
+    };
   }
-  await AsyncStorage.setItem(STORAGE_KEY_DRIVER_DISPATCHES, JSON.stringify(currentDispatches));
+
+  // Confirmed persistence succeeded: now safe to clear pending attempt
+  await clearPendingDispatchAttempt(attemptKey);
 
   return {
     ok: true,

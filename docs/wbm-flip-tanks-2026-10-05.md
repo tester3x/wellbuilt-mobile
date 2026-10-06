@@ -61,3 +61,7 @@ Tester reported unreliable scatter and fish confined to the lower band in versio
 Touch overlay audit: decorative tank-frame Image and level-number layer are now pointerEvents none so they cannot intercept direct fish targets underneath. Version 71 build canceled before installation to include this correction.
 
 Version 72 build 60b8093b-61f8-499c-9f2d-34c89e2296cf completed from d26c734 and installed in place on the Fold. Confirmed versionCode 72, successful startup, running process and rendered well view. APK SHA256 1E07BBC0688C7CA41FCD77832C6B51B443DA3D96003C892FEC9944B61964971C. Current inspected well had no fish, so physical fish-touch acceptance remains with tester. No operational records were changed during launch verification.
+
+## S24 installation — 2026-10-06
+
+At user request, installed the same version 72 APK in place on the connected Samsung S24 Ultra (SM-S928U). Confirmed versionCode 72 / versionName 2.1.0 and successful launch. No data clear or uninstall was performed.

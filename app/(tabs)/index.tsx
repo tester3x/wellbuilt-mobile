@@ -57,7 +57,7 @@ import {
   rippleGeometry,
 } from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder, syncOnForeground } from '../../src/services/backgroundSync';
-import { startingLevelFromSnapshot } from '../../src/services/downSnapshot';
+import { startingLevelFromSnapshot, estimatedSnapshotLevel } from '../../src/services/downSnapshot';
 import { downNumberTopPx } from '../../src/ui/downNumberLayout';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
@@ -458,13 +458,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     if (isActive && !prevIsActive.current && levelSnapshot) {
       // Calculate current level with flow estimate
       // Formula: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
-      const startingLevel = startingLevelFromSnapshot(levelSnapshot);
-      let currentLevel = startingLevel;
       const flowMins = levelSnapshot.flowRateMinutes ?? wellConfig?.avgFlowRateMinutes ?? 0;
-      if (flowMins > 0 && !levelSnapshot.isDown) {
-        const minutesSincePull = (Date.now() - levelSnapshot.timestamp) / (1000 * 60);
-        currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
-      }
+      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins);
 
       const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
       const prevLevel = getPreviousLevel();
@@ -671,15 +666,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
           // Update targetFraction so live update knows the correct level when it starts
           if (snapshot) {
-            const startingLevel = startingLevelFromSnapshot(snapshot);
-            let currentLevel = startingLevel;
-            const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
-            if (flowMins > 0 && !snapshot.isDown) {
-              const minutesSincePull = (Date.now() - snapshot.timestamp) / (1000 * 60);
-              if (minutesSincePull > 0 && minutesSincePull < 10080) {
-                currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
-              }
-            }
+            const flowMins = snapshot.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
+            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins);
             setTargetFraction(clampFraction(currentLevel / FULL_TANK_FEET));
           }
           setIsLoadingInitial(false);
@@ -689,15 +677,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
 
           if (snapshot && (startingLevelFromSnapshot(snapshot) > 0 || snapshot.isDown)) {
-            const startingLevel = startingLevelFromSnapshot(snapshot);
-            let currentLevel = startingLevel;
-
-            if (flowMins > 0 && !snapshot.isDown) {
-              const minutesSincePull = (Date.now() - snapshot.timestamp) / (1000 * 60);
-              if (minutesSincePull > 0 && minutesSincePull < 10080) {
-                currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
-              }
-            }
+            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins);
 
             const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
 
@@ -768,10 +748,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     const updateEstimate = () => {
       // Skip if drain animation started since this effect was set up
       if (drainAnimationActive.current) return;
-      const startingLevel = startingLevelFromSnapshot(levelSnapshot);
-      const minutesSincePull = (Date.now() - levelSnapshot.timestamp) / (1000 * 60);
-      const feetGained = minutesSincePull / flowMins;
-      const currentLevel = Math.min(startingLevel + feetGained, FULL_TANK_FEET);
+      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins);
       const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
 
       // Smoothly update display

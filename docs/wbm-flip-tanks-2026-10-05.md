@@ -41,3 +41,5 @@ Source 88c4d1f; EAS build ef664802-ab1d-46a9-9abe-048e8f01b8d1 completed. Androi
 ## Anchor transition follow-up
 
 Retain the existing sideways depth profile when gravity crosses from bottom to top anchoring. The old zero-offset reset briefly flattened the water; particle reset and accepted sensor/slosh/wildlife tuning remain unchanged. Tests exercise anchor continuity at 25%, 50%, 75% fill; all 29 focused tests pass and those transition cases fail with the original reset restored. Android Hermes export passed. New native build/install pending.
+
+Version 69 build 27b9cf10-6c23-4724-b72e-ca0cbba9a8c2 completed from d28c583. Installed in place on the Fold, confirmed versionCode 69 and successful launch/running process. APK SHA256: 2DB0A4EE4B6FD23A1460B368C8A780EBF75DD6C3F9060A438D30A168405CFDEC. Physical wall-transition acceptance remains with tester.

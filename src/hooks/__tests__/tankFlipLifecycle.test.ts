@@ -17,8 +17,9 @@ jest.mock('react-native-reanimated', () => ({
 
 const fill = { value: 0.5 } as any;
 let surface: any;
+const inverted = { value: false } as any;
 function Tank({ active = true, reduced = false }) {
-  surface = useTankFlip(120, 200, fill, active, reduced);
+  surface = useTankFlip(120, 200, fill, active, reduced, inverted);
   return null;
 }
 describe('FLIP lifecycle', () => {
@@ -84,6 +85,29 @@ it.each([{ name: 'upright', x: 0, y: 1 }, { name: 'flat table', x: 0.02, y: 0.01
   act(() => { jest.advanceTimersByTime(30000); });
   expect(surface.value).toEqual(Array(16).fill(0));
   expect(fill.value).toBe(0.5);
+  await act(async () => { tree.unmount(); });
+  jest.useRealTimers();
+});
+
+
+it('inverts the rendered water wall and returns upright without changing volume', async () => {
+  jest.useFakeTimers();
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(React.createElement(Tank)); });
+  const sample = (Accelerometer.addListener as jest.Mock).mock.calls.at(-1)[0];
+  act(() => {
+    for (let i = 0; i < 20; i++) { sample({ x: 0, y: -1 }); jest.advanceTimersByTime(200); }
+    jest.advanceTimersByTime(5000);
+  });
+  expect(inverted.value).toBe(true);
+  expect(surface.value).toEqual(Array(16).fill(0));
+  expect(fill.value).toBe(0.5);
+  act(() => {
+    for (let i = 0; i < 20; i++) { sample({ x: 0, y: 1 }); jest.advanceTimersByTime(200); }
+    jest.advanceTimersByTime(5000);
+  });
+  expect(inverted.value).toBe(false);
+  expect(surface.value).toEqual(Array(16).fill(0));
   await act(async () => { tree.unmount(); });
   jest.useRealTimers();
 });

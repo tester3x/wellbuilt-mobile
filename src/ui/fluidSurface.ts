@@ -6,16 +6,16 @@ export function softenedFluidSurface(world: FlipWorld, previous: number[], dt: n
   if (rest <= 0 || world.restFill >= 1) return previous.map(() => 0);
   let heights = surfaceHeights(world);
   // Wide symmetric filtering removes max-particle column aliasing and pointed dips.
-  for (let pass = 0; pass < 12; pass++) {
+  for (let pass = 0; pass < 9; pass++) {
     const old = heights;
     heights = old.map((h, i) => (old[Math.max(0, i - 1)] + 2 * h + old[Math.min(old.length - 1, i + 1)]) / 4);
   }
   const mean = heights.reduce((sum, h) => sum + h, 0) / heights.length;
-  const maxRelief = Math.min(world.height * 0.035, rest, world.height - rest);
+  const maxRelief = Math.min(world.height * 0.05, rest, world.height - rest);
   const largest = Math.max(...heights.map(h => Math.abs(h - mean)), 1);
   const curvature = Math.max(...heights.slice(1, -1).map((h, i) => Math.abs(heights[i] - 2 * h + heights[i + 2])), 0.001);
   const scale = Math.min(1, maxRelief / largest, 1.5 / curvature);
-  const alpha = 1 - Math.exp(-Math.max(0, dt) / 0.28);
+  const alpha = 1 - Math.exp(-Math.max(0, dt) / 0.18);
   // Blend offsets (not absolute heights), so a pull drain still follows canonical fill.
   const equilibrium = restingFluidOffsets(gravity, world.width, world.height, world.restFill, heights.length);
   const offsets = heights.map((h, i) => {

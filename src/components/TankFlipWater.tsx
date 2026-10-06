@@ -3,8 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 const COLUMNS = 64;
-function WaterColumn({ index, width, height, fill, offsets }: {
-  index: number; width: number; height: number; fill: SharedValue<number>; offsets: SharedValue<number[]>;
+function WaterColumn({ index, width, height, fill, offsets, inverted }: {
+  index: number; width: number; height: number; fill: SharedValue<number>; offsets: SharedValue<number[]>; inverted: SharedValue<boolean>;
 }) {
   const style = useAnimatedStyle(() => {
     const samples = offsets.value;
@@ -19,13 +19,17 @@ function WaterColumn({ index, width, height, fill, offsets }: {
       + (2 * before - 5 * left + 4 * right - after) * t * t
       + (-before + 3 * left - 3 * right + after) * t * t * t);
     const offset = Math.max(Math.min(left, right), Math.min(Math.max(left, right), curve));
-    return { height: Math.max(0, Math.min(height, fill.value * height + offset)) };
+    return {
+      height: Math.max(0, Math.min(height, fill.value * height + offset)),
+      top: inverted.value ? 0 : undefined,
+      bottom: inverted.value ? undefined : 0,
+    };
   });
   return <Animated.View style={[styles.column, { width: width / COLUMNS + 0.3, left: index * width / COLUMNS }, style]} />;
 }
-export function TankFlipWater(props: { width: number; height: number; fill: SharedValue<number>; offsets: SharedValue<number[]> }) {
+export function TankFlipWater(props: { width: number; height: number; fill: SharedValue<number>; offsets: SharedValue<number[]>; inverted: SharedValue<boolean> }) {
   return <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={StyleSheet.absoluteFill}>
     {Array.from({ length: COLUMNS }, (_, index) => <WaterColumn key={index} index={index} {...props} />)}
   </View>;
 }
-const styles = StyleSheet.create({ column: { position: 'absolute', bottom: 0, backgroundColor: '#2563EB', borderTopLeftRadius: 2, borderTopRightRadius: 2 } });
+const styles = StyleSheet.create({ column: { position: 'absolute', backgroundColor: '#2563EB', borderTopLeftRadius: 2, borderTopRightRadius: 2 } });

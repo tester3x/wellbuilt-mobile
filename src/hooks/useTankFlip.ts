@@ -5,11 +5,12 @@ import { softenedFluidSurface, decayRestingSurface, restingFluidOffsets, project
 import { useTankGravity } from './useTankGravity';
 
 /** FLIP is visual only. The operational shared fill is input, never output. */
-export function useTankFlip(width: number, height: number, fill: SharedValue<number>, active: boolean, reducedMotion: boolean) {
+export function useTankFlip(width: number, height: number, fill: SharedValue<number>, active: boolean, reducedMotion: boolean, inverted?: SharedValue<boolean>) {
   const offsets = useSharedValue<number[]>(Array(FLIP_COLS).fill(0));
   const gravity = useTankGravity(active && !reducedMotion);
   useEffect(() => {
     offsets.value = Array(FLIP_COLS).fill(0);
+    if (inverted) inverted.value = false;
     if (!active || reducedMotion) return;
     let world = createFlipWorld(width, height, fill.value);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -17,6 +18,7 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
     let last = Date.now();
     let stillSeconds = 0;
     let idle = false;
+    let topAnchored = false;
     let previousGravity = { ...gravity.current };
     let previousOffsets = Array(FLIP_COLS).fill(0);
     const tick = () => {
@@ -26,6 +28,18 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
       setRestFill(world, rest);
       const dt = Math.min(0.05, Math.max(1 / 120, (now - last) / 1000));
       last = now;
+      // Hysteresis prevents anchor chatter while crossing sideways gravity.
+      const nextAnchor = gravity.current.gy < -0.08 ? true : gravity.current.gy > 0.08 ? false : topAnchored;
+      if (nextAnchor !== topAnchored) {
+        topAnchored = nextAnchor;
+        world = createFlipWorld(width, height, rest);
+        previousOffsets = Array(FLIP_COLS).fill(0);
+        stillSeconds = 0;
+        idle = false;
+      }
+      if (inverted) inverted.value = topAnchored;
+      // Simulate depth away from whichever wall is down in screen coordinates.
+      const depthGravity = { gx: gravity.current.gx, gy: Math.abs(gravity.current.gy) };
       const motion = Math.hypot(gravity.current.gx - previousGravity.gx, gravity.current.gy - previousGravity.gy);
       stillSeconds = motion < 0.012 ? stillSeconds + dt : 0;
       previousGravity = { ...gravity.current };
@@ -33,20 +47,20 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
         // At rest, sparse particle noise must not leave a permanent tilted surface.
         if (!idle) world = createFlipWorld(width, height, rest);
         idle = true;
-        const equilibrium = restingFluidOffsets(gravity.current, width, height, rest, FLIP_COLS);
+        const equilibrium = restingFluidOffsets(depthGravity, width, height, rest, FLIP_COLS);
         const residual = previousOffsets.map((h, i) => h - equilibrium[i]);
         const settled = decayRestingSurface(residual, rest, height, dt);
         previousOffsets = projectSurfaceOffsets(equilibrium.map((h, i) => h + settled[i]), rest, height);
       } else {
         idle = false;
-        stepFlip(world, gravity.current, dt);
-        previousOffsets = softenedFluidSurface(world, previousOffsets, dt, gravity.current);
+        stepFlip(world, depthGravity, dt);
+        previousOffsets = softenedFluidSurface(world, previousOffsets, dt, depthGravity);
       }
       offsets.value = previousOffsets;
       timer = setTimeout(tick, 42);
     };
     tick();
     return () => { stopped = true; if (timer) clearTimeout(timer); offsets.value = Array(FLIP_COLS).fill(0); };
-  }, [active, reducedMotion, width, height, fill, gravity, offsets]);
+  }, [active, reducedMotion, width, height, fill, gravity, offsets, inverted]);
   return offsets;
 }

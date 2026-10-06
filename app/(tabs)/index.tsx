@@ -415,7 +415,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     return () => sub.remove();
   }, []);
   const sceneActive = isActive && appForeground;
-  const fluidOffsets = useTankFlip(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction, sceneActive, reducedMotion);
+  const fluidInverted = useSharedValue(false);
+  const fluidOffsets = useTankFlip(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction, sceneActive, reducedMotion, fluidInverted);
 
   // Breathing loop (bob/tug). Cancel-before-restart — never duplicates.
   useEffect(() => {
@@ -1056,10 +1057,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     const sample = Math.max(0, Math.min(samples.length - 1, x / INTERIOR_WIDTH * samples.length - 0.5));
     const a = Math.floor(sample), b = Math.min(samples.length - 1, a + 1);
     const localOffset = (samples[a] || 0) + ((samples[b] || 0) - (samples[a] || 0)) * (sample - a);
-    const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value) - localOffset;
+    const baseTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    const waterTop = fluidInverted.value ? INTERIOR_HEIGHT * waterFraction.value + localOffset : baseTop - localOffset;
     const wt = Number.isFinite(waterTop) ? Math.max(0, waterTop) : 0;
     const lift = Math.min(DUCK_LIFT_PX, wt);
-    return { top: -localOffset - lift };
+    return { top: waterTop - baseTop - lift };
   });
 
   // ── Pelican (above-the-number lane): occasional visitor on a bounded
@@ -1182,7 +1184,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           </View>
           <View style={styles.tankInterior}>
             <View style={styles.waterWrapper}>
-              <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} />
+              <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} />
             </View>
 
             {/* Submerged critters (fish) — clipped to the water region so they

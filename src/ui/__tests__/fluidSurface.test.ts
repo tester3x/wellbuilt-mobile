@@ -8,7 +8,7 @@ describe('soft FLIP surface', () => {
       stepFlip(world, { gx: 1.2, gy: 0.5 }, 1 / 24);
       offsets = softenedFluidSurface(world, offsets, 1 / 24);
       expect(meanSurfaceHeight(offsets)).toBeCloseTo(0, 6);
-      expect(Math.max(...offsets.map(Math.abs))).toBeLessThanOrEqual(9.800001);
+      expect(Math.max(...offsets.map(Math.abs))).toBeLessThanOrEqual(14.000001);
       offsets.forEach(h => { expect(fill * 280 + h).toBeGreaterThanOrEqual(-1e-6); expect(fill * 280 + h).toBeLessThanOrEqual(280.000001); });
     }
     for (let i = 1; i < offsets.length - 1; i++) {

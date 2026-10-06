@@ -16,10 +16,22 @@
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["wellbuiltmobile", "msauth.com.wellbuiltmobile.app"]
+            "CFBundleURLSchemes": [
+              "wellbuiltmobile",
+              "msauth.com.wellbuiltmobile.app"
+            ]
           }
         ],
-        "LSApplicationQueriesSchemes": ["whatsapp", "sms", "tel", "wellbuilt-suite", "wellbuilt-tickets", "jsaapp", "wbewallet", "wellbuiltequipment"]
+        "LSApplicationQueriesSchemes": [
+          "whatsapp",
+          "sms",
+          "tel",
+          "wellbuilt-suite",
+          "wellbuilt-tickets",
+          "jsaapp",
+          "wbewallet",
+          "wellbuiltequipment"
+        ]
       }
     },
     "android": {
@@ -36,7 +48,7 @@
         "INTERNET"
       ],
       "package": "com.wellbuiltmobile.app",
-      "versionCode": 60
+      "versionCode": 63
     },
     "web": {
       "output": "static",
@@ -67,15 +79,21 @@
               "intent": [
                 {
                   "action": "android.intent.action.SENDTO",
-                  "data": { "scheme": "sms" }
+                  "data": {
+                    "scheme": "sms"
+                  }
                 },
                 {
                   "action": "android.intent.action.SENDTO",
-                  "data": { "scheme": "smsto" }
+                  "data": {
+                    "scheme": "smsto"
+                  }
                 },
                 {
                   "action": "android.intent.action.VIEW",
-                  "data": { "scheme": "whatsapp" }
+                  "data": {
+                    "scheme": "whatsapp"
+                  }
                 }
               ]
             }

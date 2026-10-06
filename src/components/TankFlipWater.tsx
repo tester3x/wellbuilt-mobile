@@ -19,11 +19,9 @@ function WaterColumn({ index, width, height, fill, offsets, inverted }: {
       + (2 * before - 5 * left + 4 * right - after) * t * t
       + (-before + 3 * left - 3 * right + after) * t * t * t);
     const offset = Math.max(Math.min(left, right), Math.min(Math.max(left, right), curve));
-    return {
-      height: Math.max(0, Math.min(height, fill.value * height + offset)),
-      top: inverted.value ? 0 : undefined,
-      bottom: inverted.value ? undefined : 0,
-    };
+    const depth = Math.max(0, Math.min(height, fill.value * height + offset));
+    // Always write a numeric position: undefined may leave a stale native anchor.
+    return { height: depth, top: inverted.value ? 0 : height - depth };
   });
   return <Animated.View style={[styles.column, { width: width / COLUMNS + 0.3, left: index * width / COLUMNS }, style]} />;
 }

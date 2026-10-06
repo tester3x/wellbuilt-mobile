@@ -111,3 +111,25 @@ it('inverts the rendered water wall and returns upright without changing volume'
   await act(async () => { tree.unmount(); });
   jest.useRealTimers();
 });
+
+it('wakes settled water for shaking and settles again after motion stops', async () => {
+  jest.useFakeTimers();
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(React.createElement(Tank)); });
+  const sample = (Accelerometer.addListener as jest.Mock).mock.calls.at(-1)[0];
+  act(() => { sample({ x: 0, y: 1, z: 0 }); jest.advanceTimersByTime(5000); });
+  expect(surface.value).toEqual(Array(16).fill(0));
+  act(() => {
+    for (let i = 0; i < 20; i++) { sample({ x: i % 2 ? 1 : -1, y: 1, z: i % 2 ? 2 : -2 }); jest.advanceTimersByTime(50); }
+  });
+  expect(surface.value.some((h: number) => Math.abs(h) > 0.05)).toBe(true);
+  expect(Math.max(...surface.value.map(Math.abs))).toBeLessThanOrEqual(30.00001);
+  act(() => {
+    for (let i = 0; i < 60; i++) { sample({ x: 0, y: 1, z: 0 }); jest.advanceTimersByTime(50); }
+    jest.advanceTimersByTime(6000);
+  });
+  expect(surface.value).toEqual(Array(16).fill(0));
+  expect(fill.value).toBe(0.5);
+  await act(async () => { tree.unmount(); });
+  jest.useRealTimers();
+});

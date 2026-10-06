@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { type TankMotion } from '../ui/tankMotion';
 import { useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { createFlipWorld, setRestFill, stepFlip, FLIP_COLS } from '../ui/flipFluid';
 import { softenedFluidSurface, decayRestingSurface, restingFluidOffsets, projectSurfaceOffsets } from '../ui/fluidSurface';
@@ -7,7 +8,8 @@ import { useTankGravity } from './useTankGravity';
 /** FLIP is visual only. The operational shared fill is input, never output. */
 export function useTankFlip(width: number, height: number, fill: SharedValue<number>, active: boolean, reducedMotion: boolean, inverted?: SharedValue<boolean>) {
   const offsets = useSharedValue<number[]>(Array(FLIP_COLS).fill(0));
-  const gravity = useTankGravity(active && !reducedMotion);
+  const acceleration = useRef<TankMotion>({ gx: 0, gy: 0, energy: 0, sampledAt: 0 });
+  const gravity = useTankGravity(active && !reducedMotion, acceleration);
   useEffect(() => {
     offsets.value = Array(FLIP_COLS).fill(0);
     if (inverted) inverted.value = false;
@@ -18,6 +20,7 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
     let last = Date.now();
     let stillSeconds = 0;
     let idle = false;
+    let lastImpulse = -1;
     let topAnchored = false;
     let previousGravity = { ...gravity.current };
     let previousOffsets = Array(FLIP_COLS).fill(0);
@@ -41,7 +44,10 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
       // Simulate depth away from whichever wall is down in screen coordinates.
       const depthGravity = { gx: gravity.current.gx, gy: Math.abs(gravity.current.gy) };
       const motion = Math.hypot(gravity.current.gx - previousGravity.gx, gravity.current.gy - previousGravity.gy);
-      stillSeconds = motion < 0.012 ? stillSeconds + dt : 0;
+      const impulse = acceleration.current;
+      const fresh = now - impulse.sampledAt < 150;
+      const energy = fresh ? impulse.energy : 0;
+      stillSeconds = motion < 0.012 && energy < 0.02 ? stillSeconds + dt : 0;
       previousGravity = { ...gravity.current };
       if (stillSeconds > 1) {
         // At rest, sparse particle noise must not leave a permanent tilted surface.
@@ -53,8 +59,15 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
         previousOffsets = projectSurfaceOffsets(equilibrium.map((h, i) => h + settled[i]), rest, height);
       } else {
         idle = false;
+        if (fresh && impulse.sampledAt !== lastImpulse && energy > 0) {
+          lastImpulse = impulse.sampledAt;
+          for (let p = 0; p < world.n; p++) {
+            world.vxs[p] += impulse.gx * width * 0.12;
+            world.vys[p] += Math.sin(world.xs[p] / width * Math.PI * 2) * energy * height * 0.12;
+          }
+        }
         stepFlip(world, depthGravity, dt);
-        previousOffsets = softenedFluidSurface(world, previousOffsets, dt, depthGravity);
+        previousOffsets = softenedFluidSurface(world, previousOffsets, dt, depthGravity, energy);
       }
       offsets.value = previousOffsets;
       timer = setTimeout(tick, 42);

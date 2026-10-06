@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { createFlipWorld, setRestFill, stepFlip, FLIP_COLS } from '../ui/flipFluid';
-import { softenedFluidSurface, decayRestingSurface, restingFluidOffsets } from '../ui/fluidSurface';
+import { softenedFluidSurface, decayRestingSurface, restingFluidOffsets, projectSurfaceOffsets } from '../ui/fluidSurface';
 import { useTankGravity } from './useTankGravity';
 
 /** FLIP is visual only. The operational shared fill is input, never output. */
@@ -36,11 +36,11 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
         const equilibrium = restingFluidOffsets(gravity.current, width, height, rest, FLIP_COLS);
         const residual = previousOffsets.map((h, i) => h - equilibrium[i]);
         const settled = decayRestingSurface(residual, rest, height, dt);
-        previousOffsets = decayRestingSurface(equilibrium.map((h, i) => h + settled[i]), rest, height, 0);
+        previousOffsets = projectSurfaceOffsets(equilibrium.map((h, i) => h + settled[i]), rest, height);
       } else {
         idle = false;
         stepFlip(world, gravity.current, dt);
-        previousOffsets = softenedFluidSurface(world, previousOffsets, dt);
+        previousOffsets = softenedFluidSurface(world, previousOffsets, dt, gravity.current);
       }
       offsets.value = previousOffsets;
       timer = setTimeout(tick, 42);

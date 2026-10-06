@@ -8,7 +8,7 @@ describe('soft FLIP surface', () => {
       stepFlip(world, { gx: 1.2, gy: 0.5 }, 1 / 24);
       offsets = softenedFluidSurface(world, offsets, 1 / 24);
       expect(meanSurfaceHeight(offsets)).toBeCloseTo(0, 6);
-      expect(Math.max(...offsets.map(Math.abs))).toBeLessThanOrEqual(28.000001);
+      expect(Math.max(...offsets.map(Math.abs))).toBeLessThanOrEqual(9.800001);
       offsets.forEach(h => { expect(fill * 280 + h).toBeGreaterThanOrEqual(-1e-6); expect(fill * 280 + h).toBeLessThanOrEqual(280.000001); });
     }
     for (let i = 1; i < offsets.length - 1; i++) {
@@ -40,4 +40,13 @@ it('a held tilt rests on a straight, volume-conserving surface', () => {
   expect(meanSurfaceHeight(offsets)).toBeCloseTo(0, 8);
   for (let i = 1; i < 15; i++) expect(offsets[i + 1] - 2 * offsets[i] + offsets[i - 1]).toBeCloseTo(0, 8);
   expect(offsets[15]).toBeGreaterThan(offsets[0]);
+});
+
+it.each([0.2, 0.56, 0.9])('a nearly sideways held phone moves water to the low wall at fill %s', fill => {
+  const offsets = restingFluidOffsets({ gx: -1, gy: 0.01 }, 180, 280, fill, 16);
+  const heights = offsets.map(o => o + fill * 280);
+  expect(heights[0]).toBeCloseTo(280, 5);
+  expect(heights[15]).toBeCloseTo(0, 5);
+  expect(meanSurfaceHeight(heights)).toBeCloseTo(fill * 280, 5);
+  for (let i = 1; i < heights.length; i++) expect(heights[i]).toBeLessThanOrEqual(heights[i - 1] + 1e-6);
 });

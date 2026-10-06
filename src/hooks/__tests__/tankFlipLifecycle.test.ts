@@ -69,7 +69,7 @@ describe('FLIP lifecycle', () => {
   });
 });
 
-it('returns the live tank to exactly level after motion stops', async () => {
+it.each([{ name: 'upright', x: 0, y: 1 }, { name: 'flat table', x: 0.02, y: 0.01 }])('returns the live tank to exactly level at rest: $name', async (reading) => {
   jest.useFakeTimers();
   let tree!: TestRenderer.ReactTestRenderer;
   await act(async () => { tree = TestRenderer.create(React.createElement(Tank)); });
@@ -77,9 +77,11 @@ it('returns the live tank to exactly level after motion stops', async () => {
   act(() => { sample({ x: -1, y: 1 }); jest.advanceTimersByTime(1000); });
   expect(surface.value.some((h: number) => Math.abs(h) > 0.05)).toBe(true);
   act(() => {
-    for (let i = 0; i < 12; i++) { sample({ x: 0, y: 1 }); jest.advanceTimersByTime(200); }
+    for (let i = 0; i < 12; i++) { sample(reading); jest.advanceTimersByTime(200); }
     jest.advanceTimersByTime(6000);
   });
+  expect(surface.value).toEqual(Array(16).fill(0));
+  act(() => { jest.advanceTimersByTime(30000); });
   expect(surface.value).toEqual(Array(16).fill(0));
   expect(fill.value).toBe(0.5);
   await act(async () => { tree.unmount(); });

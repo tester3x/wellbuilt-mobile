@@ -39,7 +39,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTankFlip } from '../../src/hooks/useTankFlip';
 import { TankFlipWater } from '../../src/components/TankFlipWater';
-import { submergedPosition, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
+import { roamingFishPosition, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
 import { TankPelican } from '../../src/components/TankPelican';
 import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -353,7 +353,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // per mount and kept stable for the session (no rerolling on refresh); each
   // fish also gets randomized depth / start / range / speed at the same time.
   const wavePhase = useSharedValue(0); // 0↔1 slow loop → bob/tug breathing
-  const tankInteriorRef = useRef<View>(null);
   const fishScatter = useSharedValue(0);
   const fishEscape = useSharedValue([{travel:-1,depth:0.18},{travel:1,depth:-0.18},{travel:-1,depth:0.18}]);
   const swim = useSharedValue(0);      // 0→1 continuous loop → fish/duck sine drift
@@ -373,15 +372,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     else if (r < 0.998) kind = 'duck';      // was fisherman+duck; fisherman disabled (Reanimated UI crash)
     else kind = 'none';
     if (FORCE_EGG && FORCE_EGG !== 'fisherman') kind = FORCE_EGG;
-    // Per-fish randomization, decided once. Depth stays in the LOWER water
-    // (below the surface level number) and the horizontal base avoids the centre
-    // column — so a fish never sits behind the level text. freq/phase/range vary
-    // so they don't look like the same slot every time.
+    // Stable per-fish seeds; active paths roam the full available water.
     const mkFish = () => {
       const onLeft = Math.random() < 0.5;
       const leftPct = onLeft ? 8 + Math.random() * 24 : 58 + Math.random() * 26; // 8–32% or 58–84%, never centre
       return {
-        topPct: 46 + Math.random() * 32,                          // 46–78% depth (below the number)
+        topPct: 12 + Math.random() * 76,                          // reduced-motion resting depth
         leftPct,
         freq: Math.random() < 0.5 ? 1 : 2,                        // slight speed variance
         phase: Math.random() * TWO_PI,                            // random start position + direction
@@ -1039,9 +1035,18 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // the flip can never affect position. 🐟 faces left, so flip to -1 (face right)
   // while moving right. Per-fish freq/phase/range come from the stable ref.
   const fa = aliveEgg.fish[0], fb = aliveEgg.fish[1], fc = aliveEgg.fish[2];
-  const fishMoveA = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fa.leftPct / 100, fa.topPct / 100 + fishEscape.value[0].depth * fishScatter.value, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fa.freq + fa.phase) * fa.rangePx + fishEscape.value[0].travel * INTERIOR_WIDTH * 0.3 * fishScatter.value));
-  const fishMoveB = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fb.leftPct / 100, fb.topPct / 100 + fishEscape.value[1].depth * fishScatter.value, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fb.freq + fb.phase) * fb.rangePx + fishEscape.value[1].travel * INTERIOR_WIDTH * 0.3 * fishScatter.value));
-  const fishMoveC = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fc.leftPct / 100, fc.topPct / 100 + fishEscape.value[2].depth * fishScatter.value, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fc.freq + fc.phase) * fc.rangePx + fishEscape.value[2].travel * INTERIOR_WIDTH * 0.3 * fishScatter.value));
+  const fishMoveA = useAnimatedStyle(() => {
+    const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[0], fishEscape.value[0], fishScatter.value, reducedMotion);
+    return { ...p, left: p.left - 17, top: p.top - 17 };
+  });
+  const fishMoveB = useAnimatedStyle(() => {
+    const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[1], fishEscape.value[1], fishScatter.value, reducedMotion);
+    return { ...p, left: p.left - 17, top: p.top - 17 };
+  });
+  const fishMoveC = useAnimatedStyle(() => {
+    const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[2], fishEscape.value[2], fishScatter.value, reducedMotion);
+    return { ...p, left: p.left - 17, top: p.top - 17 };
+  });
   const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[0].travel : Math.cos(swim.value * TWO_PI * fa.freq + fa.phase)) >= 0 ? -1 : 1 }] }));
   const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[1].travel : Math.cos(swim.value * TWO_PI * fb.freq + fb.phase)) >= 0 ? -1 : 1 }] }));
   const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[2].travel : Math.cos(swim.value * TWO_PI * fc.freq + fc.phase)) >= 0 ? -1 : 1 }] }));
@@ -1178,27 +1183,25 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
   }, [onTankLongPress]);
 
-  const handleTankTap = (event: import('react-native').GestureResponderEvent) => {
-    if (!showFish || reducedMotion || !sceneActive || !tankInteriorRef.current) { handleNormalTankTap(); return; }
-    const { pageX, pageY } = event.nativeEvent;
-    tankInteriorRef.current.measureInWindow((x, y) => {
-      if (!fishSceneActiveRef.current) return;
-      const angle = fluidOrientation.value;
-      const positions = aliveEgg.fish.slice(0, aliveEgg.fishCount).map((f, i) => submergedPosition(
-        INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, angle,
-        f.leftPct / 100, f.topPct / 100 + fishEscape.value[i].depth * fishScatter.value,
-        Math.sin(swim.value * TWO_PI * f.freq + f.phase) * f.rangePx + fishEscape.value[i].travel * INTERIOR_WIDTH * 0.3 * fishScatter.value,
-      ));
-      const directions = fishScatterDirections(positions, pageX - x, pageY - y, angle);
-      if (!directions) { handleNormalTankTap(); return; }
-      lastTankTapTimeRef.current = 0;
-      if (fishScatter.value > 0.4) return;
-      fishEscape.value = [...directions, ...fishEscape.value.slice(directions.length)];
-      fishScatter.value = withSequence(
-        withTiming(1, { duration: 160, easing: Easing.out(Easing.cubic) }),
-        withDelay(180, withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.ease) })),
-      );
-    });
+  const handleFishTouch = (index: number) => {
+    if (!showFish || reducedMotion || !fishSceneActiveRef.current) return;
+    const angle = fluidOrientation.value;
+    const positions = aliveEgg.fish.slice(0, aliveEgg.fishCount).map((f, i) => roamingFishPosition(
+      INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, angle,
+      swim.value, f, fishEscape.value[i], fishScatter.value,
+    ));
+    const touched = positions[index];
+    if (!touched || touched.opacity === 0) return;
+    const directions = fishScatterDirections(positions, touched.left + 9, touched.top + 9, angle, 28, INTERIOR_WIDTH, INTERIOR_HEIGHT);
+    if (!directions) return;
+    lastTankTapTimeRef.current = 0;
+    cancelAnimation(fishScatter);
+    fishEscape.value = [...directions, ...fishEscape.value.slice(directions.length)];
+    fishScatter.value = 0;
+    fishScatter.value = withSequence(
+      withTiming(1, { duration: 160, easing: Easing.out(Easing.cubic) }),
+      withDelay(180, withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.ease) })),
+    );
   };
 
   return (
@@ -1207,32 +1210,44 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       <View style={styles.topSection}>
         {/* Tank - double-tap for Performance, long-press to hide well */}
         <View style={styles.tankSection}>
-        <Pressable onPress={handleTankTap} onLongPress={handleTankLongPress} delayLongPress={500}>
+        <Pressable onPress={handleNormalTankTap} onLongPress={handleTankLongPress} delayLongPress={500}>
         <View style={styles.tankOuter}>
           {/* Tank count badge - at BOTTOM right */}
           <View style={styles.tankBadge}>
             <Text style={styles.tankBadgeText}>{numTanks}</Text>
           </View>
-          <View ref={tankInteriorRef} collapsable={false} style={styles.tankInterior}>
+          <View style={styles.tankInterior}>
             <View style={styles.waterWrapper}>
               <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} />
             </View>
 
             {/* Fish use the current fluid geometry to remain submerged under tilt. */}
-            <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
+            <Animated.View pointerEvents="box-none" style={[styles.aliveLayer, aliveLayerStyle]}>
               {showFish && (
                 <>
                   <Animated.View style={[styles.aliveFishWrap, fishMoveA]}>
-                    <Animated.Text style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
+                    <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
+                      onPressIn={event => { event.stopPropagation(); handleFishTouch(0); }}
+                      onPress={event => event.stopPropagation()}>
+                      <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
+                    </Pressable>
                   </Animated.View>
                   {aliveEgg.fishCount > 1 && (
                     <Animated.View style={[styles.aliveFishWrap, fishMoveB]}>
-                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
+                      <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
+                      onPressIn={event => { event.stopPropagation(); handleFishTouch(1); }}
+                      onPress={event => event.stopPropagation()}>
+                      <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
+                    </Pressable>
                     </Animated.View>
                   )}
                   {aliveEgg.fishCount > 2 && (
                     <Animated.View style={[styles.aliveFishWrap, fishMoveC]}>
-                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
+                      <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
+                      onPressIn={event => { event.stopPropagation(); handleFishTouch(2); }}
+                      onPress={event => event.stopPropagation()}>
+                      <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
+                    </Pressable>
                     </Animated.View>
                   )}
                 </>
@@ -2819,9 +2834,10 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   aliveFishWrap: {
-    width: 18, height: 18, alignItems: 'center', justifyContent: 'center',
+    width: 52, height: 52, alignItems: 'center', justifyContent: 'center',
     position: 'absolute',
   },
+  fishTouchTarget: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   aliveFishGlyph: {
     fontSize: 11,
     opacity: 0.3,

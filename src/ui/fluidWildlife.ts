@@ -52,12 +52,24 @@ export function floatingPosition(width: number, height: number, fill: number, sa
 }
 
 /** A near miss startles the school; distant tank taps keep their usual action. */
-export function fishScatterDirections(positions: {left:number;top:number;opacity:number}[], x:number, y:number, angle:number, radius=28) {
+export function fishScatterDirections(positions: {left:number;top:number;opacity:number}[], x:number, y:number, angle:number, radius=28, width=180, height=280) {
   const visible=positions.filter(p=>p.opacity>0);
   if(!visible.some(p=>Math.hypot(p.left+9-x,p.top+9-y)<=radius)) return null;
   return positions.map((p,i)=>{
     const dx=p.left+9-x,dy=p.top+9-y;
     const tangent=dx*Math.cos(angle)+dy*Math.sin(angle);
-    return {travel:Math.abs(tangent)>2?Math.sign(tangent):(i%2===0?-1:1),depth:(-dx*Math.sin(angle)+dy*Math.cos(angle))>=0?0.18:-0.18};
+    const towardCenter=(width/2-p.left-9)*Math.cos(angle)+(height/2-p.top-9)*Math.sin(angle);
+    const normal=-dx*Math.sin(angle)+dy*Math.cos(angle);
+    const centerNormal=-(width/2-p.left-9)*Math.sin(angle)+(height/2-p.top-9)*Math.cos(angle);
+    return {travel:Math.abs(tangent)>2?Math.sign(tangent):(Math.sign(towardCenter)||(i%2===0?-1:1)),depth:(Math.abs(normal)>2?normal:centerNormal)>=0?0.18:-0.18};
   });
+}
+
+/** Independent paths cover the full available wet pocket. */
+export function roamingFishPosition(width:number,height:number,fill:number,samples:number[],inverted:boolean,angle:number,swim:number,fish:{freq:number;phase:number;leftPct:number;topPct:number},escape:{travel:number;depth:number},strength:number,reduced=false) {
+ 'worklet';
+ const phase=swim*Math.PI*2;
+ const lane=reduced?fish.leftPct/100:0.5+0.46*Math.sin(phase*fish.freq+fish.phase);
+ const depth=reduced?fish.topPct/100:0.5+0.43*Math.sin(phase*(fish.freq===1?2:1)+fish.phase*1.3);
+ return submergedPosition(width,height,fill,samples,inverted,angle,lane,Math.max(0,Math.min(1,depth+escape.depth*strength)),escape.travel*width*0.3*strength);
 }

@@ -51,3 +51,9 @@ Tap within 28 logical pixels of a visible fish to startle the school. Individual
 Validation: 31 focused geometry, surface, rendering and lifecycle tests passed; Android Hermes export passed. No changed-file type errors were reported; existing unrelated TypeScript errors remain. Native build/install pending.
 
 Version 70 build 5a451696-b535-40cb-98ea-e6c14332bf5b completed from be9a13d and installed in place on the Fold. Confirmed versionCode 70, successful launch and running app process. APK SHA256 F039F35925C6B296CF799641E8CA604645B1447EFE62CEF76A1DE7D7F7215794. Physical touch/tilt acceptance remains with tester.
+
+## Fish roaming and reliable direct touch follow-up
+
+Tester reported unreliable scatter and fish confined to the lower band in version 70. Replace delayed page-coordinate matching with a 52px centered direct fish Pressable that reacts on press-in and consumes the fish tap. Every new touch restarts escape; edge fish escape toward available room. Distant tank gestures remain on the parent. Remove fixed active depth: independent periodic horizontal/depth paths cover the whole wet pocket, with reduced motion using stable resting seeds. Existing water/wildlife containment and FLIP tuning are preserved.
+
+35 focused tests pass, including whole-water coverage at 25/50/85% fill and exact wall-touch escape direction. Android export passes. Native build/install pending.

@@ -1,4 +1,4 @@
-import { submergedPosition, floatingPosition, waterDepthAt, fishScatterDirections } from '../fluidWildlife';
+import { submergedPosition, floatingPosition, waterDepthAt, fishScatterDirections, roamingFishPosition } from '../fluidWildlife';
 import { restingFluidOffsets } from '../fluidSurface';
 const width = 180, height = 280;
 it.each([0.2, 0.45, 0.85])('keeps the whole fish glyph wet through tilt, sideways and inversion at fill %s', fill => {
@@ -57,4 +57,24 @@ it('scatter excursions remain submerged at upright, sideways and inverted orient
     expect(cy+8).toBeLessThanOrEqual((inverted?water:height)+1e-5);}
   }
  }
+});
+
+it.each([0.25,0.5,0.85])('fish cover the full upright wet pocket at fill %s',fill=>{
+ const fish={freq:1,phase:0.7,leftPct:20,topPct:60};const points=[];
+ for(let i=0;i<=120;i++){
+  const p=roamingFishPosition(width,height,fill,Array(16).fill(0),false,0,i/120,fish,{travel:0,depth:0},0);
+  points.push({x:p.left+9,y:p.top+9});
+  expect(p.opacity).toBe(1);expect(p.top).toBeGreaterThanOrEqual(height-fill*height-1e-5);expect(p.top+18).toBeLessThanOrEqual(height+1e-5);
+ }
+ const xs=points.map(p=>p.x),ys=points.map(p=>p.y);
+ expect(Math.max(...xs)-Math.min(...xs)).toBeGreaterThan((width-18)*0.9);
+ expect(Math.max(...ys)-Math.min(...ys)).toBeGreaterThan((fill*height-18)*0.8);
+ const a=roamingFishPosition(width,height,fill,Array(16).fill(0),false,0,0,fish,{travel:0,depth:0},0);
+ const b=roamingFishPosition(width,height,fill,Array(16).fill(0),false,0,1,fish,{travel:0,depth:0},0);
+ expect(a.left).toBeCloseTo(b.left);expect(a.top).toBeCloseTo(b.top);
+});
+
+it('exact fish touches send fish away from a wall rather than pinning them against it',()=>{
+ expect(fishScatterDirections([{left:0,top:240,opacity:1}],9,249,0)![0]).toEqual({travel:1,depth:-0.18});
+ expect(fishScatterDirections([{left:162,top:240,opacity:1}],171,249,0)![0]).toEqual({travel:-1,depth:-0.18});
 });

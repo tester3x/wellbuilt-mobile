@@ -57,3 +57,5 @@ Version 70 build 5a451696-b535-40cb-98ea-e6c14332bf5b completed from be9a13d and
 Tester reported unreliable scatter and fish confined to the lower band in version 70. Replace delayed page-coordinate matching with a 52px centered direct fish Pressable that reacts on press-in and consumes the fish tap. Every new touch restarts escape; edge fish escape toward available room. Distant tank gestures remain on the parent. Remove fixed active depth: independent periodic horizontal/depth paths cover the whole wet pocket, with reduced motion using stable resting seeds. Existing water/wildlife containment and FLIP tuning are preserved.
 
 35 focused tests pass, including whole-water coverage at 25/50/85% fill and exact wall-touch escape direction. Android export passes. Native build/install pending.
+
+Touch overlay audit: decorative tank-frame Image and level-number layer are now pointerEvents none so they cannot intercept direct fish targets underneath. Version 71 build canceled before installation to include this correction.

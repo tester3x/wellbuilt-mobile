@@ -1296,13 +1296,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               </Animated.View>
             )}
 
-            <Animated.View style={[styles.numberContainer, numberStyle]}>
+            <Animated.View pointerEvents="none" style={[styles.numberContainer, numberStyle]}>
               <Text style={levelSnapshot?.unavailable ? styles.tankUnavailableLabel : styles.tankNumber}>
                 {currentLevelDisplay}
               </Text>
             </Animated.View>
           </View>
-          <Image source={WellBuiltTankFrame} style={styles.tankFrame} resizeMode="stretch" />
+          <Image pointerEvents="none" source={WellBuiltTankFrame} style={styles.tankFrame} resizeMode="stretch" />
           
           {/* DOWN overlay - covers full tank */}
           {wellDown && (

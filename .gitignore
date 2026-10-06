@@ -77,3 +77,8 @@ C\357\200\272*
 # Claude
 .claude/
 scratchpad*
+
+# Local build and verification artifacts
+output/
+output-*.log
+output-*-private.json

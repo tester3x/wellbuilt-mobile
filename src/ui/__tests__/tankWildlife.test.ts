@@ -170,7 +170,7 @@ describe('wiring — index.tsx integration facts', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../../app/(tabs)/index.tsx'), 'utf8');
 
   test('duck renders ABOVE the water fill (later sibling than the blue layer) inside the surface layer', () => {
-    const waterIdx = src.indexOf('styles.tankWater');
+    const waterIdx = src.indexOf('<TankFlipWater');
     const duckIdx = src.indexOf("showFloat && aliveEgg.kind === 'duck'"); // the RENDER site, not the swim effect
     const numberIdx = src.indexOf('styles.numberContainer');
     expect(waterIdx).toBeGreaterThan(-1);
@@ -350,28 +350,26 @@ describe('pole-line attachment (follow-up fix)', () => {
 describe('follow-up wiring: waterline stability, lifecycle, reduced motion', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../../app/(tabs)/index.tsx'), 'utf8');
 
-  test('ripple drifts LATERALLY only - the nominal waterline never moves', () => {
-    const rowA = src.slice(src.indexOf('rippleRowAStyle'), src.indexOf('rippleRowAStyle') + 400);
-    expect(rowA).toContain('translateX');
-    expect(rowA).not.toContain('translateY'); // no vertical sloshing
-    // Wildlife anchors to the NOMINAL line (waterFraction math), never the crests.
-    expect(src).toContain('DUCK_LIFT_PX');
-    expect(src.split('INTERIOR_HEIGHT * (1 - waterFraction.value)').length - 1).toBeGreaterThanOrEqual(3);
-    expect(src).not.toMatch(/duck[\s\S]{0,120}RIPPLE\.crest/); // duck ignores decorative relief
+  test('FLIP sloshes only the visual surface; the duck rides its local offset', () => {
+    expect(src).toContain('useTankFlip(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction, sceneActive, reducedMotion)');
+    expect(src).toContain('fluidOffsets.value');
+    expect(src).toContain('return { top: -localOffset - lift }');
+    expect(src).not.toContain('rippleRowAStyle');
   });
 
   test('all loops and the pelican schedule are gated on sceneActive (isActive AND app foreground)', () => {
     expect(src).toContain("AppState.addEventListener('change', (s) => setAppForeground(s === 'active'))");
     expect(src).toContain('const sceneActive = isActive && appForeground;');
     expect(src).toMatch(/!sceneActive \|\| reducedMotion\) \{ cancelAnimation\(wavePhase\)/);
-    expect(src).toMatch(/!sceneActive \|\| reducedMotion\) \{ cancelAnimation\(drift\)/);
+    expect(src).toContain('waterFraction, sceneActive, reducedMotion)');
     expect(src).toMatch(/sceneActive && !reducedMotion && \(aliveEgg\.kind === 'fish'/);
     expect(src).toMatch(/if \(!sceneActive\) \{ setPelicanVisit\(null\); return; \}/);
   });
 
-  test('reduced motion: ripple drift is zeroed and its loop never starts', () => {
-    expect(src).toMatch(/translateX: reducedMotion \? 0 : drift\.value/);
-    expect(src).toMatch(/translateX: reducedMotion \? 0 : -drift\.value/);
+  test('reduced motion does not start fluid simulation', () => {
+    const hook = fs.readFileSync(path.join(__dirname, '../../hooks/useTankFlip.ts'), 'utf8');
+    expect(hook).toContain('if (!active || reducedMotion) return;');
+    expect(hook).toContain('clearTimeout(timer)');
   });
 
   test('line and hooked fish ride the swayed pole tip', () => {

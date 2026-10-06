@@ -150,21 +150,11 @@ describe('session-verify Settings regression', () => {
   });
 });
 
-describe('aquarium code is absent from the recovery branch', () => {
-  it('FLIP aquarium modules are not in the tree', () => {
-    const files = [
-      'src/components/TankFlipAquarium.tsx',
-      'src/ui/duckFloat.ts',
-      'src/ui/fishWander.ts',
-      'src/ui/flipFluid.ts',
-    ];
-    const fs = require('fs') as typeof import('fs');
-    const path = require('path') as typeof import('path');
-    for (const f of files) {
-      expect(fs.existsSync(path.join(__dirname, '../../..', f))).toBe(false);
-    }
+describe('FLIP stays separate from operational recovery', () => {
+  it('uses the visual layer without restoring the old aquarium screen', () => {
     const tabs = rootSrc('app/(tabs)/index.tsx');
-    expect(tabs).not.toMatch(/TankFlipAquarium/);
-    expect(tabs).not.toMatch(/duckFloat|fishWander|flipFluid/);
+    expect(tabs).toContain('<TankFlipWater');
+    expect(tabs).not.toMatch(/TankFlipAquarium|duckFloat|fishWander/);
+    expect(rootSrc('src/hooks/useTankFlip.ts')).not.toContain('fill.value =');
   });
 });

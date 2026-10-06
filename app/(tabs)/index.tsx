@@ -33,11 +33,13 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withRepeat,
+  withSequence,
+  withDelay,
   withTiming,
 } from 'react-native-reanimated';
 import { useTankFlip } from '../../src/hooks/useTankFlip';
 import { TankFlipWater } from '../../src/components/TankFlipWater';
-import { submergedPosition, floatingPosition } from '../../src/ui/fluidWildlife';
+import { submergedPosition, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
 import { TankPelican } from '../../src/components/TankPelican';
 import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -351,6 +353,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // per mount and kept stable for the session (no rerolling on refresh); each
   // fish also gets randomized depth / start / range / speed at the same time.
   const wavePhase = useSharedValue(0); // 0↔1 slow loop → bob/tug breathing
+  const tankInteriorRef = useRef<View>(null);
+  const fishScatter = useSharedValue(0);
+  const fishEscape = useSharedValue([{travel:-1,depth:0.18},{travel:1,depth:-0.18},{travel:-1,depth:0.18}]);
   const swim = useSharedValue(0);      // 0→1 continuous loop → fish/duck sine drift
   const TWO_PI = Math.PI * 2;
   const aliveEggRef = useRef<{
@@ -416,6 +421,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     return () => sub.remove();
   }, []);
   const sceneActive = isActive && appForeground;
+  const fishSceneActiveRef = useRef(false);
   const fluidInverted = useSharedValue(false);
   const fluidOrientation = useSharedValue(0);
   const fluidOffsets = useTankFlip(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction, sceneActive, reducedMotion, fluidInverted, fluidOrientation);
@@ -440,6 +446,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     swim.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
     return () => cancelAnimation(swim);
   }, [sceneActive, aliveEgg.kind, reducedMotion, swim]);
+
+  useEffect(() => {
+    fishSceneActiveRef.current = sceneActive && !reducedMotion;
+    if (!sceneActive || reducedMotion) { cancelAnimation(fishScatter); fishScatter.value = 0; }
+    return () => { fishSceneActiveRef.current = false; cancelAnimation(fishScatter); fishScatter.value = 0; };
+  }, [sceneActive, reducedMotion, fishScatter]);
 
   // Handle animation when well becomes active - separate effect to ensure proper ordering
   useEffect(() => {
@@ -1027,12 +1039,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // the flip can never affect position. 🐟 faces left, so flip to -1 (face right)
   // while moving right. Per-fish freq/phase/range come from the stable ref.
   const fa = aliveEgg.fish[0], fb = aliveEgg.fish[1], fc = aliveEgg.fish[2];
-  const fishMoveA = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fa.leftPct / 100, fa.topPct / 100, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fa.freq + fa.phase) * fa.rangePx));
-  const fishMoveB = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fb.leftPct / 100, fb.topPct / 100, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fb.freq + fb.phase) * fb.rangePx));
-  const fishMoveC = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fc.leftPct / 100, fc.topPct / 100, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fc.freq + fc.phase) * fc.rangePx));
-  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fa.freq + fa.phase) >= 0 ? -1 : 1 }] }));
-  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fb.freq + fb.phase) >= 0 ? -1 : 1 }] }));
-  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fc.freq + fc.phase) >= 0 ? -1 : 1 }] }));
+  const fishMoveA = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fa.leftPct / 100, fa.topPct / 100 + fishEscape.value[0].depth * fishScatter.value, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fa.freq + fa.phase) * fa.rangePx + fishEscape.value[0].travel * INTERIOR_WIDTH * 0.3 * fishScatter.value));
+  const fishMoveB = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fb.leftPct / 100, fb.topPct / 100 + fishEscape.value[1].depth * fishScatter.value, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fb.freq + fb.phase) * fb.rangePx + fishEscape.value[1].travel * INTERIOR_WIDTH * 0.3 * fishScatter.value));
+  const fishMoveC = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fc.leftPct / 100, fc.topPct / 100 + fishEscape.value[2].depth * fishScatter.value, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fc.freq + fc.phase) * fc.rangePx + fishEscape.value[2].travel * INTERIOR_WIDTH * 0.3 * fishScatter.value));
+  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[0].travel : Math.cos(swim.value * TWO_PI * fa.freq + fa.phase)) >= 0 ? -1 : 1 }] }));
+  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[1].travel : Math.cos(swim.value * TWO_PI * fb.freq + fb.phase)) >= 0 ? -1 : 1 }] }));
+  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[2].travel : Math.cos(swim.value * TWO_PI * fc.freq + fc.phase)) >= 0 ? -1 : 1 }] }));
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
   const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
@@ -1141,7 +1153,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Removed: waitingMessage - no longer showing waiting UI
 
   // Handle tank tap - double-tap navigates to performance screen
-  const handleTankTap = useCallback(() => {
+  const handleNormalTankTap = useCallback(() => {
     const now = Date.now();
     const timeSinceLastTap = now - lastTankTapTimeRef.current;
 
@@ -1166,6 +1178,29 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
   }, [onTankLongPress]);
 
+  const handleTankTap = (event: import('react-native').GestureResponderEvent) => {
+    if (!showFish || reducedMotion || !sceneActive || !tankInteriorRef.current) { handleNormalTankTap(); return; }
+    const { pageX, pageY } = event.nativeEvent;
+    tankInteriorRef.current.measureInWindow((x, y) => {
+      if (!fishSceneActiveRef.current) return;
+      const angle = fluidOrientation.value;
+      const positions = aliveEgg.fish.slice(0, aliveEgg.fishCount).map((f, i) => submergedPosition(
+        INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, angle,
+        f.leftPct / 100, f.topPct / 100 + fishEscape.value[i].depth * fishScatter.value,
+        Math.sin(swim.value * TWO_PI * f.freq + f.phase) * f.rangePx + fishEscape.value[i].travel * INTERIOR_WIDTH * 0.3 * fishScatter.value,
+      ));
+      const directions = fishScatterDirections(positions, pageX - x, pageY - y, angle);
+      if (!directions) { handleNormalTankTap(); return; }
+      lastTankTapTimeRef.current = 0;
+      if (fishScatter.value > 0.4) return;
+      fishEscape.value = [...directions, ...fishEscape.value.slice(directions.length)];
+      fishScatter.value = withSequence(
+        withTiming(1, { duration: 160, easing: Easing.out(Easing.cubic) }),
+        withDelay(180, withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.ease) })),
+      );
+    });
+  };
+
   return (
     <View style={styles.wellView}>
       {/* Top section - tank and stats */}
@@ -1178,7 +1213,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           <View style={styles.tankBadge}>
             <Text style={styles.tankBadgeText}>{numTanks}</Text>
           </View>
-          <View style={styles.tankInterior}>
+          <View ref={tankInteriorRef} collapsable={false} style={styles.tankInterior}>
             <View style={styles.waterWrapper}>
               <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} />
             </View>

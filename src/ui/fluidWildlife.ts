@@ -50,3 +50,14 @@ export function floatingPosition(width: number, height: number, fill: number, sa
   const cy = Math.max(radius, Math.min(height - radius, surface - Math.cos(angle) * lift));
   return { left: cx - radius, top: cy - radius, opacity: 1, transform: [{ rotate: angle + 'rad' }] };
 }
+
+/** A near miss startles the school; distant tank taps keep their usual action. */
+export function fishScatterDirections(positions: {left:number;top:number;opacity:number}[], x:number, y:number, angle:number, radius=28) {
+  const visible=positions.filter(p=>p.opacity>0);
+  if(!visible.some(p=>Math.hypot(p.left+9-x,p.top+9-y)<=radius)) return null;
+  return positions.map((p,i)=>{
+    const dx=p.left+9-x,dy=p.top+9-y;
+    const tangent=dx*Math.cos(angle)+dy*Math.sin(angle);
+    return {travel:Math.abs(tangent)>2?Math.sign(tangent):(i%2===0?-1:1),depth:(-dx*Math.sin(angle)+dy*Math.cos(angle))>=0?0.18:-0.18};
+  });
+}

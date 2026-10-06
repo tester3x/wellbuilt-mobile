@@ -1,4 +1,4 @@
-import { submergedPosition, floatingPosition, waterDepthAt } from '../fluidWildlife';
+import { submergedPosition, floatingPosition, waterDepthAt, fishScatterDirections } from '../fluidWildlife';
 import { restingFluidOffsets } from '../fluidSurface';
 const width = 180, height = 280;
 it.each([0.2, 0.45, 0.85])('keeps the whole fish glyph wet through tilt, sideways and inversion at fill %s', fill => {
@@ -36,4 +36,25 @@ it('floats the duck on the correct upright/inverted interface and turns it sidew
     expect(p.top+22).toBeLessThanOrEqual(height);
     if(g.gx===0) expect(p.top+11).toBeCloseTo((inverted?fill*height:height-fill*height)-Math.cos(angle)*7,5);
   }
+});
+
+it('nearby touches scatter visible fish away along the tilted swim direction',()=>{
+ const fish=[{left:41,top:61,opacity:1},{left:91,top:61,opacity:1}];
+ expect(fishScatterDirections(fish,0,0,0)).toBeNull();
+ expect(fishScatterDirections(fish.map(p=>({...p,opacity:0})),50,70,0)).toBeNull();
+ expect(fishScatterDirections(fish,60,70,0)!.map(d=>d.travel)).toEqual([-1,1]);
+ expect(fishScatterDirections([{left:41,top:31,opacity:1},{left:41,top:91,opacity:1}],50,50,Math.PI/2)!.map(d=>d.travel)).toEqual([-1,1]);
+});
+it('scatter excursions remain submerged at upright, sideways and inverted orientations',()=>{
+ for(const g of [{gx:0,gy:1},{gx:1,gy:0.01},{gx:0,gy:-1}]){
+  const fill=0.45,inverted=g.gy<0,angle=Math.atan2(-g.gx,g.gy);
+  const offsets=restingFluidOffsets({gx:g.gx,gy:Math.abs(g.gy)},width,height,fill,16);
+  for(const escape of [-1,1]){
+   const p=submergedPosition(width,height,fill,offsets,inverted,angle,0.5,0.65+escape*0.18,escape*width*0.3);
+   const cx=p.left+9,cy=p.top+9;
+   for(const dx of [-8,0,8]){const water=waterDepthAt(cx+dx,width,height,fill,offsets);
+    expect(cy-8).toBeGreaterThanOrEqual((inverted?0:height-water)-1e-5);
+    expect(cy+8).toBeLessThanOrEqual((inverted?water:height)+1e-5);}
+  }
+ }
 });

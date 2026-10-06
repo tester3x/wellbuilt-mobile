@@ -37,7 +37,8 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
       if (nextAnchor !== topAnchored) {
         topAnchored = nextAnchor;
         world = createFlipWorld(width, height, rest);
-        previousOffsets = Array(FLIP_COLS).fill(0);
+        // Sideways water already spans both anchors. Keep its depth profile
+        // across the switch instead of flashing a flat, half-full tank.
         stillSeconds = 0;
         idle = false;
       }

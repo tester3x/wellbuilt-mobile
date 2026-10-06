@@ -133,3 +133,32 @@ it('wakes settled water for shaking and settles again after motion stops', async
   await act(async () => { tree.unmount(); });
   jest.useRealTimers();
 });
+
+it.each([0.25, 0.5, 0.75])('preserves the sideways surface when the anchor switches, fill %s', async (fraction) => {
+  jest.useFakeTimers();
+  fill.value = fraction;
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(React.createElement(Tank)); });
+  const sample = (Accelerometer.addListener as jest.Mock).mock.calls.at(-1)[0];
+  act(() => {
+    for (let i = 0; i < 60; i++) { sample({ x: -1, y: 0.2, z: 0 }); jest.advanceTimersByTime(50); }
+    jest.advanceTimersByTime(3000);
+  });
+  expect(inverted.value).toBe(false);
+  let crossed = false;
+  for (let i = 0; i < 100 && !crossed; i++) {
+    const before = [...surface.value];
+    act(() => { sample({ x: -1, y: -0.2, z: 0 }); jest.advanceTimersByTime(42); });
+    if (inverted.value) {
+      crossed = true;
+      const jump = Math.max(...surface.value.map((h: number, j: number) => Math.abs(h - before[j])));
+      expect(jump).toBeLessThan(15);
+      expect(surface.value.some((h: number) => Math.abs(h) > 20)).toBe(true);
+    }
+  }
+  expect(crossed).toBe(true);
+  expect(fill.value).toBe(fraction);
+  await act(async () => { tree.unmount(); });
+  fill.value = 0.5;
+  jest.useRealTimers();
+});

@@ -37,3 +37,7 @@ vc67 user acceptance: water is a winner, mild heavy-shake response accepted; air
 ## Version 68 installed
 
 Source 88c4d1f; EAS build ef664802-ab1d-46a9-9abe-048e8f01b8d1 completed. Android versionCode 68 installed in place on the Fold; launch succeeded and app process remained running. No immediate fatal/Reanimated error was found. Fish wet-region containment and duck surface-following are installed; physical tilt/shake acceptance remains with the tester. Water solver tuning from accepted version 67 is preserved.
+
+## Anchor transition follow-up
+
+Retain the existing sideways depth profile when gravity crosses from bottom to top anchoring. The old zero-offset reset briefly flattened the water; particle reset and accepted sensor/slosh/wildlife tuning remain unchanged. Tests exercise anchor continuity at 25%, 50%, 75% fill; all 29 focused tests pass and those transition cases fail with the original reset restored. Android Hermes export passed. New native build/install pending.

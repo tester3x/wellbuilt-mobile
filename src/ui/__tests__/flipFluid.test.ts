@@ -188,3 +188,20 @@ describe('FLIP boundary fill conservation', () => {
     heights.forEach(h => { expect(h).toBeGreaterThanOrEqual(0); expect(h).toBeLessThanOrEqual(280); });
   });
 });
+
+describe('long-running FLIP stability', () => {
+  it('stays shallow upright and recovers after tilt without a ceiling spike', () => {
+    const world = createFlipWorld(180, 280, 0.5);
+    for (let i = 0; i < 720; i++) stepFlip(world, { gx: 0, gy: 1 }, 1 / 24);
+    const upright = surfaceHeights(world);
+    expect(Math.max(...upright) - Math.min(...upright)).toBeLessThan(42);
+    for (let i = 0; i < 120; i++) stepFlip(world, { gx: 0.8, gy: 0.7 }, 1 / 24);
+    const tilted = surfaceHeights(world);
+    expect(tilted[15]).toBeGreaterThan(tilted[0] + 20);
+    for (let i = 0; i < 720; i++) stepFlip(world, { gx: 0, gy: 1 }, 1 / 24);
+    const recovered = surfaceHeights(world);
+    expect(Math.max(...recovered) - Math.min(...recovered)).toBeLessThan(56);
+    expect(meanSurfaceHeight(recovered)).toBeCloseTo(140, 6);
+    expect(Math.max(...recovered)).toBeLessThan(180);
+  });
+});

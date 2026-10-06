@@ -181,37 +181,29 @@ function scatter(world: FlipWorld): void {
 
 function project(world: FlipWorld): void {
   const { gx, gy } = world;
-  const solid = 0.25;
+  world.pressure.fill(0);
+  // MAC face velocities: positive y points away from the floor.
+  // Remove divergence directly, with solid boundary faces excluded.
+  for (let j = 0; j < gy; j++) world.gvx[j * gx] = 0;
+  for (let i = 0; i < gx; i++) world.gvy[i] = 0;
   for (let iter = 0; iter < PRESSURE_ITERS; iter++) {
     for (let j = 0; j < gy; j++) {
       for (let i = 0; i < gx; i++) {
         const k = i + j * gx;
-        if (world.mass[k] < solid) {
-          world.pressure[k] = 0;
-          continue;
-        }
-        const left = i > 0 ? world.gvx[k] - world.gvx[k - 1] : world.gvx[k];
-        const down = j > 0 ? world.gvy[k] - world.gvy[k - gx] : world.gvy[k];
-        const div = left + down;
-        world.pressure[k] = world.pressure[k] * 0.4 - div * 0.35;
+        if (world.mass[k] < 0.25) continue;
+        const left = i > 0 ? 1 : 0, right = i + 1 < gx ? 1 : 0;
+        const down = j > 0 ? 1 : 0, up = j + 1 < gy ? 1 : 0;
+        const count = left + right + down + up;
+        if (!count) continue;
+        const div = (right ? world.gvx[k + 1] : 0) - world.gvx[k]
+          + (up ? world.gvy[k + gx] : 0) - world.gvy[k];
+        const correction = -div / count;
+        world.pressure[k] += correction;
+        if (left) world.gvx[k] -= correction;
+        if (right) world.gvx[k + 1] += correction;
+        if (down) world.gvy[k] -= correction;
+        if (up) world.gvy[k + gx] += correction;
       }
-    }
-    for (let j = 0; j < gy; j++) {
-      for (let i = 0; i < gx; i++) {
-        const k = i + j * gx;
-        if (world.mass[k] < solid) continue;
-        if (i + 1 < gx) world.gvx[k] -= (world.pressure[k + 1] - world.pressure[k]) * 0.5;
-        if (j + 1 < gy) world.gvy[k] -= (world.pressure[k + gx] - world.pressure[k]) * 0.5;
-      }
-    }
-    // Solid walls: no outflow. j=0 is the floor (y-down in caller gravity).
-    for (let j = 0; j < gy; j++) {
-      world.gvx[j * gx] = Math.max(0, world.gvx[j * gx]);
-      world.gvx[gx - 1 + j * gx] = Math.min(0, world.gvx[gx - 1 + j * gx]);
-    }
-    for (let i = 0; i < gx; i++) {
-      world.gvy[i] = Math.min(0, world.gvy[i]); // floor: no further down
-      world.gvy[i + (gy - 1) * gx] = Math.max(0, world.gvy[i + (gy - 1) * gx]);
     }
   }
 }
@@ -266,25 +258,35 @@ function collide(world: FlipWorld): void {
   }
 }
 
-function restoreMean(world: FlipWorld, dt: number): void {
-  if (world.restFill <= 0) {
-    for (let p = 0; p < world.n; p++) {
-      world.ys[p] = 0;
-      world.vys[p] = 0;
-      world.vxs[p] *= 0.4;
+/** Resolve overlap so gravity cannot collapse fluid into the floor. */
+function separateParticles(world: FlipWorld): void {
+  if (world.restFill <= 0) return;
+  const spacing = Math.sqrt(world.width * world.height * world.restFill / world.n) * 0.9;
+  for (let iteration = 0; iteration < 3; iteration++) {
+    for (let a = 0; a < world.n; a++) {
+      for (let b = a + 1; b < world.n; b++) {
+        const dx = world.xs[b] - world.xs[a], dy = world.ys[b] - world.ys[a];
+        const distance = Math.hypot(dx, dy);
+        if (distance >= spacing || distance < 1e-6) continue;
+        const correction = (spacing - distance) * 0.5 / distance;
+        world.xs[a] -= dx * correction; world.ys[a] -= dy * correction;
+        world.xs[b] += dx * correction; world.ys[b] += dy * correction;
+      }
     }
-    return;
+    collide(world);
   }
+}
+
+function restoreMean(world: FlipWorld, dt: number): void {
+  if (world.restFill <= 0) { seedParticles(world); return; }
   let sum = 0;
   for (let p = 0; p < world.n; p++) sum += world.ys[p];
-  const mean = sum / world.n;
-  const target = world.restFill * world.height * 0.5;
-  const err = target - mean;
-  const kick = err * SETTLE_STIFFNESS * dt;
-  const shift = err * 0.35;
+  const err = world.restFill * world.height * 0.5 - sum / world.n;
   for (let p = 0; p < world.n; p++) {
-    world.vys[p] += kick;
-    world.ys[p] += shift;
+    // Density correction never injects upward velocity/energy.
+    world.ys[p] += err * Math.min(1, dt * 4);
+    world.vxs[p] *= 0.96;
+    world.vys[p] *= 0.96;
   }
 }
 
@@ -326,6 +328,7 @@ export function stepFlip(
     world.xs[p] += world.vxs[p] * step;
     world.ys[p] += world.vys[p] * step;
   }
+  separateParticles(world);
   collide(world);
   restoreMean(world, step);
   collide(world);

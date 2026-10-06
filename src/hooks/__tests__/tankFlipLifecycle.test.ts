@@ -16,8 +16,9 @@ jest.mock('react-native-reanimated', () => ({
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 const fill = { value: 0.5 } as any;
+let surface: any;
 function Tank({ active = true, reduced = false }) {
-  useTankFlip(120, 200, fill, active, reduced);
+  surface = useTankFlip(120, 200, fill, active, reduced);
   return null;
 }
 describe('FLIP lifecycle', () => {
@@ -66,4 +67,21 @@ describe('FLIP lifecycle', () => {
     await act(async () => { resolve(true); });
     expect(Accelerometer.addListener).not.toHaveBeenCalled();
   });
+});
+
+it('returns the live tank to exactly level after motion stops', async () => {
+  jest.useFakeTimers();
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(React.createElement(Tank)); });
+  const sample = (Accelerometer.addListener as jest.Mock).mock.calls.at(-1)[0];
+  act(() => { sample({ x: -1, y: 1 }); jest.advanceTimersByTime(1000); });
+  expect(surface.value.some((h: number) => Math.abs(h) > 0.05)).toBe(true);
+  act(() => {
+    for (let i = 0; i < 12; i++) { sample({ x: 0, y: 1 }); jest.advanceTimersByTime(200); }
+    jest.advanceTimersByTime(6000);
+  });
+  expect(surface.value).toEqual(Array(16).fill(0));
+  expect(fill.value).toBe(0.5);
+  await act(async () => { tree.unmount(); });
+  jest.useRealTimers();
 });

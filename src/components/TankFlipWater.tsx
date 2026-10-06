@@ -12,7 +12,13 @@ function WaterColumn({ index, width, height, fill, offsets }: {
     const a = Math.max(0, Math.min(samples.length - 1, Math.floor(x)));
     const b = Math.min(samples.length - 1, a + 1);
     const t = Math.max(0, Math.min(1, x - a));
-    const offset = (samples[a] || 0) * (1 - t) + (samples[b] || 0) * t;
+    const before = samples[Math.max(0, a - 1)] || 0;
+    const left = samples[a] || 0, right = samples[b] || 0;
+    const after = samples[Math.min(samples.length - 1, b + 1)] || 0;
+    const curve = 0.5 * (2 * left + (-before + right) * t
+      + (2 * before - 5 * left + 4 * right - after) * t * t
+      + (-before + 3 * left - 3 * right + after) * t * t * t);
+    const offset = Math.max(Math.min(left, right), Math.min(Math.max(left, right), curve));
     return { height: Math.max(0, Math.min(height, fill.value * height + offset)) };
   });
   return <Animated.View style={[styles.column, { width: width / COLUMNS + 0.3, left: index * width / COLUMNS }, style]} />;

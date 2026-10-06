@@ -2,24 +2,14 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
+import { waterDepthAt } from '../ui/fluidWildlife';
+
 const COLUMNS = 64;
 function WaterColumn({ index, width, height, fill, offsets, inverted }: {
   index: number; width: number; height: number; fill: SharedValue<number>; offsets: SharedValue<number[]>; inverted: SharedValue<boolean>;
 }) {
   const style = useAnimatedStyle(() => {
-    const samples = offsets.value;
-    const x = (index + 0.5) / COLUMNS * samples.length - 0.5;
-    const a = Math.max(0, Math.min(samples.length - 1, Math.floor(x)));
-    const b = Math.min(samples.length - 1, a + 1);
-    const t = Math.max(0, Math.min(1, x - a));
-    const before = samples[Math.max(0, a - 1)] || 0;
-    const left = samples[a] || 0, right = samples[b] || 0;
-    const after = samples[Math.min(samples.length - 1, b + 1)] || 0;
-    const curve = 0.5 * (2 * left + (-before + right) * t
-      + (2 * before - 5 * left + 4 * right - after) * t * t
-      + (-before + 3 * left - 3 * right + after) * t * t * t);
-    const offset = Math.max(Math.min(left, right), Math.min(Math.max(left, right), curve));
-    const depth = Math.max(0, Math.min(height, fill.value * height + offset));
+    const depth = waterDepthAt((index + 0.5) / COLUMNS * width, width, height, fill.value, offsets.value);
     // Always write a numeric position: undefined may leave a stale native anchor.
     return { height: depth, top: inverted.value ? 0 : height - depth };
   });

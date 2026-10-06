@@ -6,13 +6,14 @@ import { softenedFluidSurface, decayRestingSurface, restingFluidOffsets, project
 import { useTankGravity } from './useTankGravity';
 
 /** FLIP is visual only. The operational shared fill is input, never output. */
-export function useTankFlip(width: number, height: number, fill: SharedValue<number>, active: boolean, reducedMotion: boolean, inverted?: SharedValue<boolean>) {
+export function useTankFlip(width: number, height: number, fill: SharedValue<number>, active: boolean, reducedMotion: boolean, inverted?: SharedValue<boolean>, orientation?: SharedValue<number>) {
   const offsets = useSharedValue<number[]>(Array(FLIP_COLS).fill(0));
   const acceleration = useRef<TankMotion>({ gx: 0, gy: 0, energy: 0, sampledAt: 0 });
   const gravity = useTankGravity(active && !reducedMotion, acceleration);
   useEffect(() => {
     offsets.value = Array(FLIP_COLS).fill(0);
     if (inverted) inverted.value = false;
+    if (orientation) orientation.value = 0;
     if (!active || reducedMotion) return;
     let world = createFlipWorld(width, height, fill.value);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -41,6 +42,7 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
         idle = false;
       }
       if (inverted) inverted.value = topAnchored;
+      if (orientation) orientation.value = Math.atan2(-gravity.current.gx, gravity.current.gy);
       // Simulate depth away from whichever wall is down in screen coordinates.
       const depthGravity = { gx: gravity.current.gx, gy: Math.abs(gravity.current.gy) };
       const motion = Math.hypot(gravity.current.gx - previousGravity.gx, gravity.current.gy - previousGravity.gy);
@@ -74,6 +76,6 @@ export function useTankFlip(width: number, height: number, fill: SharedValue<num
     };
     tick();
     return () => { stopped = true; if (timer) clearTimeout(timer); offsets.value = Array(FLIP_COLS).fill(0); };
-  }, [active, reducedMotion, width, height, fill, gravity, offsets, inverted]);
+  }, [active, reducedMotion, width, height, fill, gravity, offsets, inverted, orientation]);
   return offsets;
 }

@@ -37,6 +37,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTankFlip } from '../../src/hooks/useTankFlip';
 import { TankFlipWater } from '../../src/components/TankFlipWater';
+import { submergedPosition, floatingPosition } from '../../src/ui/fluidWildlife';
 import { TankPelican } from '../../src/components/TankPelican';
 import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -416,7 +417,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   }, []);
   const sceneActive = isActive && appForeground;
   const fluidInverted = useSharedValue(false);
-  const fluidOffsets = useTankFlip(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction, sceneActive, reducedMotion, fluidInverted);
+  const fluidOrientation = useSharedValue(0);
+  const fluidOffsets = useTankFlip(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction, sceneActive, reducedMotion, fluidInverted, fluidOrientation);
 
   // Breathing loop (bob/tug). Cancel-before-restart — never duplicates.
   useEffect(() => {
@@ -1017,17 +1019,17 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const nextPullReady = calculateNextPullReady();
 
   // Wildlife follows the canonical waterline; only the fluid surface sloshes.
-  const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
+  const aliveLayerStyle = useAnimatedStyle(() => ({ top: 0, height: INTERIOR_HEIGHT }));
   // (former floatBobStyle removed — the duck's bob now lives in
-  // duckMoveStyle and the fisherman scene has its own tug styles)
+  // the surface duck and disabled fisherman scene have their own styles)
   // Fish: movement (sine translateX) on the outer wrapper, facing (scaleX, from
   // the sign of the velocity = cos of the same phase) on the inner glyph — so
   // the flip can never affect position. 🐟 faces left, so flip to -1 (face right)
   // while moving right. Per-fish freq/phase/range come from the stable ref.
   const fa = aliveEgg.fish[0], fb = aliveEgg.fish[1], fc = aliveEgg.fish[2];
-  const fishMoveA = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fa.freq + fa.phase) * fa.rangePx }] }));
-  const fishMoveB = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fb.freq + fb.phase) * fb.rangePx }] }));
-  const fishMoveC = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fc.freq + fc.phase) * fc.rangePx }] }));
+  const fishMoveA = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fa.leftPct / 100, fa.topPct / 100, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fa.freq + fa.phase) * fa.rangePx));
+  const fishMoveB = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fb.leftPct / 100, fb.topPct / 100, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fb.freq + fb.phase) * fb.rangePx));
+  const fishMoveC = useAnimatedStyle(() => submergedPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, fc.leftPct / 100, fc.topPct / 100, reducedMotion ? 0 : Math.sin(swim.value * TWO_PI * fc.freq + fc.phase) * fc.rangePx));
   const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fa.freq + fa.phase) >= 0 ? -1 : 1 }] }));
   const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fb.freq + fb.phase) >= 0 ? -1 : 1 }] }));
   const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fc.freq + fc.phase) >= 0 ? -1 : 1 }] }));
@@ -1040,12 +1042,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // bobs with the ripple, and its glyph is clamped so it stays fully
   // inside the tank even when nearly full. Reduced motion → floats still.
   const duck = aliveEgg.duck;
-  const duckMoveStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: reducedMotion ? 0 : Math.sin(swim.value * TWO_PI + duck.phase) * duck.rangePx },
-      { translateY: reducedMotion ? 0 : (wavePhase.value - 0.5) * 4 }, // gentle ±2px bob on the waterline
-    ],
-  }));
   // Facing = sign of horizontal velocity (cos of the same phase); flip on
   // the inner glyph only so it can never affect position. 🦆 faces left.
   const duckFaceStyle = useAnimatedStyle(() => ({
@@ -1187,21 +1183,20 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} />
             </View>
 
-            {/* Submerged critters (fish) — clipped to the water region so they
-                stay inside the water. pointer-events off. Never affects tank math. */}
+            {/* Fish use the current fluid geometry to remain submerged under tilt. */}
             <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
               {showFish && (
                 <>
-                  <Animated.View style={[styles.aliveFishWrap, { top: `${fa.topPct}%`, left: `${fa.leftPct}%` }, fishMoveA]}>
+                  <Animated.View style={[styles.aliveFishWrap, fishMoveA]}>
                     <Animated.Text style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
                   </Animated.View>
                   {aliveEgg.fishCount > 1 && (
-                    <Animated.View style={[styles.aliveFishWrap, { top: `${fb.topPct}%`, left: `${fb.leftPct}%` }, fishMoveB]}>
+                    <Animated.View style={[styles.aliveFishWrap, fishMoveB]}>
                       <Animated.Text style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
                     </Animated.View>
                   )}
                   {aliveEgg.fishCount > 2 && (
-                    <Animated.View style={[styles.aliveFishWrap, { top: `${fc.topPct}%`, left: `${fc.leftPct}%` }, fishMoveC]}>
+                    <Animated.View style={[styles.aliveFishWrap, fishMoveC]}>
                       <Animated.Text style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
                     </Animated.View>
                   )}
@@ -1220,7 +1215,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 // body above it; band + clamp keep it inside the tank.
                 <Animated.View
                   pointerEvents="none"
-                  style={[styles.aliveDuckWrap, { left: duck.basePx }, duckSurfaceStyle, duckMoveStyle]}
+                  style={[styles.aliveDuckWrap, duckSurfaceStyle]}
                 >
                   <Animated.Text
                     accessible={false}
@@ -2774,9 +2769,7 @@ const styles = StyleSheet.create({
     top: 0,
     justifyContent: 'flex-end',
   },
-  // Alive-tank layers — both overlay the water (bottom-anchored, water height).
-  // aliveLayer CLIPS (submerged fish stay in the water); aliveSurfaceLayer does
-  // NOT clip, so wave crests / floats can sit at and above the surface line.
+  // Full-interior wildlife layers; shared fluid geometry places each animal.
   aliveLayer: {
     position: 'absolute',
     left: 0,
@@ -2791,18 +2784,20 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   aliveFishWrap: {
+    width: 18, height: 18, alignItems: 'center', justifyContent: 'center',
     position: 'absolute',
   },
   aliveFishGlyph: {
     fontSize: 11,
     opacity: 0.3,
   },
-  // Duck rides the surface layer's top edge (= the waterline); its
+  // Duck follows the gravity-aligned fluid interface; its
   // vertical offset is animated (duckSurfaceStyle) so a nearly-full tank
   // can never push it out of the interior. Bigger + near-opaque so it
   // reads as FLOATING, not drowning (the old 13px/0.4 float sank into
   // the blue visually).
   aliveDuckWrap: {
+    width: DUCK_FONT_SIZE, height: DUCK_FONT_SIZE, alignItems: 'center', justifyContent: 'center',
     position: 'absolute',
   },
   aliveDuckGlyph: {

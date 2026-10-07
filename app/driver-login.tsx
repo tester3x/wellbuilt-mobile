@@ -491,7 +491,10 @@ export default function DriverLoginScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           isRegister && styles.scrollContentRegister,
-          { paddingBottom: Math.max(insets.bottom, 16) + (isRegister ? 24 : 80) },
+          {
+            paddingTop: isRegister ? 8 : insets.top + 28,
+            paddingBottom: Math.max(insets.bottom, 16) + (isRegister ? 24 : 32),
+          },
         ]}
         keyboardShouldPersistTaps="handled"
       >
@@ -827,8 +830,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingTop: hp('10%'),
-    paddingBottom: hp('40%'),
+    paddingTop: 40,
+    paddingBottom: 32,
     paddingHorizontal: wp('8%'),
     alignItems: 'center',
   },

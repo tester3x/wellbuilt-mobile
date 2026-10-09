@@ -78,7 +78,7 @@ C\357\200\272*
 .claude/
 scratchpad*
 
-# Local build and verification artifacts
+# Local verification artifacts are not build inputs
 output/
 output-*.log
 output-*-private.json

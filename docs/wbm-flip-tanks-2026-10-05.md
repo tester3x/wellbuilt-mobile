@@ -1,0 +1,67 @@
+# FLIP tank integration — 2026-10-05
+
+Branch: codex/wbm-stale-level-20261005. Includes bacb279 old-snapshot level correction on top of authoritative vc60 release source 6c04949; original dirty checkout preserved.
+
+Restored only the pure particle/grid FLIP/PIC prototype from a183537 and its math tests. New focused water component uses animated shared canonical fill with local FLIP offsets; old decorative repeating ripple is replaced. Existing fish, duck, pelican, tap actions, level text, drain and level animation remain. Duck follows its local fluid surface. No aquarium screen restore, fisherman restore, operational volume/rate mutation, or Firebase deployment.
+
+Improvements: bounded surface projection conserves mean fill even under tilt at near-empty/full boundaries; one accelerometer listener and 24 Hz timer only for active foreground tank, stopped under reduced motion/blur/unmount. Late availability result cannot subscribe after disposal. Sensor unavailable/web fallback is upright FLIP. SDK54-compatible expo-sensors ~15.0.8 added, no SDK upgrade.
+
+Validation: 84 focused fluid/wildlife/recovery/old-snapshot tests plus 3 runtime timer/sensor lifecycle tests passed. Android Hermes export succeeded. Full type check still fails in unchanged manager/WhatsNew/auth files; no changed-file errors. No native visual verification yet.
+
+Build: flip-preview inherits internal APK preview, increments remote Android version. Build and installation status must be recorded after completion. No USB devices were connected when packaging began. Follow-up: verify tilt response, returning upright, empty/full, pull drain, swipe old wells, screen sleep/return, reduced motion, and tank responsiveness on the Fold before broad release.
+
+Long-duration validation caught instability in the inherited prototype before native installation. Build 1afc6f46-8b55-4981-802b-fc13313236cc (vc61, source550202f) was canceled. Replaced pressure projection with direct MAC divergence correction, added particle overlap separation, removed velocity injection from mean correction, and added viscous damping. Upright/tilt/return-upright regression now passes; final focused total88 tests in6 suites, corrected Hermes export passed. Replacement APK uses next remote version.
+
+Checked bundled Expo sensor native implementations: Android support-acceleration signs differ from iOS gravity signs. Added tested platform conversion so upright is tank-down and matching tilt matches on both. Build af154a76-a2ee-4169-a882-f2e114d43caf (vc62) canceled before installation to include this fix. Total focused coverage now91 tests; vc63 planned from next checkpoint.
+
+Completed internal build: 0e50ca03-5783-45bc-8e30-0f7ac3575e2b, versionCode63/version2.1.0, source4dde293c56ba7b2cfe4d5f0455376026cd09529b. APK SHA256 BF8611FFC947CECFB9EDE4320FAB89D642CB6DCB579FF6F5D305B3BCEDC7E389. Installed with adb install -r on Fold RFGL23VJCED, replacing vc60 without clearing data. Verified package version63, launched successfully, opened Gabriel7 tank and observed FLIP surface rendering with operational level7'4" and148bbl. Existing session/route state retained. No startup/animation exception found in process-scoped smoke-check logs. Physical tilt feel, wildlife appearances and repeated old-well navigation remain user acceptance checks; not claimed fully device-validated. Final typecheck continues unchanged manager/WhatsNew/auth errors; no changed-file errors.
+
+Android feedback after vc63: water constantly moving while stationary, asymmetric standing/flat-table surface, deep pointed dips (Hatchet1 screenshot). Tuning adds flat-table gravity fallback and noise deadzone; wide symmetric surface filtering, bounded curvature and relief, temporal smoothing and clamped cubic rendering. After1 second of stable sensor readings, FLIP stops stepping and residual waves decay toward still hydrostatic equilibrium (level upright/flat, straight slope under held tilt). Empty/full and volume bounds retained. New runtime test verifies motion produces relief and returning upright reaches exact-zero offsets. 18 tuning/axis/lifecycle tests pass; preceding combined six-suite run83 tests passed before held-tilt extension. Android export and changed-file type checks pass; unrelated baseline type errors remain. vc64 planned.
+
+User sequencing: stabilize Android first, then build iOS for testers. Afterwards add Luiz's route, add Mike to that route, verify/map Luiz WhatsApp sender to his WB account. Map Adan's WhatsApp to his WB account too; Adan helps occasionally and has no dedicated route. Do not invent a dedicated route for him or infer identity from display name alone.
+
+Further Android feedback: preserve large low-wall rise when phone is held sideways, but remove center valley/high-wall hump and violent slosh. Canceled uninstalled vc64 build6793aa40-a9e4-408c-871f-d8fcdf92530b. Equilibrium now uses actual gravity slope clipped at floor/lid with exact fill conservation, including near-sideways fills20/56/90%; no artificial cap on held-angle displacement. FLIP perturbations ride that plane with relief reduced from10% to3.5% of tank height, curvature limited, interpolation softened, and residual damping faster. 21 focused plane/gravity/lifecycle tests pass and Android export passes. vc65 planned.
+
+Completed vc65 internal build a5458407-d0f6-4ca7-899f-ea05ded747e5 from runtime source8639517. APK SHA256 2A5715F02A8C5230B904F578C01434486991F42EB730C72CA691C45E2B85ADBD, 92662246 bytes. Installed with adb install -r on Fold RFGL23VJCED preserving data; package confirms versionCode65/version2.1.0, launch succeeded in547ms. Startup screenshot shows Gabriel2 tank with straight level surface; no matching startup/animation exceptions in process-scoped log check. Physical motion/held-angle acceptance remains user verification. Additional test checkpoint610fdf6 verifies upright and flat-table return to exactly level and remain unchanged for30seconds (5 lifecycle tests pass). Stillness threshold: consecutive filtered gravity change below0.012 for1second stops FLIP stepping, then residual surface decays; flat-table projected gravity fallback suppresses sensor noise. iOS build waits for Android acceptance per user sequencing.
+
+vc65 accepted for settling: user confirms stationary water finds its level and stops moving; slight-angle near-flat screenshot is correct. Next correction: water columns now switch anchor to tank top when signed gravity reverses (hysteresis near sideways), with local depth simulation using reflected vertical gravity and duck surface following the same interface. Moving relief increases moderately from3.5% to5%, filtering9passes instead of12 and response0.18s instead of0.28s; rest threshold unchanged. 23 focused regressions pass including inverted/return-upright lifecycle preserving volume. Android vc66 planned for physical testing.
+
+Completed vc66 build88167720-1992-4e21-b7a4-a7916af097bb from sourcec2cc032. APK92662634bytes, SHA2565DC1ADCDBA7556BBC0EC613D4483BE4DE2E03C780CDE29134C0299834FDE82E8. Installed on Fold RFGL23VJCED using install-r; verified versionCode66/version2.1.0 and successful558ms launch. Focused23tests passed, Hermes Android export passed, changed-file TypeScript diagnostics clear (unrelated baseline errors remain). No matching startup exceptions in process-scoped log check. Physical upside-down/held-tilt/moving response remains user acceptance before iOS build.
+
+vc66 physical feedback: water can stay top-anchored after return upright; motion should respond more strongly to fast lateral moves/violent shaking. Renderer now uses only numeric top and height on every frame, avoiding undefined top/bottom native-style clearing. Actual renderer regression exercises five alternating orientations at30% fill. Sensor sampling50ms; high-pass acceleration separate from smoothed tilt,80milli-g noise deadband, capped2g directional impulse and0..1 shake energy including out-of-plane motion. Fresh impulses inject bounded broad particle velocity modes; relief dynamically5..15%, faster response under motion; existing rest threshold unchanged. Shake-to-rest lifecycle verifies wake, bounded surface, exact-zero rest and untouched volume. 27 focused tests across motion/surface/gravity/lifecycle/renderer pass; changed-file types clear. vc67 planned for physical validation.
+
+Completed vc67 buildf84f3298-12cf-47d3-ab64-a8fddcdaf1ab from source5e9c1f0. APK92663594bytes, SHA2567CFAC95D0852A161A2A9A57ED85B3C39FBB64F321BC34F83A1D1A6B8144B7E96. Installed using adb install-r preserving data on Fold RFGL23VJCED; verified versionCode67/version2.1.0 and successful511ms launch. Process-scoped startup log check has no matching runtime exceptions. Physical repeated inversion/fast lateral/shake feel remains user acceptance before iOS.
+
+vc67 user acceptance: water is a winner, mild heavy-shake response accepted; airborne splash droplets optional future enhancement. Next wildlife correction removes old bottom-anchored rectangular fish bounds: shared worklet waterDepthAt now drives both rendered columns and conservative fish body containment. Swim lanes project into actual wet pockets and swim/rotate along gravity-oriented surface, including sideways/inverted; hide when no pocket holds glyph. Duck finds actual interface and rotates/floats airward with belly near surface (user requested slightly higher). Full-interior layers avoid obsolete flat-water clipping; tank math untouched. Water solver/sensor tuning retained. vc68 planned, Android first before iOS.
+
+## Version 68 installed
+
+Source 88c4d1f; EAS build ef664802-ab1d-46a9-9abe-048e8f01b8d1 completed. Android versionCode 68 installed in place on the Fold; launch succeeded and app process remained running. No immediate fatal/Reanimated error was found. Fish wet-region containment and duck surface-following are installed; physical tilt/shake acceptance remains with the tester. Water solver tuning from accepted version 67 is preserved.
+
+## Anchor transition follow-up
+
+Retain the existing sideways depth profile when gravity crosses from bottom to top anchoring. The old zero-offset reset briefly flattened the water; particle reset and accepted sensor/slosh/wildlife tuning remain unchanged. Tests exercise anchor continuity at 25%, 50%, 75% fill; all 29 focused tests pass and those transition cases fail with the original reset restored. Android Hermes export passed. New native build/install pending.
+
+Version 69 build 27b9cf10-6c23-4724-b72e-ca0cbba9a8c2 completed from d28c583. Installed in place on the Fold, confirmed versionCode 69 and successful launch/running process. APK SHA256: 2DB0A4EE4B6FD23A1460B368C8A780EBF75DD6C3F9060A438D30A168405CFDEC. Physical wall-transition acceptance remains with tester.
+
+## Touch-startled fish
+
+Tap within 28 logical pixels of a visible fish to startle the school. Individual fish dart away along the current gravity-aligned swim direction, then ease back over about 1.5 seconds. Escape positions use the existing wet-region constraint. Nearby fish taps consume the tap rather than accumulating a performance double-tap; distant taps and long-press retain existing behavior. Reduced motion disables scattering. Background/unmount cancels it and guards deferred measurement callbacks.
+
+Validation: 31 focused geometry, surface, rendering and lifecycle tests passed; Android Hermes export passed. No changed-file type errors were reported; existing unrelated TypeScript errors remain. Native build/install pending.
+
+Version 70 build 5a451696-b535-40cb-98ea-e6c14332bf5b completed from be9a13d and installed in place on the Fold. Confirmed versionCode 70, successful launch and running app process. APK SHA256 F039F35925C6B296CF799641E8CA604645B1447EFE62CEF76A1DE7D7F7215794. Physical touch/tilt acceptance remains with tester.
+
+## Fish roaming and reliable direct touch follow-up
+
+Tester reported unreliable scatter and fish confined to the lower band in version 70. Replace delayed page-coordinate matching with a 52px centered direct fish Pressable that reacts on press-in and consumes the fish tap. Every new touch restarts escape; edge fish escape toward available room. Distant tank gestures remain on the parent. Remove fixed active depth: independent periodic horizontal/depth paths cover the whole wet pocket, with reduced motion using stable resting seeds. Existing water/wildlife containment and FLIP tuning are preserved.
+
+35 focused tests pass, including whole-water coverage at 25/50/85% fill and exact wall-touch escape direction. Android export passes. Native build/install pending.
+
+Touch overlay audit: decorative tank-frame Image and level-number layer are now pointerEvents none so they cannot intercept direct fish targets underneath. Version 71 build canceled before installation to include this correction.
+
+Version 72 build 60b8093b-61f8-499c-9f2d-34c89e2296cf completed from d26c734 and installed in place on the Fold. Confirmed versionCode 72, successful startup, running process and rendered well view. APK SHA256 1E07BBC0688C7CA41FCD77832C6B51B443DA3D96003C892FEC9944B61964971C. Current inspected well had no fish, so physical fish-touch acceptance remains with tester. No operational records were changed during launch verification.
+
+## S24 installation — 2026-10-06
+
+At user request, installed the same version 72 APK in place on the connected Samsung S24 Ultra (SM-S928U). Confirmed versionCode 72 / versionName 2.1.0 and successful launch. No data clear or uninstall was performed.

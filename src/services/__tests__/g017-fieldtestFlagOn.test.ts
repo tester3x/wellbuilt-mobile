@@ -18,8 +18,8 @@ describe('G-017 field-test release', () => {
     expect(flagSrc).not.toMatch(/boolean = false/);
   });
 
-  test('Android versionCode is exactly one above proven VC58 history', () => {
-    expect(appJson.expo.android.versionCode).toBe(59);
+  test('Android versionCode does not regress behind proven VC59 history', () => {
+    expect(appJson.expo.android.versionCode).toBeGreaterThanOrEqual(59);
   });
 
   test('shared Expo version and iOS buildNumber are unchanged', () => {

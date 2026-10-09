@@ -130,3 +130,25 @@ export function buildWellRenderSnapshot(input: {
     revision,
   };
 }
+
+/** Same projection on initial load, navigation, and periodic refresh. */
+export function estimatedSnapshotLevel(
+  snapshot: {
+    levelFeet?: number;
+    lastPullBottomLevelFeet?: number;
+    timestamp: number;
+    isDown?: boolean;
+    flowRateMinutes?: number;
+  },
+  fallbackFlowMinutes = 0,
+  now = Date.now(),
+): number {
+  const base = Math.max(0, Math.min(startingLevelFromSnapshot(snapshot), 20));
+  const rate = snapshot.flowRateMinutes ?? fallbackFlowMinutes;
+  if (snapshot.isDown || !Number.isFinite(rate) || rate <= 0
+    || !Number.isFinite(snapshot.timestamp)
+    || snapshot.timestamp < Date.UTC(2020, 0, 1) || snapshot.timestamp > now) {
+    return base;
+  }
+  return Math.min(base + (now - snapshot.timestamp) / 60000 / rate, 20);
+}

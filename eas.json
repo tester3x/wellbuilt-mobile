@@ -18,6 +18,10 @@
     },
     "production": {
       "autoIncrement": true
+    },
+    "flip-preview": {
+      "extends": "preview",
+      "autoIncrement": true
     }
   },
   "submit": {

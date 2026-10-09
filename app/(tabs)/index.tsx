@@ -33,8 +33,13 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withRepeat,
+  withSequence,
+  withDelay,
   withTiming,
 } from 'react-native-reanimated';
+import { useTankFlip } from '../../src/hooks/useTankFlip';
+import { TankFlipWater } from '../../src/components/TankFlipWater';
+import { roamingFishPosition, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
 import { TankPelican } from '../../src/components/TankPelican';
 import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,10 +59,9 @@ import {
   computeFishermanLayout,
   nextPelicanDelayMs,
   pelicanPerchX,
-  rippleGeometry,
 } from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder, syncOnForeground } from '../../src/services/backgroundSync';
-import { startingLevelFromSnapshot } from '../../src/services/downSnapshot';
+import { startingLevelFromSnapshot, estimatedSnapshotLevel } from '../../src/services/downSnapshot';
 import { downNumberTopPx } from '../../src/ui/downNumberLayout';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
@@ -127,12 +131,6 @@ const INTERIOR_WIDTH = TANK_WIDTH - INTERIOR_LEFT - INTERIOR_RIGHT; // for alive
 // DEV ONLY — force a specific alive-tank egg for local Expo testing so rare
 // spawns don't require reopening wells dozens of times. MUST stay null in commits.
 const FORCE_EGG: 'fish' | 'fisherman' | 'duck' | null = null;
-// Stylized water-top ripple texture — number of wave-crest scallops to tile
-// across the interior (clipped to the water). Precomputed once.
-// Responsive shallow-ripple geometry — wide overlapped crests, hard
-// amplitude cap; see rippleGeometry() for the no-V-point rationale.
-const RIPPLE = rippleGeometry(INTERIOR_WIDTH);
-const RIPPLE_HUMPS = Array.from({ length: RIPPLE.humpCount }, (_, i) => i);
 const NUMBER_OFFSET = isTablet ? TANK_HEIGHT * 0.025 : SCREEN_HEIGHT * 0.015;
 const DOWN_NUMBER_TOP = downNumberTopPx(INTERIOR_HEIGHT, NUMBER_OFFSET);
 
@@ -351,12 +349,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const waterFraction = useSharedValue(0);
 
   // ── Alive-tank easter egg (cosmetic only — never touches tank math) ──
-  // Subtle surface ripple is always on. A rare hidden critter is decided ONCE
+  // FLIP water runs in the visible tank. A rare hidden critter is decided ONCE
   // per mount and kept stable for the session (no rerolling on refresh); each
   // fish also gets randomized depth / start / range / speed at the same time.
   const wavePhase = useSharedValue(0); // 0↔1 slow loop → bob/tug breathing
+  const fishScatter = useSharedValue(0);
+  const fishEscape = useSharedValue([{travel:-1,depth:0.18},{travel:1,depth:-0.18},{travel:-1,depth:0.18}]);
   const swim = useSharedValue(0);      // 0→1 continuous loop → fish/duck sine drift
-  const drift = useSharedValue(0);     // 0→1 continuous loop → ripple lateral drift (one wavelength per loop)
   const TWO_PI = Math.PI * 2;
   const aliveEggRef = useRef<{
     kind: 'none' | 'fish' | 'fisherman' | 'duck';
@@ -373,15 +372,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     else if (r < 0.998) kind = 'duck';      // was fisherman+duck; fisherman disabled (Reanimated UI crash)
     else kind = 'none';
     if (FORCE_EGG && FORCE_EGG !== 'fisherman') kind = FORCE_EGG;
-    // Per-fish randomization, decided once. Depth stays in the LOWER water
-    // (below the surface level number) and the horizontal base avoids the centre
-    // column — so a fish never sits behind the level text. freq/phase/range vary
-    // so they don't look like the same slot every time.
+    // Stable per-fish seeds; active paths roam the full available water.
     const mkFish = () => {
       const onLeft = Math.random() < 0.5;
       const leftPct = onLeft ? 8 + Math.random() * 24 : 58 + Math.random() * 26; // 8–32% or 58–84%, never centre
       return {
-        topPct: 46 + Math.random() * 32,                          // 46–78% depth (below the number)
+        topPct: 12 + Math.random() * 76,                          // reduced-motion resting depth
         leftPct,
         freq: Math.random() < 0.5 ? 1 : 2,                        // slight speed variance
         phase: Math.random() * TWO_PI,                            // random start position + direction
@@ -421,6 +417,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     return () => sub.remove();
   }, []);
   const sceneActive = isActive && appForeground;
+  const fishSceneActiveRef = useRef(false);
+  const fluidInverted = useSharedValue(false);
+  const fluidOrientation = useSharedValue(0);
+  const fluidOffsets = useTankFlip(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction, sceneActive, reducedMotion, fluidInverted, fluidOrientation);
 
   // Breathing loop (bob/tug). Cancel-before-restart — never duplicates.
   useEffect(() => {
@@ -429,15 +429,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     return () => cancelAnimation(wavePhase);
   }, [sceneActive, reducedMotion, wavePhase]);
 
-  // Ripple lateral drift — slow sideways travel of the decorative crests
-  // (one wavelength per loop, so the periodic pattern wraps seamlessly).
-  // The nominal waterline NEVER moves; there is no vertical sloshing.
-  useEffect(() => {
-    if (!sceneActive || reducedMotion) { cancelAnimation(drift); return; }
-    drift.value = 0;
-    drift.value = withRepeat(withTiming(1, { duration: 11000, easing: Easing.linear }), -1, false);
-    return () => cancelAnimation(drift);
-  }, [sceneActive, reducedMotion, drift]);
 
   // Swim sine loop — shared by fish AND the surface duck. Continuous
   // phase, linear + non-reversing so sin() stays smooth across the wrap.
@@ -452,19 +443,20 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     return () => cancelAnimation(swim);
   }, [sceneActive, aliveEgg.kind, reducedMotion, swim]);
 
+  useEffect(() => {
+    fishSceneActiveRef.current = sceneActive && !reducedMotion;
+    if (!sceneActive || reducedMotion) { cancelAnimation(fishScatter); fishScatter.value = 0; }
+    return () => { fishSceneActiveRef.current = false; cancelAnimation(fishScatter); fishScatter.value = 0; };
+  }, [sceneActive, reducedMotion, fishScatter]);
+
   // Handle animation when well becomes active - separate effect to ensure proper ordering
   useEffect(() => {
     // Only trigger when transitioning from inactive to active
     if (isActive && !prevIsActive.current && levelSnapshot) {
       // Calculate current level with flow estimate
       // Formula: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
-      const startingLevel = startingLevelFromSnapshot(levelSnapshot);
-      let currentLevel = startingLevel;
       const flowMins = levelSnapshot.flowRateMinutes ?? wellConfig?.avgFlowRateMinutes ?? 0;
-      if (flowMins > 0 && !levelSnapshot.isDown) {
-        const minutesSincePull = (Date.now() - levelSnapshot.timestamp) / (1000 * 60);
-        currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
-      }
+      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins);
 
       const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
       const prevLevel = getPreviousLevel();
@@ -671,15 +663,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
           // Update targetFraction so live update knows the correct level when it starts
           if (snapshot) {
-            const startingLevel = startingLevelFromSnapshot(snapshot);
-            let currentLevel = startingLevel;
-            const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
-            if (flowMins > 0 && !snapshot.isDown) {
-              const minutesSincePull = (Date.now() - snapshot.timestamp) / (1000 * 60);
-              if (minutesSincePull > 0 && minutesSincePull < 10080) {
-                currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
-              }
-            }
+            const flowMins = snapshot.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
+            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins);
             setTargetFraction(clampFraction(currentLevel / FULL_TANK_FEET));
           }
           setIsLoadingInitial(false);
@@ -689,15 +674,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
 
           if (snapshot && (startingLevelFromSnapshot(snapshot) > 0 || snapshot.isDown)) {
-            const startingLevel = startingLevelFromSnapshot(snapshot);
-            let currentLevel = startingLevel;
-
-            if (flowMins > 0 && !snapshot.isDown) {
-              const minutesSincePull = (Date.now() - snapshot.timestamp) / (1000 * 60);
-              if (minutesSincePull > 0 && minutesSincePull < 10080) {
-                currentLevel = Math.min(startingLevel + (minutesSincePull / flowMins), FULL_TANK_FEET);
-              }
-            }
+            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins);
 
             const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
 
@@ -768,10 +745,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     const updateEstimate = () => {
       // Skip if drain animation started since this effect was set up
       if (drainAnimationActive.current) return;
-      const startingLevel = startingLevelFromSnapshot(levelSnapshot);
-      const minutesSincePull = (Date.now() - levelSnapshot.timestamp) / (1000 * 60);
-      const feetGained = minutesSincePull / flowMins;
-      const currentLevel = Math.min(startingLevel + feetGained, FULL_TANK_FEET);
+      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins);
       const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
 
       // Smoothly update display
@@ -1052,38 +1026,30 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
   const nextPullReady = calculateNextPullReady();
 
-  // Animated water styles
-  const waterStyle = useAnimatedStyle(() => ({
-    height: `${waterFraction.value * 100}%`,
-  }));
-
-  // Alive-tank cosmetic styles — read waterFraction for ALIGNMENT only; the
-  // blue fill height/math is the waterStyle above and is never modified here.
-  const aliveLayerStyle = useAnimatedStyle(() => ({ height: `${waterFraction.value * 100}%` }));
-  // Surface ripple — wide, SHALLOW, overlapped blue crests riding above
-  // the flat fill edge (same blue, so only the crest relief shows). The
-  // two unequal rows DRIFT laterally in opposite directions (no vertical
-  // sloshing — the nominal waterline is stationary). One wavelength per
-  // loop makes the periodic pattern wrap seamlessly.
-  const rippleRowAStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: reducedMotion ? 0 : drift.value * RIPPLE.wavelengthPx }],
-  }));
-  const rippleRowBStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: reducedMotion ? 0 : -drift.value * RIPPLE.wavelengthPx }],
-  }));
+  // Wildlife follows the canonical waterline; only the fluid surface sloshes.
+  const aliveLayerStyle = useAnimatedStyle(() => ({ top: 0, height: INTERIOR_HEIGHT }));
   // (former floatBobStyle removed — the duck's bob now lives in
-  // duckMoveStyle and the fisherman scene has its own tug styles)
+  // the surface duck and disabled fisherman scene have their own styles)
   // Fish: movement (sine translateX) on the outer wrapper, facing (scaleX, from
   // the sign of the velocity = cos of the same phase) on the inner glyph — so
   // the flip can never affect position. 🐟 faces left, so flip to -1 (face right)
   // while moving right. Per-fish freq/phase/range come from the stable ref.
   const fa = aliveEgg.fish[0], fb = aliveEgg.fish[1], fc = aliveEgg.fish[2];
-  const fishMoveA = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fa.freq + fa.phase) * fa.rangePx }] }));
-  const fishMoveB = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fb.freq + fb.phase) * fb.rangePx }] }));
-  const fishMoveC = useAnimatedStyle(() => ({ transform: [{ translateX: Math.sin(swim.value * TWO_PI * fc.freq + fc.phase) * fc.rangePx }] }));
-  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fa.freq + fa.phase) >= 0 ? -1 : 1 }] }));
-  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fb.freq + fb.phase) >= 0 ? -1 : 1 }] }));
-  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.cos(swim.value * TWO_PI * fc.freq + fc.phase) >= 0 ? -1 : 1 }] }));
+  const fishMoveA = useAnimatedStyle(() => {
+    const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[0], fishEscape.value[0], fishScatter.value, reducedMotion);
+    return { ...p, left: p.left - 17, top: p.top - 17 };
+  });
+  const fishMoveB = useAnimatedStyle(() => {
+    const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[1], fishEscape.value[1], fishScatter.value, reducedMotion);
+    return { ...p, left: p.left - 17, top: p.top - 17 };
+  });
+  const fishMoveC = useAnimatedStyle(() => {
+    const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[2], fishEscape.value[2], fishScatter.value, reducedMotion);
+    return { ...p, left: p.left - 17, top: p.top - 17 };
+  });
+  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[0].travel : Math.cos(swim.value * TWO_PI * fa.freq + fa.phase)) >= 0 ? -1 : 1 }] }));
+  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[1].travel : Math.cos(swim.value * TWO_PI * fb.freq + fb.phase)) >= 0 ? -1 : 1 }] }));
+  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[2].travel : Math.cos(swim.value * TWO_PI * fc.freq + fc.phase)) >= 0 ? -1 : 1 }] }));
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
   const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
@@ -1093,22 +1059,22 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // bobs with the ripple, and its glyph is clamped so it stays fully
   // inside the tank even when nearly full. Reduced motion → floats still.
   const duck = aliveEgg.duck;
-  const duckMoveStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: reducedMotion ? 0 : Math.sin(swim.value * TWO_PI + duck.phase) * duck.rangePx },
-      { translateY: reducedMotion ? 0 : (wavePhase.value - 0.5) * 4 }, // gentle ±2px bob on the waterline
-    ],
-  }));
   // Facing = sign of horizontal velocity (cos of the same phase); flip on
   // the inner glyph only so it can never affect position. 🦆 faces left.
   const duckFaceStyle = useAnimatedStyle(() => ({
     transform: [{ scaleX: !reducedMotion && Math.cos(swim.value * TWO_PI + duck.phase) >= 0 ? -1 : 1 }],
   }));
   const duckSurfaceStyle = useAnimatedStyle(() => {
-    const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    const x = duck.basePx + (reducedMotion ? 0 : Math.sin(swim.value * TWO_PI + duck.phase) * duck.rangePx);
+    const samples = fluidOffsets.value;
+    const sample = Math.max(0, Math.min(samples.length - 1, x / INTERIOR_WIDTH * samples.length - 0.5));
+    const a = Math.floor(sample), b = Math.min(samples.length - 1, a + 1);
+    const localOffset = (samples[a] || 0) + ((samples[b] || 0) - (samples[a] || 0)) * (sample - a);
+    const baseTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
+    const waterTop = fluidInverted.value ? INTERIOR_HEIGHT * waterFraction.value + localOffset : baseTop - localOffset;
     const wt = Number.isFinite(waterTop) ? Math.max(0, waterTop) : 0;
     const lift = Math.min(DUCK_LIFT_PX, wt);
-    return { top: lift === 0 ? 0 : -lift };
+    return { top: waterTop - baseTop - lift };
   });
 
   // ── Pelican (above-the-number lane): occasional visitor on a bounded
@@ -1192,7 +1158,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Removed: waitingMessage - no longer showing waiting UI
 
   // Handle tank tap - double-tap navigates to performance screen
-  const handleTankTap = useCallback(() => {
+  const handleNormalTankTap = useCallback(() => {
     const now = Date.now();
     const timeSinceLastTap = now - lastTankTapTimeRef.current;
 
@@ -1217,13 +1183,34 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
   }, [onTankLongPress]);
 
+  const handleFishTouch = (index: number) => {
+    if (!showFish || reducedMotion || !fishSceneActiveRef.current) return;
+    const angle = fluidOrientation.value;
+    const positions = aliveEgg.fish.slice(0, aliveEgg.fishCount).map((f, i) => roamingFishPosition(
+      INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, angle,
+      swim.value, f, fishEscape.value[i], fishScatter.value,
+    ));
+    const touched = positions[index];
+    if (!touched || touched.opacity === 0) return;
+    const directions = fishScatterDirections(positions, touched.left + 9, touched.top + 9, angle, 28, INTERIOR_WIDTH, INTERIOR_HEIGHT);
+    if (!directions) return;
+    lastTankTapTimeRef.current = 0;
+    cancelAnimation(fishScatter);
+    fishEscape.value = [...directions, ...fishEscape.value.slice(directions.length)];
+    fishScatter.value = 0;
+    fishScatter.value = withSequence(
+      withTiming(1, { duration: 160, easing: Easing.out(Easing.cubic) }),
+      withDelay(180, withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.ease) })),
+    );
+  };
+
   return (
     <View style={styles.wellView}>
       {/* Top section - tank and stats */}
       <View style={styles.topSection}>
         {/* Tank - double-tap for Performance, long-press to hide well */}
         <View style={styles.tankSection}>
-        <Pressable onPress={handleTankTap} onLongPress={handleTankLongPress} delayLongPress={500}>
+        <Pressable onPress={handleNormalTankTap} onLongPress={handleTankLongPress} delayLongPress={500}>
         <View style={styles.tankOuter}>
           {/* Tank count badge - at BOTTOM right */}
           <View style={styles.tankBadge}>
@@ -1231,25 +1218,36 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           </View>
           <View style={styles.tankInterior}>
             <View style={styles.waterWrapper}>
-              <Animated.View style={[styles.tankWater, waterStyle]} />
+              <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} />
             </View>
 
-            {/* Submerged critters (fish) — clipped to the water region so they
-                stay inside the water. pointer-events off. Never affects tank math. */}
-            <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
+            {/* Fish use the current fluid geometry to remain submerged under tilt. */}
+            <Animated.View pointerEvents="box-none" style={[styles.aliveLayer, aliveLayerStyle]}>
               {showFish && (
                 <>
-                  <Animated.View style={[styles.aliveFishWrap, { top: `${fa.topPct}%`, left: `${fa.leftPct}%` }, fishMoveA]}>
-                    <Animated.Text style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
+                  <Animated.View style={[styles.aliveFishWrap, fishMoveA]}>
+                    <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
+                      onPressIn={event => { event.stopPropagation(); handleFishTouch(0); }}
+                      onPress={event => event.stopPropagation()}>
+                      <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
+                    </Pressable>
                   </Animated.View>
                   {aliveEgg.fishCount > 1 && (
-                    <Animated.View style={[styles.aliveFishWrap, { top: `${fb.topPct}%`, left: `${fb.leftPct}%` }, fishMoveB]}>
-                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
+                    <Animated.View style={[styles.aliveFishWrap, fishMoveB]}>
+                      <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
+                      onPressIn={event => { event.stopPropagation(); handleFishTouch(1); }}
+                      onPress={event => event.stopPropagation()}>
+                      <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
+                    </Pressable>
                     </Animated.View>
                   )}
                   {aliveEgg.fishCount > 2 && (
-                    <Animated.View style={[styles.aliveFishWrap, { top: `${fc.topPct}%`, left: `${fc.leftPct}%` }, fishMoveC]}>
-                      <Animated.Text style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
+                    <Animated.View style={[styles.aliveFishWrap, fishMoveC]}>
+                      <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
+                      onPressIn={event => { event.stopPropagation(); handleFishTouch(2); }}
+                      onPress={event => event.stopPropagation()}>
+                      <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
+                    </Pressable>
                     </Animated.View>
                   )}
                 </>
@@ -1258,30 +1256,16 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
             {/* Surface layer — NOT clipped (so the wave crests show ABOVE the flat
                 blue edge; an overflow-hidden layer was eating them). Holds the
-                ripple crests + any floating critter, placed OFF-CENTRE so it never
+                any floating critter, placed OFF-CENTRE so it never
                 sits behind the level text. Clipped only by the tank interior. */}
             <Animated.View pointerEvents="none" style={[styles.aliveSurfaceLayer, aliveLayerStyle]}>
-              <Animated.View
-                style={[styles.aliveWaveRow, { top: -RIPPLE.crestPx, left: -RIPPLE.crestWidthPx }, rippleRowAStyle]}
-              >
-                {RIPPLE_HUMPS.map((k) => <View key={`a${k}`} style={styles.waveHumpA} />)}
-              </Animated.View>
-              <Animated.View
-                style={[
-                  styles.aliveWaveRow,
-                  { top: -RIPPLE.crestBPx, left: -RIPPLE.crestWidthPx + RIPPLE.rowOffsetBPx },
-                  rippleRowBStyle,
-                ]}
-              >
-                {RIPPLE_HUMPS.map((k) => <View key={`b${k}`} style={styles.waveHumpB} />)}
-              </Animated.View>
               {showFloat && aliveEgg.kind === 'duck' && (
                 // Rendered AFTER the water fill (later sibling ⇒ above the
                 // blue layer). Belly just in the waterline, most of the
                 // body above it; band + clamp keep it inside the tank.
                 <Animated.View
                   pointerEvents="none"
-                  style={[styles.aliveDuckWrap, { left: duck.basePx }, duckSurfaceStyle, duckMoveStyle]}
+                  style={[styles.aliveDuckWrap, duckSurfaceStyle]}
                 >
                   <Animated.Text
                     accessible={false}
@@ -1312,13 +1296,15 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               </Animated.View>
             )}
 
-            <Animated.View style={[styles.numberContainer, numberStyle]}>
+            <Animated.View pointerEvents="none" style={[styles.numberContainer, numberStyle]}>
               <Text style={levelSnapshot?.unavailable ? styles.tankUnavailableLabel : styles.tankNumber}>
                 {currentLevelDisplay}
               </Text>
             </Animated.View>
           </View>
-          <Image source={WellBuiltTankFrame} style={styles.tankFrame} resizeMode="stretch" />
+          <View pointerEvents="none" style={styles.tankFrame}>
+            <Image source={WellBuiltTankFrame} style={{ width: '100%', height: '100%' }} resizeMode="stretch" />
+          </View>
           
           {/* DOWN overlay - covers full tank */}
           {wellDown && (
@@ -2846,13 +2832,7 @@ const styles = StyleSheet.create({
     top: 0,
     justifyContent: 'flex-end',
   },
-  tankWater: {
-    backgroundColor: '#2563EB',
-    width: '100%',
-  },
-  // Alive-tank layers — both overlay the water (bottom-anchored, water height).
-  // aliveLayer CLIPS (submerged fish stay in the water); aliveSurfaceLayer does
-  // NOT clip, so wave crests / floats can sit at and above the surface line.
+  // Full-interior wildlife layers; shared fluid geometry places each animal.
   aliveLayer: {
     position: 'absolute',
     left: 0,
@@ -2866,43 +2846,22 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  // Ripple rows: top/left are set inline from the responsive RIPPLE
-  // geometry. Crests are WIDE and heavily OVERLAPPED (negative stride
-  // margin) so neighboring shoulders hide behind each other — the visible
-  // profile is a continuous shallow undulation with no V-shaped cusps.
-  aliveWaveRow: {
-    position: 'absolute',
-    flexDirection: 'row',
-  },
-  waveHumpA: {
-    width: RIPPLE.crestWidthPx,
-    height: RIPPLE.crestPx + 3, // +3 tucks the base into the fill — no seams
-    borderTopLeftRadius: RIPPLE.crestWidthPx / 2,
-    borderTopRightRadius: RIPPLE.crestWidthPx / 2,
-    marginRight: -(RIPPLE.crestWidthPx - RIPPLE.wavelengthPx), // overlap to stride λ
-    backgroundColor: '#2563EB', // SAME blue as the fill — only the crest above the flat edge shows
-  },
-  waveHumpB: {
-    width: RIPPLE.crestWidthPx,
-    height: RIPPLE.crestBPx + 3, // gentler second row — two unequal crests
-    borderTopLeftRadius: RIPPLE.crestWidthPx / 2,
-    borderTopRightRadius: RIPPLE.crestWidthPx / 2,
-    marginRight: -(RIPPLE.crestWidthPx - RIPPLE.wavelengthPx),
-    backgroundColor: '#2563EB',
-  },
   aliveFishWrap: {
+    width: 52, height: 52, alignItems: 'center', justifyContent: 'center',
     position: 'absolute',
   },
+  fishTouchTarget: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   aliveFishGlyph: {
     fontSize: 11,
     opacity: 0.3,
   },
-  // Duck rides the surface layer's top edge (= the waterline); its
+  // Duck follows the gravity-aligned fluid interface; its
   // vertical offset is animated (duckSurfaceStyle) so a nearly-full tank
   // can never push it out of the interior. Bigger + near-opaque so it
   // reads as FLOATING, not drowning (the old 13px/0.4 float sank into
   // the blue visually).
   aliveDuckWrap: {
+    width: DUCK_FONT_SIZE, height: DUCK_FONT_SIZE, alignItems: 'center', justifyContent: 'center',
     position: 'absolute',
   },
   aliveDuckGlyph: {

@@ -72,6 +72,7 @@ export interface WellConfig {
   avgFlowRate?: string;
   avgFlowRateMinutes?: number;
   route?: string;
+  operator?: string;
   isDown?: boolean;
 }
 

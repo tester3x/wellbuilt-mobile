@@ -2469,6 +2469,11 @@ export default function MainScreen() {
               <ActivityIndicator size="small" color="#60A5FA" style={styles.syncIndicator} />
             )}
           </TouchableOpacity>
+          {wellConfigMap?.[wells[currentIndex]]?.operator ? (
+            <Text style={styles.operatorName} numberOfLines={1}>
+              {wellConfigMap[wells[currentIndex]].operator}
+            </Text>
+          ) : null}
           <Text style={styles.positionIndicator}>{currentIndex + 1} {t('homeExtra.of')} {wells.length}</Text>
         </View>
 
@@ -2778,6 +2783,12 @@ const styles = StyleSheet.create({
     fontSize: hp('2.8%'),
     fontWeight: '700',
     color: '#F9FAFB',
+  },
+  operatorName: {
+    color: '#9CA3AF',
+    fontSize: hp('1.2%'),
+    maxWidth: SCREEN_WIDTH - 96,
+    marginTop: 1,
   },
   wellNameArrow: {
     position: 'absolute',

@@ -1183,7 +1183,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
   }, [onTankLongPress]);
 
-  const handleFishTouch = (index: number) => {
+  const fishTouchedRef = useRef(false);
+  const tankTouchOffset = useRef({ x: INTERIOR_LEFT, y: INTERIOR_TOP });
+  const handleFishTouch = (x: number, y: number) => {
     if (!showFish || reducedMotion || !fishSceneActiveRef.current) return;
     const angle = fluidOrientation.value;
     const positions = aliveEgg.fish.slice(0, aliveEgg.fishCount).map((f, i) => roamingFishPosition(
@@ -1210,8 +1212,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       <View style={styles.topSection}>
         {/* Tank - double-tap for Performance, long-press to hide well */}
         <View style={styles.tankSection}>
-        <Pressable onPress={handleNormalTankTap} onLongPress={handleTankLongPress} delayLongPress={500}>
-        <View style={styles.tankOuter}>
+        <Pressable onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
+          onPress={() => { if (!fishTouchedRef.current) handleNormalTankTap(); }}
+          onLongPress={() => { if (!fishTouchedRef.current) handleTankLongPress(); }} delayLongPress={500}>
+        <View pointerEvents="none" style={styles.tankOuter} onLayout={event => { const { x, y } = event.nativeEvent.layout; tankTouchOffset.current = { x: x + INTERIOR_LEFT, y: y + INTERIOR_TOP }; }}>
           {/* Tank count badge - at BOTTOM right */}
           <View style={styles.tankBadge}>
             <Text style={styles.tankBadgeText}>{numTanks}</Text>
@@ -1222,32 +1226,26 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             </View>
 
             {/* Fish use the current fluid geometry to remain submerged under tilt. */}
-            <Animated.View pointerEvents="box-none" style={[styles.aliveLayer, aliveLayerStyle]}>
+            <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
               {showFish && (
                 <>
                   <Animated.View style={[styles.aliveFishWrap, fishMoveA]}>
-                    <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
-                      onPressIn={event => { event.stopPropagation(); handleFishTouch(0); }}
-                      onPress={event => event.stopPropagation()}>
+                    <View style={styles.fishTouchTarget}>
                       <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
-                    </Pressable>
+                    </View>
                   </Animated.View>
                   {aliveEgg.fishCount > 1 && (
                     <Animated.View style={[styles.aliveFishWrap, fishMoveB]}>
-                      <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
-                      onPressIn={event => { event.stopPropagation(); handleFishTouch(1); }}
-                      onPress={event => event.stopPropagation()}>
+                      <View style={styles.fishTouchTarget}>
                       <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
-                    </Pressable>
+                    </View>
                     </Animated.View>
                   )}
                   {aliveEgg.fishCount > 2 && (
                     <Animated.View style={[styles.aliveFishWrap, fishMoveC]}>
-                      <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
-                      onPressIn={event => { event.stopPropagation(); handleFishTouch(2); }}
-                      onPress={event => event.stopPropagation()}>
+                      <View style={styles.fishTouchTarget}>
                       <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
-                    </Pressable>
+                    </View>
                     </Animated.View>
                   )}
                 </>

@@ -1192,10 +1192,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, angle,
       swim.value, f, fishEscape.value[i], fishScatter.value,
     ));
-    const touched = positions[index];
-    if (!touched || touched.opacity === 0) return;
-    const directions = fishScatterDirections(positions, touched.left + 9, touched.top + 9, angle, 28, INTERIOR_WIDTH, INTERIOR_HEIGHT);
+    const directions = fishScatterDirections(positions, x - tankTouchOffset.current.x, y - tankTouchOffset.current.y, angle, 42, INTERIOR_WIDTH, INTERIOR_HEIGHT);
     if (!directions) return;
+    fishTouchedRef.current = true;
     lastTankTapTimeRef.current = 0;
     cancelAnimation(fishScatter);
     fishEscape.value = [...directions, ...fishEscape.value.slice(directions.length)];

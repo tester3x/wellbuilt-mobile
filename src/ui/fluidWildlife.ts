@@ -84,3 +84,10 @@ export function roamingFishFacing(width:number,height:number,fill:number,inverte
  const vy=0.43*Math.max(0,height*fill-18)*depthFrequency*Math.cos(phase*depthFrequency+fish.phase*1.3)*(inverted?-1:1);
  return vx*Math.cos(angle)+vy*Math.sin(angle)>=0?-1:1;
 }
+
+/** Follow actual rendered movement, including the return from a scatter. */
+export function movementFishFacing(previous:{left:number;top:number}, current:{left:number;top:number}, angle:number, lastFacing:number) {
+ 'worklet';
+ const travel=(current.left-previous.left)*Math.cos(angle)+(current.top-previous.top)*Math.sin(angle);
+ return Math.abs(travel)<0.02?lastFacing:travel>=0?-1:1;
+}

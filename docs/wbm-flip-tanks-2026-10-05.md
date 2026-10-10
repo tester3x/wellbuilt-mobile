@@ -65,3 +65,9 @@ Version 72 build 60b8093b-61f8-499c-9f2d-34c89e2296cf completed from d26c734 and
 ## S24 installation — 2026-10-06
 
 At user request, installed the same version 72 APK in place on the connected Samsung S24 Ultra (SM-S928U). Confirmed versionCode 72 / versionName 2.1.0 and successful launch. No data clear or uninstall was performed.
+
+## Slower fish and stable tank touch — 2026-10-09
+
+Fetched desktop release checkpoint 1307682 and fast-forwarded the laptop fish branch; desktop operator labels and keyboard-safe driver login are included. Source 45a24bd slows the normal fish swim loop from 9 to 18 seconds while keeping duck speed and scatter timings. Facing projects horizontal/depth velocity onto the rotated glyph axis so upside-down swimming is forward. The tank owns the touch event and matches it against current fish positions using the tank layout offset; wildlife children are decorative and cannot intercept nested press events. Nearby fish touches consume normal tank gestures; distant double taps/long presses retain their actions. Reduced-motion and lifecycle gates remain.
+
+72 focused geometry, fluid and lifecycle tests passed before the touch follow-up; the 49 wildlife tests and Android Hermes export passed after it. Build 74 was canceled when the user reported scatter had never worked. Replacement Android build 75: 229a122e-7544-4161-93fd-0319bed6ad9f, source 45a24bd. Physical touch, inversion and speed acceptance remains pending.

@@ -73,3 +73,14 @@ export function roamingFishPosition(width:number,height:number,fill:number,sampl
  const depth=reduced?fish.topPct/100:0.5+0.43*Math.sin(phase*(fish.freq===1?2:1)+fish.phase*1.3);
  return submergedPosition(width,height,fill,samples,inverted,angle,lane,Math.max(0,Math.min(1,depth+escape.depth*strength)),escape.travel*width*0.3*strength);
 }
+
+/** Face the swim velocity projected onto the rotated fish's local axis. */
+export function roamingFishFacing(width:number,height:number,fill:number,inverted:boolean,angle:number,swim:number,fish:{freq:number;phase:number},escape:{travel:number},strength:number) {
+ 'worklet';
+ if(strength>0.1) return escape.travel>=0?-1:1;
+ const phase=swim*Math.PI*2;
+ const depthFrequency=fish.freq===1?2:1;
+ const vx=0.46*Math.max(0,width-18)*fish.freq*Math.cos(phase*fish.freq+fish.phase);
+ const vy=0.43*Math.max(0,height*fill-18)*depthFrequency*Math.cos(phase*depthFrequency+fish.phase*1.3)*(inverted?-1:1);
+ return vx*Math.cos(angle)+vy*Math.sin(angle)>=0?-1:1;
+}

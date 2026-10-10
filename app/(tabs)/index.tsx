@@ -39,7 +39,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTankFlip } from '../../src/hooks/useTankFlip';
 import { TankFlipWater } from '../../src/components/TankFlipWater';
-import { roamingFishPosition, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
+import { roamingFishPosition, roamingFishFacing, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
 import { TankPelican } from '../../src/components/TankPelican';
 import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -439,7 +439,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       sceneActive && !reducedMotion && (aliveEgg.kind === 'fish' || aliveEgg.kind === 'duck');
     if (!needsSwim) { cancelAnimation(swim); return; }
     swim.value = 0;
-    swim.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
+    swim.value = withRepeat(withTiming(1, { duration: aliveEgg.kind === 'fish' ? 18000 : 9000, easing: Easing.linear }), -1, false);
     return () => cancelAnimation(swim);
   }, [sceneActive, aliveEgg.kind, reducedMotion, swim]);
 
@@ -1047,9 +1047,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[2], fishEscape.value[2], fishScatter.value, reducedMotion);
     return { ...p, left: p.left - 17, top: p.top - 17 };
   });
-  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[0].travel : Math.cos(swim.value * TWO_PI * fa.freq + fa.phase)) >= 0 ? -1 : 1 }] }));
-  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[1].travel : Math.cos(swim.value * TWO_PI * fb.freq + fb.phase)) >= 0 ? -1 : 1 }] }));
-  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[2].travel : Math.cos(swim.value * TWO_PI * fc.freq + fc.phase)) >= 0 ? -1 : 1 }] }));
+  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: roamingFishFacing(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidInverted.value, fluidOrientation.value, swim.value, fa, fishEscape.value[0], fishScatter.value) }] }));
+  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: roamingFishFacing(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidInverted.value, fluidOrientation.value, swim.value, fb, fishEscape.value[1], fishScatter.value) }] }));
+  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: roamingFishFacing(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidInverted.value, fluidOrientation.value, swim.value, fc, fishEscape.value[2], fishScatter.value) }] }));
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
   const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;

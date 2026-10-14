@@ -18,6 +18,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
@@ -1568,6 +1569,8 @@ export default function MainScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [showMore, setShowMore] = useState(false); // WB-M "More" sheet (Route Me / Summary / Switch Apps)
   const [tempSelectedIndex, setTempSelectedIndex] = useState(0);
+  const [wellSearch, setWellSearch] = useState('');
+  const wellSearchQuery = wellSearch.trim().toLocaleLowerCase();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [isInitialSyncing, setIsInitialSyncing] = useState(true); // Start true
@@ -2185,8 +2188,11 @@ export default function MainScreen() {
     }
   }, [currentIndex]);
 
+  const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
+
   // Open picker for well selection
   const openPicker = () => {
+    setWellSearch('');
     setTempSelectedIndex(currentIndex);
     lastTickIndex.current = currentIndex;
     setPickerScrolling(false);
@@ -2564,7 +2570,7 @@ export default function MainScreen() {
       />
 
       {/* Well picker modal - works for both platforms */}
-      <Modal visible={showPicker} transparent animationType="fade">
+      <Modal visible={showPicker} transparent animationType="fade" onRequestClose={cancelPicker}>
         <TouchableWithoutFeedback onPress={cancelPicker}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
@@ -2576,6 +2582,46 @@ export default function MainScreen() {
               <Text style={styles.modalTitle}>{t('homeExtra.selectWell')}</Text>
               <View style={{ width: 50 }} />
             </View>
+              <View style={styles.wellSearchContainer}>
+                <Ionicons name="search" size={20} color="#9CA3AF" />
+                <TextInput
+                  style={styles.wellSearchInput}
+                  value={wellSearch}
+                  onChangeText={setWellSearch}
+                  placeholder={t('historyExtra.searchWells')}
+                  accessibilityLabel={t('historyExtra.searchWells')}
+                  placeholderTextColor="#9CA3AF"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                />
+                {wellSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setWellSearch('')} accessibilityLabel={t('homeExtra.cancel')}>
+                    <Ionicons name="close-circle" size={22} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {wellSearchQuery ? (
+                <FlatList
+                  data={matchingPickerWells}
+                  keyExtractor={item => item}
+                  style={styles.androidWheelList}
+                  keyboardShouldPersistTaps="handled"
+                  ListEmptyComponent={<Text style={styles.wellSearchEmpty}>{t('historyExtra.noWellsFound')}</Text>}
+                  renderItem={({item}) => (
+                    <Pressable style={styles.androidWheelRow} onPress={() => {
+                      const originalIndex = wells.indexOf(item);
+                      if (originalIndex < 0) return;
+                      previousIndex.current = currentIndex;
+                      setCurrentIndex(originalIndex);
+                      flatListRef.current?.scrollToIndex({index: originalIndex, animated: true});
+                      setShowPicker(false);
+                    }}>
+                      <Text style={[styles.androidWheelText, item === wells[currentIndex] && styles.androidWheelTextSelected]}>{item}</Text>
+                    </Pressable>
+                  )}
+                />
+              ) : (
               <View style={styles.androidWheelContainer}>
                 {/* Fixed highlight bar in center (visual only) */}
                 <View style={styles.androidWheelHighlight} pointerEvents="none" />
@@ -2653,6 +2699,7 @@ export default function MainScreen() {
                   }}
                 />
               </View>
+              )}
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -3306,6 +3353,12 @@ const styles = StyleSheet.create({
     maxHeight: hp('50%'),
     overflow: 'hidden',
   },
+  wellSearchContainer: {
+    flexDirection: 'row', alignItems: 'center', marginHorizontal: 12,
+    marginVertical: 10, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#111827',
+  },
+  wellSearchInput: {flex: 1, color: 'white', minHeight: 44, paddingHorizontal: 8, fontSize: 16},
+  wellSearchEmpty: {color: '#9CA3AF', textAlign: 'center', padding: 24},
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

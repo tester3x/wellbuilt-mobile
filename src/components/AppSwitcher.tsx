@@ -1,3 +1,4 @@
+const {useAppAccess}=require('../../modules/wellbuilt-platform/appAccess');
 import {buildPlatformAppEntryUrl} from '../services/platformRuntime.generated';
 import {getDriverSession} from '../services/driverAuth';
 // AppSwitcher — More-menu modal for switching between WB ecosystem apps.
@@ -69,10 +70,11 @@ const FALLBACK_APPS: AppEntry[] = [
 ];
 
 export default function AppSwitcher({ selfScheme, firestoreDb, getIdentity }: Props) {
-  const [apps, setApps] = useState<AppEntry[]>([]);
+  const [apps, setApps] = useState<AppEntry[]>(FALLBACK_APPS);
   const [tier, setTier] = useState<string>(FAIL_CLOSED_TIER);
   const tierSessionRef = useRef(createAppSwitcherTierSession());
   const [isOpen, setIsOpen] = useState(false);
+  const accountPermits=useAppAccess(isOpen);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(OPEN_APP_SWITCHER_EVENT, () => setIsOpen(true));
@@ -140,9 +142,9 @@ export default function AppSwitcher({ selfScheme, firestoreDb, getIdentity }: Pr
     return apps.filter(app =>
       app.enabled !== false &&
       app.deepLinkScheme !== effectiveSelfScheme &&
-      allowed.includes(app.requiredTier),
+      (accountPermits(app) ?? allowed.includes(app.requiredTier)),
     );
-  }, [apps, tier, effectiveSelfScheme]);
+  }, [apps, tier, effectiveSelfScheme,accountPermits]);
 
   const launchApp = useCallback(async (app: AppEntry) => {
     setIsOpen(false);

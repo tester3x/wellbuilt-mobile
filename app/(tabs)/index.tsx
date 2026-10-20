@@ -63,6 +63,8 @@ import {
 } from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder, syncOnForeground } from '../../src/services/backgroundSync';
 import { startingLevelFromSnapshot, estimatedSnapshotLevel } from '../../src/services/downSnapshot';
+import {hasEstablishedWbmEntry} from '../../src/services/platformEntry';
+import {getSessionGeneration} from '../../src/services/wbmSessionFence';
 import { downNumberTopPx } from '../../src/ui/downNumberLayout';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
@@ -1574,6 +1576,7 @@ export default function MainScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [isInitialSyncing, setIsInitialSyncing] = useState(true); // Start true
+
   const [isFreshInstall, setIsFreshInstall] = useState(false); // Determines which loading UI to show
   const [syncStatus, setSyncStatus] = useState<'auth' | 'sync' | 'refresh'>('auth');
   const [setupSteps, setSetupSteps] = useState({
@@ -1585,6 +1588,14 @@ export default function MainScreen() {
   const [pickerScrolling, setPickerScrolling] = useState(false);
   const [sliderActive, setSliderActive] = useState(false);
   const [wells, setWells] = useState<string[]>([]);
+  const homeStartedAt=useRef(Date.now());
+  const reportedHome=useRef(false);
+  useEffect(()=>{
+    if(!isInitialSyncing && wells.length>0 && !reportedHome.current){
+      reportedHome.current=true;
+      console.info('WBPERF_SPAN '+JSON.stringify({app:'mobile',category:'render',name:'home.content',durationMs:Math.max(0,Date.now()-homeStartedAt.current)}));
+    }
+  },[isInitialSyncing,wells.length]);
   const [wellConfigMap, setWellConfigMap] = useState<WellConfigMap | null>(null); // For route info
   const [loadBbls, setLoadBbls] = useState(140); // Load size from Summary screen
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false); // Sync indicator
@@ -1650,8 +1661,9 @@ export default function MainScreen() {
     }
   }, [currentIndex, isReady]);
 
-  // Background sync - Firebase version (no auth needed)
+  // Restore owner-bound cached content before background synchronization.
   useEffect(() => {
+    let cancelled = false;
     const initSync = async () => {
       console.log('[Main] ====== SETUP FLOW STARTED ======');
       console.log('[Main] Platform:', Platform.OS);
@@ -1661,39 +1673,21 @@ export default function MainScreen() {
       setSetupSteps(s => ({ ...s, auth: 'done' }));
 
       // Check if first install or returning user (cold/warm start)
-      const hasData = await AsyncStorage.getItem('@wellbuilt_has_synced');
-      console.log('[Main] Has previous sync data:', !!hasData);
-
+      // The old global has-synced flag is not account evidence. This read
+      // installs only the current SDK owner's fenced durable bootstrap.
+      const generation = getSessionGeneration();
+      const hasData = await hasEstablishedWbmEntry()
+        && await AsyncStorage.getItem('@wellbuilt_has_synced') === 'true';
+      if (cancelled || generation !== getSessionGeneration()) return;
       if (hasData) {
-        // COLD/WARM START - show splash and sync before showing UI
-        console.log('[Main] Cold/warm start detected - showing splash while syncing');
         setIsFreshInstall(false);
-
-        // Run sync and wait for it (with timeout)
-        const syncPromise = syncFromProcessedFolder();
-        const timeoutPromise = new Promise<number>((resolve) =>
-          setTimeout(() => resolve(-1), 8000) // 8 second timeout for cold start
-        );
-
-        const count = await Promise.race([syncPromise, timeoutPromise]);
-
-        if (count === -1) {
-          console.log('[Main] Cold start sync timed out, using cached data');
-        } else {
-          console.log('[Main] Cold start sync complete, updated', count, 'wells');
-        }
-
-        // Brief delay so splash doesn't flash too fast (min 800ms total)
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        console.log('[Main] ====== COLD START COMPLETE ======');
         setIsInitialSyncing(false);
-
-        // Trigger UI refresh
         setRefreshTrigger(prev => prev + 1);
-
-        // Start the regular polling timer
         startBackgroundSync();
+        // Cached content is already usable; cloud sync must not gate it.
+        void syncFromProcessedFolder().then(() => {
+          if (!cancelled && generation === getSessionGeneration()) setRefreshTrigger(prev => prev + 1);
+        }).catch(() => { console.info('[Main] Background refresh deferred; cached data retained'); });
         return;
       }
 
@@ -1784,6 +1778,7 @@ export default function MainScreen() {
       }
     });
     return () => {
+      cancelled = true;
       subscription.remove();
       stopBackgroundSync();
     };

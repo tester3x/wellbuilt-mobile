@@ -12,6 +12,22 @@ import NetInfo from "@react-native-community/netinfo";
 import { uploadTankPacket, uploadEditPacket, mintPacketId } from "./firebase";
 import { setPullSyncStatus } from "./pullHistory";
 
+import {newPlatformConnectionState,notePlatformDeliveryResult,platformDeliveryMayAttempt,platformDeliveryWakeDelay} from './platformRuntime.generated';
+
+let deliveryState=newPlatformConnectionState();
+let retryWake:ReturnType<typeof setTimeout>|null=null;
+let monitorRunning=false;
+let wakeGeneration=0;
+async function scheduleRetryWake():Promise<void> {
+  const generation=++wakeGeneration;
+  if(retryWake){clearTimeout(retryWake);retryWake=null;}
+  if(!monitorRunning)return;
+  const queue=await getQueuedPackets();
+  if(generation!==wakeGeneration||!monitorRunning)return;
+  const delay=platformDeliveryWakeDelay(deliveryState,Date.now(),_currentOnlineState,queue.map(p=>p.nextAttemptAt));
+  if(delay!==null)retryWake=setTimeout(()=>{retryWake=null;void flushQueue().catch(()=>{});},delay);
+}
+
 const QUEUE_STORAGE_KEY = "@wellbuilt_packet_queue";
 
 // GS3 durability rules: a queued packet is NEVER silently discarded.
@@ -111,6 +127,7 @@ export async function queuePacket(
   });
 
   await saveQueue(queue);
+  void scheduleRetryWake().catch(()=>{});
   console.log(`[PacketQueue] Queued ${type} packet:`, id, packetId ?? "");
 
   return id;
@@ -222,14 +239,17 @@ export async function isOnline(): Promise<boolean> {
 // a replay is idempotent — uploadTankPacket honors the supplied id and the
 // server sees the SAME identity on every attempt.
 async function sendQueuedPacket(packet: QueuedPacket): Promise<{ ok: boolean; error?: string; permanentReason?: string }> {
+  const started=Date.now();
   try {
     if (packet.type === "pull") {
       await uploadTankPacket(packet.data);
     } else if (packet.type === "edit") {
       await uploadEditPacket(packet.data);
     }
+    deliveryState=notePlatformDeliveryResult(deliveryState,{ok:true},Date.now());
     return { ok: true };
   } catch (error: any) {
+    deliveryState=notePlatformDeliveryResult(deliveryState,{ok:false,error,elapsedMs:Date.now()-started},Date.now());
     console.log("[PacketQueue] Send failed:", packet.id, error);
     // Phase 4: a structured PERMANENT refusal (invalid/unauthorized/
     // precondition) can never succeed by retrying — surface its reason so
@@ -266,12 +286,14 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
     return await flushQueueInner();
   } finally {
     _flushInProgress = false;
+    await scheduleRetryWake().catch(()=>{});
   }
 }
 
 async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
   const online = await isOnline();
-  if (!online) {
+  _currentOnlineState=online;
+  if (!platformDeliveryMayAttempt(deliveryState,Date.now(),online)) {
     console.log("[PacketQueue] Still offline, skipping flush");
     return { sent: 0, failed: 0 };
   }
@@ -293,6 +315,7 @@ async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
 
   for (const packet of queue) {
     const nowMs = Date.now();
+    if(!platformDeliveryMayAttempt(deliveryState,nowMs,_currentOnlineState))break;
     if (packet.nextAttemptAt && packet.nextAttemptAt > nowMs) {
       deferred++;
       continue; // backing off — not an attempt, not a failure
@@ -375,6 +398,7 @@ export async function retryPacketNow(queueId: string): Promise<{ attempted: bool
   const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
   const entry = queue.find(p => p.id === queueId);
   if (!entry) return { attempted: false, sent: 0, failed: 0 };
+  if(!platformDeliveryMayAttempt(deliveryState,Date.now(),await isOnline()))return {attempted:false,sent:0,failed:0};
   entry.nextAttemptAt = null; // driver asked — retry immediately
   await saveQueue(queue);
   const result = await flushQueue();
@@ -421,6 +445,7 @@ let unsubscribeNetInfo: (() => void) | null = null;
 
 export function startNetworkMonitor(): void {
   if (unsubscribeNetInfo) return; // Already monitoring
+  monitorRunning=true;
 
   // Listen for network state changes — flush queue when connection is restored
   unsubscribeNetInfo = NetInfo.addEventListener(async (state) => {
@@ -435,6 +460,7 @@ export function startNetworkMonitor(): void {
       }
     }
 
+    if(!nowOnline)void scheduleRetryWake().catch(()=>{});
     if (nowOnline && wasOffline) {
       console.log("[PacketQueue] Network restored, flushing queue...");
       await flushQueue();
@@ -444,12 +470,16 @@ export function startNetworkMonitor(): void {
   // Initial state check
   NetInfo.fetch().then((state) => {
     _currentOnlineState = state.isConnected === true && state.isInternetReachable !== false;
+    void flushQueue().catch(()=>{});
   });
 
   console.log("[PacketQueue] Network monitor started");
 }
 
 export function stopNetworkMonitor(): void {
+  monitorRunning=false;
+  ++wakeGeneration;
+  if(retryWake){clearTimeout(retryWake);retryWake=null;}
   if (unsubscribeNetInfo) {
     unsubscribeNetInfo();
     unsubscribeNetInfo = null;
@@ -495,9 +525,11 @@ export async function smartUploadTankPacket(params: {
   const packetTimestamp = packetId.slice(0, 15);
   const online = await isOnline();
 
-  if (online) {
+  if (platformDeliveryMayAttempt(deliveryState,Date.now(),online)) {
+    const started=Date.now();
     try {
       const result = await uploadTankPacket(stableParams);
+      deliveryState=notePlatformDeliveryResult(deliveryState,{ok:true},Date.now());
       // Same recovery contract as flushed packets: keep the payload until
       // the reconciler confirms a server verdict.
       try { await rememberSubmittedPayload(packetId, stableParams); } catch {}
@@ -509,6 +541,7 @@ export async function smartUploadTankPacket(params: {
         wellName: result.wellName,
       };
     } catch (error: any) {
+      deliveryState=notePlatformDeliveryResult(deliveryState,{ok:false,error,elapsedMs:Date.now()-started},Date.now());
       // Network error during send - queue it (same identity; the eventual
       // replay is idempotent even if this PUT actually landed server-side)
       console.log(`[PacketQueue] Upload FAILED for ${params.wellName}: ${error.message} (${error.name})`);
@@ -531,7 +564,7 @@ export async function smartUploadTankPacket(params: {
       packetId,
       packetTimestamp,
       wellName: params.wellName,
-      error: "Queued for later (offline)",
+      error: "Saved on device; will send when connected.",
     };
   }
 }
@@ -551,15 +584,18 @@ export async function smartUploadEditPacket(params: {
 }): Promise<UploadResult> {
   const online = await isOnline();
 
-  if (online) {
+  if (platformDeliveryMayAttempt(deliveryState,Date.now(),online)) {
+    const started=Date.now();
     try {
       const result = await uploadEditPacket(params);
+      deliveryState=notePlatformDeliveryResult(deliveryState,{ok:true},Date.now());
       return {
         success: true,
         queued: false,
         wellName: result.wellName,
       };
     } catch (error: any) {
+      deliveryState=notePlatformDeliveryResult(deliveryState,{ok:false,error,elapsedMs:Date.now()-started},Date.now());
       console.log(`[PacketQueue] Edit FAILED for ${params.wellName}: ${error.message} (${error.name})`);
       const queueId = await queuePacket("edit", params);
       return {
@@ -573,7 +609,7 @@ export async function smartUploadEditPacket(params: {
     return {
       success: false,
       queued: true,
-      error: "Queued for later (offline)",
+      error: "Saved on device; will send when connected.",
     };
   }
 }

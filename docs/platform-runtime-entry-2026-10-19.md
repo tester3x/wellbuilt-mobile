@@ -5,3 +5,7 @@ Mobile: general app-open and cold desktop entry use the existing fenced, server-
 Canonical source: tester3x/wellbuilt-contracts, codex/platform-entry-offline-20261019, checkpoint 245278d. Runtime source SHA256: dcee868372558608a0e79eb521cd487f9b2f5a1e6a7085c8ea301deaaba3eec6. Mirrors are generated and byte checked; do not independently edit them.
 
 Source-only checkpoint. No APK, deployment or device certification. Still required platform-wide: authenticated device/account broker, canonical server-derived app-access list propagation after any-app login, common connection hold/recovery integration in every durable queue, and offline/reconnect/restart device acceptance. Pure runtime/URI/quality tests pass (20) but do not certify app behavior. Keep these facts separate from the tested cached-entry adapters.
+
+
+Delivery checkpoint (unbuilt): packet sends now observe the common transport-failure hold. A single generation-fenced timer retries due durable packets automatically, including weak service that still reports online; disconnected/empty queues have no polling timer. Existing stable IDs, per-entry backoff and submitted-versus-processed status remain. Packet/recovery/entry tests: 24 pass. Other queues and the shared any-app account broker remain unfinished.
+

@@ -57,6 +57,7 @@ jest.mock('../secureOperationalApi', () => ({
   submitWbmEditV3: (p: unknown) => mockSubmitWbmEditV3(p),
 }));
 
+import {platformDelivery} from '../platformDelivery';
 import { uploadEditPacket, uploadEditPacketV3, uploadTankPacket } from '../firebase';
 import {
   EditPacketParams,
@@ -113,6 +114,8 @@ const seedHistory = async (packetId: string, syncStatus: any) => {
 beforeEach(async () => {
   for (const k of Object.keys(mockStore)) delete mockStore[k];
   mockOnline.value = true;
+  platformDelivery.setReachable(true);
+  platformDelivery.record({ok:true});
   mockedUploadTank.mockReset();
   mockedUploadEditV3.mockReset();
   mockedUploadEditV3.mockResolvedValue({ ok: true, status: 'accepted', wellName: 'Gunslinger 3' });
@@ -543,6 +546,7 @@ describe('read-blocked reconciliation (permission/auth) must not strand the edit
     expect(mockedUploadEditV3).not.toHaveBeenCalled();
     // Even back online, nothing to deliver early (the edit lives inside the queued CREATE).
     mockOnline.value = true;
+    platformDelivery.setReachable(true); // NetInfo reconnect event in the running app.
     await processEditOperations(denied);
     expect(mockedUploadEditV3).not.toHaveBeenCalled();
   });
@@ -830,6 +834,7 @@ describe('edit acknowledgment + lost receipt + duplicates', () => {
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()[0].state).toBe('edit_submitted'); // offline → held, no status call
     mockOnline.value = true;
+    platformDelivery.setReachable(true); // NetInfo reconnect event in the running app.
     await processEditOperations(makeFetch({ [`packets/processed/${PID}`]: { packetId: PID } }));
     expect(rawOps()).toHaveLength(0);
     expect(mockedUploadEditV3).toHaveBeenCalledTimes(1);

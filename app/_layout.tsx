@@ -39,10 +39,12 @@ const initializeWellAlertsLazy = async () => {
 SplashScreen.preventAutoHideAsync();
 
 function MobileRootContent() {
+  const platformAccountReady=require("../modules/wellbuilt-platform/AccountGate").useAccountReady() as boolean;
   const [appIsReady, setAppIsReady] = useState(false);
   const { showWhatsNew, changelog, dismissWhatsNew } = useWhatsNew();
 
   useEffect(() => {
+    if(!platformAccountReady)return;
     // Configure Android system navigation — keep visible and non-immersive
     const configureSystemNav = () => {
       if (Platform.OS === 'android') {
@@ -120,7 +122,7 @@ function MobileRootContent() {
     // Flush any packets that were queued while app was closed
     flushQueue();
     return () => appStateSub.remove();
-  }, []);
+  }, [platformAccountReady]);
 
   // IMPORTANT: Always render the Stack — even during loading.
   // Returning null here kills Expo Router deep link matching

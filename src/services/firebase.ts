@@ -1,3 +1,4 @@
+import {platformDelivery as delivery} from './platformDelivery';
 // src/services/firebase.ts
 // Firebase Realtime Database version - replaces OneDrive/Graph API
 // Much simpler: no OAuth, no access tokens, just HTTP calls to Firebase
@@ -632,7 +633,7 @@ export const uploadEditPacketV3 = async (params: {
     wellDownIsAuthoritative: params.wellDownIsAuthoritative,
   });
   const { submitWbmEditV3 } = await import('./secureOperationalApi');
-  const result = await submitWbmEditV3(packet);
+  const result = await delivery.attempt(()=>submitWbmEditV3(packet));
   return {
     packet,
     wellName: params.wellName,

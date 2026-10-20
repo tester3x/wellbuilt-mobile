@@ -13,10 +13,12 @@ import { type BootstrapRoute } from '../src/services/eligibility';
 import { notifyAuthenticated } from '../src/services/deliveryStatus';
 
 export default function Index() {
+  const platformAccountReady=require("../modules/wellbuilt-platform/AccountGate").useAccountReady() as boolean;
   const [checking, setChecking] = useState(true);
   const [dest, setDest] = useState<BootstrapRoute>('/driver-login');
 
   useEffect(() => {
+    if(!platformAccountReady)return;
     const check = async () => {
       void import('../src/services/deviceAccount').then(m=>m.publishMobileDeviceAccount()).catch(()=>{});
       if(await hasEstablishedWbmEntry()){
@@ -56,7 +58,7 @@ export default function Index() {
       setDest('/session-verify');
       setChecking(false);
     });
-  }, []);
+  }, [platformAccountReady]);
 
   if (checking) {
     return (

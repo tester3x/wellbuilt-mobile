@@ -11,8 +11,10 @@ import * as Linking from 'expo-linking';
 import { beginWbmPkce } from '../src/services/ssoPkce';
 
 export default function WbmSsoStart() {
+  const platformAccountReady=require("../modules/wellbuilt-platform/AccountGate").useAccountReady() as boolean;
   const params=useLocalSearchParams();const ran=useRef(false);const [error,setError]=useState(false);
   useEffect(() => {
+    if(!platformAccountReady)return;
     if(ran.current)return;ran.current=true;
     (async () => {
       await import('../src/services/deviceAccount').then(m=>m.restoreMobileDeviceAccount());
@@ -28,7 +30,7 @@ export default function WbmSsoStart() {
     })().catch((err) => {
       console.info('[WBM-SSO] entry unavailable');setError(true);
     });
-  }, []);
+  }, [platformAccountReady]);
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
       {error?<Text>Could not establish Mobile access. Your saved work is preserved. Return to Suite and retry.</Text>:<ActivityIndicator />}

@@ -12,21 +12,9 @@ import NetInfo from "@react-native-community/netinfo";
 import { uploadTankPacket, uploadEditPacket, mintPacketId } from "./firebase";
 import { setPullSyncStatus } from "./pullHistory";
 
-import {newPlatformConnectionState,notePlatformDeliveryResult,platformDeliveryMayAttempt,platformDeliveryWakeDelay} from './platformRuntime.generated';
-
-let deliveryState=newPlatformConnectionState();
-let retryWake:ReturnType<typeof setTimeout>|null=null;
-let monitorRunning=false;
-let wakeGeneration=0;
-async function scheduleRetryWake():Promise<void> {
-  const generation=++wakeGeneration;
-  if(retryWake){clearTimeout(retryWake);retryWake=null;}
-  if(!monitorRunning)return;
-  const queue=await getQueuedPackets();
-  if(generation!==wakeGeneration||!monitorRunning)return;
-  const delay=platformDeliveryWakeDelay(deliveryState,Date.now(),_currentOnlineState,queue.map(p=>p.nextAttemptAt));
-  if(delay!==null)retryWake=setTimeout(()=>{retryWake=null;void flushQueue().catch(()=>{});},delay);
-}
+import {platformDelivery as delivery} from './platformDelivery';
+let unregisterDelivery:(()=>void)|null=null;
+async function scheduleRetryWake():Promise<void>{await delivery.changed();}
 
 const QUEUE_STORAGE_KEY = "@wellbuilt_packet_queue";
 
@@ -228,6 +216,7 @@ export async function isOnline(): Promise<boolean> {
     const state = await NetInfo.fetch();
     const online = state.isConnected === true && state.isInternetReachable !== false;
     console.log(`[PacketQueue] isOnline: ${online ? 'YES' : 'NO'} (type=${state.type}, connected=${state.isConnected}, reachable=${state.isInternetReachable})`);
+    delivery.setReachable(online);
     return online;
   } catch (err: any) {
     console.log(`[PacketQueue] isOnline: EXCEPTION ${err.message}`);
@@ -239,17 +228,14 @@ export async function isOnline(): Promise<boolean> {
 // a replay is idempotent — uploadTankPacket honors the supplied id and the
 // server sees the SAME identity on every attempt.
 async function sendQueuedPacket(packet: QueuedPacket): Promise<{ ok: boolean; error?: string; permanentReason?: string }> {
-  const started=Date.now();
   try {
     if (packet.type === "pull") {
-      await uploadTankPacket(packet.data);
+      await delivery.attempt(()=>uploadTankPacket(packet.data));
     } else if (packet.type === "edit") {
-      await uploadEditPacket(packet.data);
+      await delivery.attempt(()=>uploadEditPacket(packet.data));
     }
-    deliveryState=notePlatformDeliveryResult(deliveryState,{ok:true},Date.now());
     return { ok: true };
   } catch (error: any) {
-    deliveryState=notePlatformDeliveryResult(deliveryState,{ok:false,error,elapsedMs:Date.now()-started},Date.now());
     console.log("[PacketQueue] Send failed:", packet.id, error);
     // Phase 4: a structured PERMANENT refusal (invalid/unauthorized/
     // precondition) can never succeed by retrying — surface its reason so
@@ -293,7 +279,7 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
 async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
   const online = await isOnline();
   _currentOnlineState=online;
-  if (!platformDeliveryMayAttempt(deliveryState,Date.now(),online)) {
+  if ((!online || !delivery.canAttempt())) {
     console.log("[PacketQueue] Still offline, skipping flush");
     return { sent: 0, failed: 0 };
   }
@@ -315,7 +301,7 @@ async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
 
   for (const packet of queue) {
     const nowMs = Date.now();
-    if(!platformDeliveryMayAttempt(deliveryState,nowMs,_currentOnlineState))break;
+    if(!delivery.canAttempt())break;
     if (packet.nextAttemptAt && packet.nextAttemptAt > nowMs) {
       deferred++;
       continue; // backing off — not an attempt, not a failure
@@ -398,7 +384,7 @@ export async function retryPacketNow(queueId: string): Promise<{ attempted: bool
   const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
   const entry = queue.find(p => p.id === queueId);
   if (!entry) return { attempted: false, sent: 0, failed: 0 };
-  if(!platformDeliveryMayAttempt(deliveryState,Date.now(),await isOnline()))return {attempted:false,sent:0,failed:0};
+  if((!await isOnline() || !delivery.canAttempt()))return {attempted:false,sent:0,failed:0};
   entry.nextAttemptAt = null; // driver asked — retry immediately
   await saveQueue(queue);
   const result = await flushQueue();
@@ -445,7 +431,9 @@ let unsubscribeNetInfo: (() => void) | null = null;
 
 export function startNetworkMonitor(): void {
   if (unsubscribeNetInfo) return; // Already monitoring
-  monitorRunning=true;
+  unregisterDelivery=delivery.register('mobile-packets',{
+    pending:async()=>(await getQueuedPackets()).map(p=>p.nextAttemptAt),flush:flushQueue,
+  });
 
   // Listen for network state changes — flush queue when connection is restored
   unsubscribeNetInfo = NetInfo.addEventListener(async (state) => {
@@ -454,6 +442,7 @@ export function startNetworkMonitor(): void {
 
     if (_currentOnlineState !== nowOnline) {
       _currentOnlineState = nowOnline;
+      delivery.setReachable(nowOnline);
       console.log(`[PacketQueue] Connectivity: ${nowOnline ? 'ONLINE' : 'OFFLINE'}`);
       for (const listener of _connectivityListeners) {
         try { listener(nowOnline); } catch {}
@@ -477,9 +466,7 @@ export function startNetworkMonitor(): void {
 }
 
 export function stopNetworkMonitor(): void {
-  monitorRunning=false;
-  ++wakeGeneration;
-  if(retryWake){clearTimeout(retryWake);retryWake=null;}
+  unregisterDelivery?.();unregisterDelivery=null;
   if (unsubscribeNetInfo) {
     unsubscribeNetInfo();
     unsubscribeNetInfo = null;
@@ -525,12 +512,10 @@ export async function smartUploadTankPacket(params: {
   const packetTimestamp = packetId.slice(0, 15);
   const online = await isOnline();
 
-  if (platformDeliveryMayAttempt(deliveryState,Date.now(),online)) {
-    const started=Date.now();
+  if ((online && delivery.canAttempt())) {
     try {
-      const result = await uploadTankPacket(stableParams);
-      deliveryState=notePlatformDeliveryResult(deliveryState,{ok:true},Date.now());
-      // Same recovery contract as flushed packets: keep the payload until
+      const result = await delivery.attempt(()=>uploadTankPacket(stableParams));
+        // Same recovery contract as flushed packets: keep the payload until
       // the reconciler confirms a server verdict.
       try { await rememberSubmittedPayload(packetId, stableParams); } catch {}
       return {
@@ -541,8 +526,7 @@ export async function smartUploadTankPacket(params: {
         wellName: result.wellName,
       };
     } catch (error: any) {
-      deliveryState=notePlatformDeliveryResult(deliveryState,{ok:false,error,elapsedMs:Date.now()-started},Date.now());
-      // Network error during send - queue it (same identity; the eventual
+        // Network error during send - queue it (same identity; the eventual
       // replay is idempotent even if this PUT actually landed server-side)
       console.log(`[PacketQueue] Upload FAILED for ${params.wellName}: ${error.message} (${error.name})`);
       await queuePacket("pull", stableParams);
@@ -584,19 +568,16 @@ export async function smartUploadEditPacket(params: {
 }): Promise<UploadResult> {
   const online = await isOnline();
 
-  if (platformDeliveryMayAttempt(deliveryState,Date.now(),online)) {
-    const started=Date.now();
+  if ((online && delivery.canAttempt())) {
     try {
-      const result = await uploadEditPacket(params);
-      deliveryState=notePlatformDeliveryResult(deliveryState,{ok:true},Date.now());
-      return {
+      const result = await delivery.attempt(()=>uploadEditPacket(params));
+        return {
         success: true,
         queued: false,
         wellName: result.wellName,
       };
     } catch (error: any) {
-      deliveryState=notePlatformDeliveryResult(deliveryState,{ok:false,error,elapsedMs:Date.now()-started},Date.now());
-      console.log(`[PacketQueue] Edit FAILED for ${params.wellName}: ${error.message} (${error.name})`);
+        console.log(`[PacketQueue] Edit FAILED for ${params.wellName}: ${error.message} (${error.name})`);
       const queueId = await queuePacket("edit", params);
       return {
         success: false,

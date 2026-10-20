@@ -708,6 +708,7 @@ export default function SettingsScreen() {
                     style: 'destructive',
                     onPress: async () => {
                       const { clearDriverSession } = await import('../src/services/driverAuth');
+                      await import('../src/services/deviceAccount').then(m=>m.revokeMobileDeviceAccount()).catch(()=>{});
                       await clearDriverSession();
                       router.replace('/driver-login');
                     },

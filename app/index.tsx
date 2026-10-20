@@ -18,6 +18,7 @@ export default function Index() {
 
   useEffect(() => {
     const check = async () => {
+      void import('../src/services/deviceAccount').then(m=>m.publishMobileDeviceAccount()).catch(()=>{});
       if(await hasEstablishedWbmEntry()){
         setDest('/(tabs)');setChecking(false);notifyAuthenticated();
         void refreshEstablishedWbmEntry().then(result=>{if(result!=='keep')router.replace(result);});

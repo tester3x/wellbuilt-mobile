@@ -38,7 +38,7 @@ const initializeWellAlertsLazy = async () => {
 // Keep splash visible while app loads
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function MobileRootContent() {
   const [appIsReady, setAppIsReady] = useState(false);
   const { showWhatsNew, changelog, dismissWhatsNew } = useWhatsNew();
 
@@ -188,3 +188,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#05060B',
   },
 });
+
+const DeviceAccountGate=require('../modules/wellbuilt-platform/AccountGate');
+const restoreDeviceAccount=()=>import('../src/services/deviceAccount').then(m=>m.restoreMobileDeviceAccount());
+const clearDeviceAccount=()=>import('../src/services/driverAuth').then(m=>m.clearDriverSession());
+export default function RootLayout(){return <DeviceAccountGate restore={restoreDeviceAccount} clearLocal={clearDeviceAccount}><MobileRootContent /></DeviceAccountGate>;}

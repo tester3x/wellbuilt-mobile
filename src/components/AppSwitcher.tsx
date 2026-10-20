@@ -1,3 +1,5 @@
+import {buildPlatformAppEntryUrl} from '../services/platformRuntime.generated';
+import {getDriverSession} from '../services/driverAuth';
 // AppSwitcher — More-menu modal for switching between WB ecosystem apps.
 // Opened by DeviceEventEmitter 'appSwitcherOpen' (More → Switch Apps).
 // No floating badge. Apps loaded from Firestore app_registry, filtered by
@@ -144,6 +146,13 @@ export default function AppSwitcher({ selfScheme, firestoreDb, getIdentity }: Pr
 
   const launchApp = useCallback(async (app: AppEntry) => {
     setIsOpen(false);
+    const target={scheme:app.deepLinkScheme,androidPackage:app.androidPackage};
+    const bare=buildPlatformAppEntryUrl(target);
+    if(bare?.endsWith('://')){try{await Linking.openURL(bare);}catch{Alert.alert('Not Installed',`${app.name} is not installed on this device.`);}return;}
+    const session=await getDriverSession();
+    const general=buildPlatformAppEntryUrl(target,session?.driverId&&session.companyId?{driverId:session.driverId,companyId:session.companyId}:undefined);
+    if(general){try{await Linking.openURL(general);}catch{Alert.alert('Not Installed',`${app.name} is not installed on this device.`);}return;}
+
     try {
       let url = `${app.deepLinkScheme}://`;
 

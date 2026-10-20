@@ -1,4 +1,5 @@
-import { Redirect } from 'expo-router';
+import { Redirect,router } from 'expo-router';
+import {hasEstablishedWbmEntry,refreshEstablishedWbmEntry} from '../src/services/platformEntry';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import {
@@ -17,6 +18,11 @@ export default function Index() {
 
   useEffect(() => {
     const check = async () => {
+      if(await hasEstablishedWbmEntry()){
+        setDest('/(tabs)');setChecking(false);notifyAuthenticated();
+        void refreshEstablishedWbmEntry().then(result=>{if(result!=='keep')router.replace(result);});
+        return;
+      }
       const hasLocalSession = await isDriverVerified();
       if (!hasLocalSession) {
         setDest('/driver-login');

@@ -11,12 +11,14 @@ import { completeAuthenticatedSession } from '../src/services/driverAuth';
 import { authorizeEstablishedSession } from '../src/services/postAuthGate';
 
 export default function WbmSsoCallback() {
+  const platformAccountReady=require("../modules/wellbuilt-platform/AccountGate").useAccountReady() as boolean;
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const used = useRef(false);
 
   useEffect(() => {
+    if(!platformAccountReady)return;
     if (used.current) return;
     used.current = true;
     (async () => {
@@ -44,7 +46,7 @@ export default function WbmSsoCallback() {
       setError('sso_failed');
       router.replace('/driver-login');
     });
-  }, [params.code, params.state, params.error]);
+  }, [params.code, params.state, params.error,platformAccountReady]);
 
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>

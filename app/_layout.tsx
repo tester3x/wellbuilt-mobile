@@ -194,4 +194,4 @@ const styles = StyleSheet.create({
 const DeviceAccountGate=require('../modules/wellbuilt-platform/AccountGate');
 const restoreDeviceAccount=()=>import('../src/services/deviceAccount').then(m=>m.restoreMobileDeviceAccount());
 const clearDeviceAccount=()=>import('../src/services/driverAuth').then(m=>m.clearDriverSession());
-export default function RootLayout(){return <DeviceAccountGate restore={restoreDeviceAccount} clearLocal={clearDeviceAccount}><MobileRootContent /></DeviceAccountGate>;}
+export default function RootLayout(){return <DeviceAccountGate restore={restoreDeviceAccount} returnToHub={()=>{void import('react-native').then(m=>m.Linking.openURL('wellbuilt-suite://home'));}} clearLocal={clearDeviceAccount}><MobileRootContent /></DeviceAccountGate>;}

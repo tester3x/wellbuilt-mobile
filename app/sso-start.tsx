@@ -17,7 +17,6 @@ export default function WbmSsoStart() {
     if(!platformAccountReady)return;
     if(ran.current)return;ran.current=true;
     (async () => {
-      await import('../src/services/deviceAccount').then(m=>m.restoreMobileDeviceAccount());
       const hint=parsePlatformOwnerHint(params);
       if(!hint.ok){setError(true);return;}
       if(await hasEstablishedWbmEntry(hint.owner||undefined)){

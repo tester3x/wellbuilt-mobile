@@ -5,8 +5,9 @@ import {createDeviceAccountClient,type DeviceAccountNative} from './deviceAccoun
 const native=require('../../modules/wellbuilt-platform') as DeviceAccountNative|null;
 export const mobileDeviceAccount=createDeviceAccountClient(native,async(name,data)=>(await httpsCallable(getFunctions(getFirebaseApp(),'us-central1'),name,{timeout:15000})(data)).data);
 export async function restoreMobileDeviceAccount(){
- await waitForAuthUser();const {getDriverSession,completeAuthenticatedSession}=await import('./driverAuth');
+ await waitForAuthUser();const capturedUser=getFirebaseAuth().currentUser;const {getDriverSession,completeAuthenticatedSession}=await import('./driverAuth');
  const saved=await getDriverSession(),uid=getFirebaseAuth().currentUser?.uid;
+ if(getFirebaseAuth().currentUser!==capturedUser)throw Object.assign(Error('Account changed during local restore.'),{code:'platform/superseded'});
  return mobileDeviceAccount.restore('mobile',uid&&saved?.companyId?{uid,driverId:saved.driverId,companyId:saved.companyId}:null,async reply=>{
   if(saved && (saved.driverId!==reply.access.owner.driverId||saved.companyId!==reply.access.owner.companyId)){
     for(const key of ['@wellbuilt_packet_queue','@wellbuilt_edit_ops','@wellbuilt_submitted_payloads']){

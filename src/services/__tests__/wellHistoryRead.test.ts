@@ -49,6 +49,14 @@ describe('actual well-history token / fetch / body read deadline', () => {
     fetcher.mockResolvedValue({ ok: true, json: async () => ({}) });
     const fresh = await request('Well A', 50); expect(fresh!.status).toBe('success'); expect(fresh!.rows).toEqual([]);
   });
+  it('cancels an outstanding companion HTTP read when config fails early', async () => {
+    let rejectConfig!: (reason: Error) => void;
+    mockConfig.mockReturnValue(new Promise((_, reject) => { rejectConfig = reject; }));
+    fetcher.mockImplementation(never); const pending = request('Well A', 50); await flush();
+    const signal = fetcher.mock.calls[0][1].signal as AbortSignal;
+    rejectConfig(Error('config unavailable')); expect((await pending)!.status).toBe('error'); expect(signal.aborted).toBe(true);
+    expect(jest.getTimerCount()).toBe(0);
+  });
   it('preserves permission failures and performs no request without an SDK session', async () => {
     fetcher.mockResolvedValue({ ok: false, status: 403 });
     expect((await request('Well A', 50))!.errorMessage).toContain('403');

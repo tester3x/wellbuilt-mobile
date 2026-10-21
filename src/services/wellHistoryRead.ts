@@ -41,5 +41,6 @@ export async function withWellHistoryRead<T>(work: (read: WellHistoryRead) => Pr
   } finally {
     active = false;
     clearTimeout(timer);
+    controller.abort();
   }
 }

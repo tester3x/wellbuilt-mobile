@@ -22,7 +22,9 @@ import {
   getLevelSnapshot,
   loadLevelSnapshots,
 } from "../src/services/wellHistory";
-import { loadWellConfig, WellConfigMap, fetchDriverRouteAssignment, scopedWellsForDisplay } from "../src/services/wellConfig";
+import { scopedWellsForDisplay, type WellConfigMap } from "../src/services/wellConfig";
+import { loadWellPresentation } from "../src/services/wellPresentation";
+import { getSessionGeneration } from "../src/services/wbmSessionFence";
 import { hp, spacing, wp } from "../src/ui/layout";
 import { summaryCurrentLevel as getCurrentLevel, summaryLevelAtTime as getLevelAtTime } from '../src/services/summaryWellLevel';
 import { startingLevelFromSnapshot } from '../src/services/downSnapshot';
@@ -160,16 +162,6 @@ function getTimeWhenBecameReady(well: WellSummaryData, readyLevel: number): Date
   return new Date(Date.now() - minutesAgo * 60000);
 }
 
-// Fetch well_config from Firebase (via wellConfig service)
-async function fetchWellConfig(): Promise<WellConfigMap | null> {
-  try {
-    return await loadWellConfig();
-  } catch (error) {
-    console.error("[Summary] Error fetching well config:", error);
-    return null;
-  }
-}
-
 export default function SummaryScreen() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -221,7 +213,10 @@ export default function SummaryScreen() {
     }
   }, []);
 
-  const loadSummaryData = useCallback(async () => {
+  const summaryRequest = useRef(0);
+  const loadSummaryData = useCallback(async (forceRefresh = false) => {
+    const request = ++summaryRequest.current, generation = getSessionGeneration();
+    const active = () => request === summaryRequest.current && generation === getSessionGeneration();
     try {
       // Load expanded states first
       await loadExpandedStates();
@@ -232,6 +227,7 @@ export default function SummaryScreen() {
         ? JSON.parse(savedSelections)
         : [];
 
+      if (!active()) return;
       if (selectedWells.length === 0) {
         setRouteGroups([]);
         setIsLoading(false);
@@ -239,9 +235,14 @@ export default function SummaryScreen() {
       }
 
       // Use the same assignment boundary as Settings and the well pages.
-      const config = await fetchWellConfig();
-      const assignment = await fetchDriverRouteAssignment();
-      const wellConfig = scopedWellsForDisplay(config || {}, assignment);
+      const presentation = await loadWellPresentation(forceRefresh);
+      if (!active()) return;
+      if (!presentation) { setRouteGroups([]); return; }
+      const wellConfig = scopedWellsForDisplay(presentation.envelope.wells as unknown as WellConfigMap, {
+        ...presentation.envelope.eligibility,
+        routes: presentation.envelope.eligibility.routes || [],
+        wells: presentation.envelope.eligibility.wells || [],
+      });
 
       // Load cached data (flow rate is now in level snapshots)
       await loadLevelSnapshots();
@@ -340,13 +341,14 @@ export default function SummaryScreen() {
         return a.routeName.localeCompare(b.routeName);
       });
 
+      if (!active() || !presentation.isCurrent()) return;
       setRouteGroups(groups);
       setExpandedStates(expanded);
     } catch (error) {
       console.error("[Summary] Error loading data:", error);
+    } finally {
+      if (active()) { setIsLoading(false); setIsRefreshing(false); }
     }
-    setIsLoading(false);
-    setIsRefreshing(false);
   }, [loadExpandedStates]);
 
   // Reload on focus - load saved load size, reset sliders to defaults
@@ -383,7 +385,8 @@ export default function SummaryScreen() {
       };
 
       loadSliderSettings();
-      loadSummaryData();
+      void loadSummaryData();
+      return () => { summaryRequest.current++; };
     }, [loadSummaryData])
   );
 
@@ -452,7 +455,7 @@ export default function SummaryScreen() {
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    loadSummaryData();
+    void loadSummaryData(true);
   }, [loadSummaryData]);
 
   // Handle well row tap - single tap expands, double tap navigates

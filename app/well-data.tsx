@@ -47,6 +47,7 @@ import { getDriverName, isCurrentUserAdmin } from "../src/services/driverAuth";
 import { hp, spacing, wp } from "../src/ui/layout";
 
 export default function WellDataScreen() {
+  const platformAccountReady = require('../modules/wellbuilt-platform/AccountGate').useAccountReady() as boolean;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ wellName: string }>();
@@ -74,6 +75,7 @@ export default function WellDataScreen() {
 
   // Always fetch 50 rows and cache them - display limit controls what we show
   const fetchData = useCallback(async (forceRefresh: boolean = false) => {
+    if (!platformAccountReady) return;
     const request = ++historyRequest.current, generation = getSessionGeneration();
     const active = () => request === historyRequest.current && generation === getSessionGeneration();
     setError(null);
@@ -133,9 +135,10 @@ export default function WellDataScreen() {
       console.error("[WellData] Error:", err);
       setError(err instanceof Error ? err.message : t('wellData.errorFetchFailed'));
     }
-  }, [wellName]);
+  }, [wellName, platformAccountReady]);
 
   useEffect(() => {
+    if (!platformAccountReady) return;
     let active = true;
     setLoading(true);
     setData(null);
@@ -144,13 +147,16 @@ export default function WellDataScreen() {
     setRefreshingSavedHistory(false);
     void fetchData(false).finally(() => { if (active) setLoading(false); });
     return () => { active = false; historyRequest.current++; };
-  }, [fetchData]);
+  }, [fetchData, platformAccountReady]);
 
   // Get current driver name and admin status for display logic
   useEffect(() => {
-    getDriverName().then(name => setCurrentDriverName(name));
-    isCurrentUserAdmin().then(admin => setIsAdmin(admin));
-  }, []);
+    if (!platformAccountReady) return;
+    let active = true;
+    getDriverName().then(name => { if (active) setCurrentDriverName(name); });
+    isCurrentUserAdmin().then(admin => { if (active) setIsAdmin(admin); });
+    return () => { active = false; };
+  }, [platformAccountReady]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

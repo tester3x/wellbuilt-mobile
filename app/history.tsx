@@ -372,6 +372,7 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
 }
 
 export default function HistoryScreen() {
+  const platformAccountReady = require('../modules/wellbuilt-platform/AccountGate').useAccountReady() as boolean;
   const router = useRouter();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -402,6 +403,7 @@ export default function HistoryScreen() {
 
   const historyRequest = useRef(0);
   const loadHistory = useCallback(async (forceRefresh = false) => {
+    if (!platformAccountReady) return;
     const request = ++historyRequest.current, generation = getSessionGeneration();
     const presentation = await loadWellPresentation(forceRefresh);
     const active = () => request === historyRequest.current && generation === getSessionGeneration() && !!presentation?.isCurrent();
@@ -454,16 +456,17 @@ export default function HistoryScreen() {
     } else {
       setSelectedWellStats(null);
     }
-  }, [dateFilter, wellFilter]);
+  }, [dateFilter, wellFilter, platformAccountReady]);
 
   useFocusEffect(
     useCallback(() => {
+      if (!platformAccountReady) return;
       loadHistory();
       setExpandedId(null);
       isCurrentUserViewer().then(setIsViewer);
       const unsub = onEditDeliveryResult(() => { loadHistory(); });
       return () => { historyRequest.current++; unsub(); };
-    }, [loadHistory])
+    }, [loadHistory, platformAccountReady])
   );
 
   const handleRefresh = async () => {

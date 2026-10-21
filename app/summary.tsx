@@ -163,6 +163,7 @@ function getTimeWhenBecameReady(well: WellSummaryData, readyLevel: number): Date
 }
 
 export default function SummaryScreen() {
+  const platformAccountReady = require('../modules/wellbuilt-platform/AccountGate').useAccountReady() as boolean;
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -215,6 +216,7 @@ export default function SummaryScreen() {
 
   const summaryRequest = useRef(0);
   const loadSummaryData = useCallback(async (forceRefresh = false) => {
+    if (!platformAccountReady) return;
     const request = ++summaryRequest.current, generation = getSessionGeneration();
     const active = () => request === summaryRequest.current && generation === getSessionGeneration();
     try {
@@ -349,12 +351,13 @@ export default function SummaryScreen() {
     } finally {
       if (active()) { setIsLoading(false); setIsRefreshing(false); }
     }
-  }, [loadExpandedStates]);
+  }, [loadExpandedStates, platformAccountReady]);
 
   // Reload on focus - load saved load size, reset sliders to defaults
   // Load saved slider settings on focus
   useFocusEffect(
     useCallback(() => {
+      if (!platformAccountReady) return;
       // Load saved slider positions and mode
       const loadSliderSettings = async () => {
         const [savedFeet, savedHours, savedMode, savedSize] = await Promise.all([
@@ -387,7 +390,7 @@ export default function SummaryScreen() {
       loadSliderSettings();
       void loadSummaryData();
       return () => { summaryRequest.current++; };
-    }, [loadSummaryData])
+    }, [loadSummaryData, platformAccountReady])
   );
 
   // Clean up timers on unmount

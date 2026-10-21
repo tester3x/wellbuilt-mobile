@@ -108,7 +108,7 @@ describe('actual well-data screen callback', () => {
     let generation = 0, current = true;
     const row = { packetId: 'packet-a', dateTime: '10/21/2026 01:00 AM', topLevel: "7'4\"", bbls: '185' };
     const deps = {
-      historyRequest: request, getSessionGeneration: () => generation,
+      historyRequest: request, getSessionGeneration: () => generation, platformAccountReady: true,
       loadWellHistoryPresentation: jest.fn(async () => ({ response: response('Well A', [row]), source: 'saved', refresh: refresh.promise, isCurrent: () => current })),
       wellName: 'Well A', t: (key: string) => key,
       setData: jest.fn(), setError: jest.fn(), setCachedRows: jest.fn(), setTotalRowsAvailable: jest.fn(),

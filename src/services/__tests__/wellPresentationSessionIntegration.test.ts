@@ -25,6 +25,10 @@ jest.mock('firebase/auth', () => ({
 }));
 jest.mock('firebase/database', () => ({ getDatabase: () => ({}) }));
 jest.mock('../platformDelivery', () => ({ platformDelivery: {} }));
+jest.mock('react-native', () => ({ View: 'View', Text: 'Text', Pressable: 'Pressable', ActivityIndicator: 'Spinner', AppState: { addEventListener: () => ({ remove() {} }) } }));
+jest.mock('../../../modules/wellbuilt-platform/index', () => ({ addListener: () => ({ remove() {} }) }));
+jest.mock('../../../modules/wellbuilt-platform/delivery', () => ({ subscribePending: () => () => {} }));
+jest.mock('expo-splash-screen', () => ({ hideAsync: async () => {} }));
 jest.mock('expo-crypto', () => ({ digestStringAsync: jest.fn() }));
 jest.mock('expo-device', () => ({ modelName: 'test' }));
 jest.mock('../deliveryStatus', () => ({ notifyAuthenticated: jest.fn() }));
@@ -90,5 +94,52 @@ describe('real Mobile session persistence to cached presentation and exact-well 
     await auth.clearAuthSession(); expect(mockSecure.wb_auth_uid).toBeUndefined();
     expect(await presentation.loadWellPresentation()).toBeNull();
     expect(Object.keys(mockStore).some(key => key.startsWith('@wbm/well-history-view/'))).toBe(true);
+  });
+  it('a real account-gate cold route waits for SDK restore, then reaches the actual history request without another tap', async () => {
+    const React = require('react') as typeof import('react');
+    const Renderer = require('react-test-renderer');
+    const Gate = require('../../../modules/wellbuilt-platform/AccountGate');
+    const ts = require('typescript') as typeof import('typescript');
+    const fs = require('node:fs') as typeof import('node:fs');
+    const path = require('node:path') as typeof import('node:path');
+    (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    const source = ts.createSourceFile('well-data.tsx', fs.readFileSync(path.resolve(__dirname, '../../../app/well-data.tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let loader!: import('typescript').Node, effect!: import('typescript').Node;
+    const visit = (node: import('typescript').Node) => {
+      if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'fetchData') loader = node.initializer!;
+      if (ts.isCallExpression(node) && node.expression.getText(source) === 'useEffect' && node.arguments[0]?.getText(source).includes('fetchData(false)')) effect = node;
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    const compile = (node: import('typescript').Node) => new Function('scope', 'with(scope){' + ts.transpileModule('return ' + node.getText(source) + ';', { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText + '}');
+    const makeLoader = compile(loader), runEffect = compile(effect);
+    const setData = jest.fn(), setError = jest.fn();
+    let release!: (value: string) => void;
+    const restore = new Promise<string>(resolve => { release = resolve; });
+    // SDK restoration is a native edge. All persisted owner keys and bootstrap
+    // still come from the real completeAuthenticatedSession in beforeEach.
+    mockAuth.currentUser = null;
+    function Probe() {
+      const platformAccountReady = Gate.useAccountReady();
+      const request = React.useRef(0);
+      const no = () => {};
+      const scope: any = { platformAccountReady, useCallback: React.useCallback, useEffect: React.useEffect,
+        historyRequest: request, getSessionGeneration: require('../wbmSessionFence').getSessionGeneration,
+        wellName: 'Well A', loadWellHistoryPresentation: history.loadWellHistoryPresentation,
+        setData, setError, setLoading: no, setTotalRowsAvailable: no, setCachedRows: no, setSavedHistory: no, setRefreshingSavedHistory: no, t: (key: string) => key };
+      scope.fetchData = makeLoader(scope); runEffect(scope);
+      return React.createElement('Probe');
+    }
+    let rendered: any;
+    await Renderer.act(async () => { rendered = Renderer.create(React.createElement(Gate, { restore: () => restore }, React.createElement(Probe))); });
+    expect(setError).not.toHaveBeenCalled(); expect(setData).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+    await Renderer.act(async () => {
+      mockAuth.currentUser = mockSignedUser; release('current');
+      for (let i = 0; i < 180; i++) await Promise.resolve();
+    });
+    expect(setData).toHaveBeenCalledWith(expect.objectContaining({ status: 'success', rows: [expect.objectContaining({ packetId: 'source-child-key' })] }));
+    expect(setError.mock.calls.some(([error]) => error)).toBe(false);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith('/getDriverWellHistory'))).toHaveLength(1);
+    await Renderer.act(async () => rendered.unmount());
   });
 });

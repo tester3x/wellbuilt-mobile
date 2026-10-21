@@ -22,6 +22,12 @@
     "flip-preview": {
       "extends": "preview",
       "autoIncrement": true
+    },
+    "account-device-test": {
+      "extends": "flip-preview",
+      "android": {
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
+      }
     }
   },
   "submit": {

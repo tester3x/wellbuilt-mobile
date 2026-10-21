@@ -1,4 +1,4 @@
-import { Slider } from '@miblanchard/react-native-slider';
+import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';

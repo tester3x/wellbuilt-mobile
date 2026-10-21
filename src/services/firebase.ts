@@ -6,7 +6,8 @@ import {platformDelivery as delivery} from './platformDelivery';
 import { loadWellConfig, getWellConfig, WellConfigMap } from './wellConfig';
 import { packetShowsEditBadge, selectVisibleHistoryPackets } from './editMarkers';
 import { reviewSignalsFromPacket } from '../utils/reviewSignals';
-import { withWellHistoryRead, type WellHistoryRead } from './wellHistoryRead';
+import { withWellHistoryRead } from './wellHistoryRead';
+import { fetchWellHistoryPackets } from './wellHistoryClient';
 
 // *** FIREBASE PROJECT CONFIG ***
 // WellBuilt Sync - Firebase Realtime Database
@@ -152,32 +153,29 @@ export const fetchIncomingRevisionV2 = async (): Promise<string | null> => {
 const firebaseQuery = async (
   path: string,
   orderByChild: string,
-  equalTo: string,
-  read?: WellHistoryRead
+  equalTo: string
 ): Promise<any> => {
   // Firebase REST API requires JSON-encoded strings for orderBy and equalTo
   const orderByParam = encodeURIComponent(`"${orderByChild}"`);
   const equalToParam = encodeURIComponent(`"${equalTo}"`);
 
   const { getValidIdToken } = await import('./firebaseAuthSession');
-  const token = read ? await read.wait(() => getValidIdToken()) : await getValidIdToken();
+  const token = await getValidIdToken();
   let url = `${FIREBASE_DATABASE_URL}/${path}.json`;
   url += `?auth=${encodeURIComponent(token)}`;
   url += `&orderBy=${orderByParam}`;
   url += `&equalTo=${equalToParam}`;
 
-  const send = () => fetch(url, {
+  const response = await fetch(url, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
-    ...(read ? { signal: read.signal } : {}),
   });
-  const response = read ? await read.wait(send) : await send();
 
   if (!response.ok) {
     throw new Error(`Firebase query failed (${response.status})`);
   }
 
-  return read ? read.wait(() => response.json()) : response.json();
+  return response.json();
 };
 
 // --- In-memory cache for packets/processed (all-wells fetch) ---
@@ -783,18 +781,9 @@ export const requestWellHistory = async (
 
   try {
     return await withWellHistoryRead(async read => {
-    // Existing company-authorized read; select this well locally.
+    // Authenticated exact-well dataset, with original packet keys and fields.
     const [processedData, wellConfig] = await read.wait(() => Promise.all([
-      (async () => {
-        const { getDriverSession } = await import('./driverAuth');
-        const session = await getDriverSession();
-        if (!session?.companyId) return {};
-        const all = await firebaseQuery('packets/processed', 'companyId', session.companyId, read);
-        if (!all) return {};
-        return Object.fromEntries(
-          Object.entries(all).filter(([, p]) => (p as any)?.wellName === wellName),
-        );
-      })(),
+      fetchWellHistoryPackets(wellName, read),
       getWellConfig(wellName),
     ]));
 

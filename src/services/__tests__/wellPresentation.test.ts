@@ -32,7 +32,7 @@ describe('owner-fenced Summary and History presentation', () => {
     jest.resetModules();
     for (const key of Object.keys(mockStore)) delete mockStore[key];
     for (const key of Object.keys(mockSecure)) delete mockSecure[key];
-    Object.assign(mockSecure, { driverId: 'driver-a', companyId: 'company-a', authUid: 'uid-a' });
+    Object.assign(mockSecure, { driverId: 'driver-a', companyId: 'company-a', wb_auth_uid: 'uid-a' });
     mockUser = { uid: 'uid-a' }; mockCallable.mockReset();
     config = require('../wellConfig'); presentation = require('../wellPresentation');
   });
@@ -55,7 +55,7 @@ describe('owner-fenced Summary and History presentation', () => {
     await config.persistBootstrapEnvelopeForTests(snapshot() as any);
     const network = deferred<any>(); mockCallable.mockReturnValue(network.promise);
     const view = await presentation.loadWellPresentation(); await flush();
-    config.claimSessionGeneration(); Object.assign(mockSecure, { driverId: 'driver-b', authUid: 'uid-b' }); mockUser = { uid: 'uid-b' };
+    config.claimSessionGeneration(); Object.assign(mockSecure, { driverId: 'driver-b', wb_auth_uid: 'uid-b' }); mockUser = { uid: 'uid-b' };
     expect(view!.isCurrent()).toBe(false);
     network.resolve(snapshot()); await flush();
     expect(config.peekWellConfigCacheForTests().envelope?.driverId).not.toBe('driver-b');

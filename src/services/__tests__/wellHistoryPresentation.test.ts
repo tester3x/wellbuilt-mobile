@@ -127,6 +127,11 @@ describe('actual well-data screen callback', () => {
     expect(f.deps.setSavedHistory).toHaveBeenLastCalledWith(false);
     expect(f.deps.setRefreshingSavedHistory).toHaveBeenLastCalledWith(false);
   });
+  it('a rejected local owner lease is not presented as a network timeout', async () => {
+    const f = fixture(); f.deps.loadWellHistoryPresentation.mockResolvedValueOnce(null as any);
+    await f.run(false); expect(f.deps.setError).toHaveBeenLastCalledWith('wellData.errorSession');
+    expect(f.deps.setCachedRows).not.toHaveBeenCalled();
+  });
   it('a late refresh cannot update screen rows after navigation/account invalidation', async () => {
     const f = fixture(); await f.run(false); f.invalidate();
     f.refresh.resolve(response('Well A', [f.row, { ...f.row, packetId: 'packet-b' }])); await flush();

@@ -83,7 +83,7 @@ export default function WellDataScreen() {
       const response = presentation?.response;
 
       if (!response) {
-        setError(t('wellData.errorTimeout'));
+        setError(t('wellData.errorSession', { defaultValue: 'Could not verify this history session. Reopen history to retry.' }));
         return;
       }
 

@@ -25,7 +25,7 @@ async function capture(): Promise<Scope | null> {
   const generation = getSessionGeneration(), user = getFirebaseAuth().currentUser;
   if (!user) return null;
   const [driverId, companyId, uid] = await Promise.all([
-    SecureStore.getItemAsync('driverId'), SecureStore.getItemAsync('companyId'), SecureStore.getItemAsync('authUid'),
+    SecureStore.getItemAsync('driverId'), SecureStore.getItemAsync('companyId'), SecureStore.getItemAsync('wb_auth_uid'),
   ]);
   if (!driverId || companyId === null || uid !== user.uid) return null;
   const scope = { driverId, companyId, uid, generation, user };

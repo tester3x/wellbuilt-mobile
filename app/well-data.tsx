@@ -3,7 +3,7 @@
 // Data is fetched via Firebase from VBA (columns A-K of well sheet)
 
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -36,10 +36,11 @@ const formatShortDate = (dateStr: string): string => {
   return `${month}/${day}/${year.toString().padStart(2, "0")} ${h12}:${mins.toString().padStart(2, "0")} ${ampm}`;
 };
 import {
-  requestWellHistory,
   WellHistoryResponse,
   WellHistoryRow,
 } from "../src/services/firebase";
+import { loadWellHistoryPresentation } from "../src/services/wellHistoryPresentation";
+import { getSessionGeneration } from "../src/services/wbmSessionFence";
 import { compareWellHistoryRowsCanonical, rowEventTimeMs } from "../src/utils/chronoOrder";
 import { hasReviewSignals } from "../src/utils/reviewSignals";
 import { getDriverName, isCurrentUserAdmin } from "../src/services/driverAuth";
@@ -67,15 +68,19 @@ export default function WellDataScreen() {
   const [sortColumn, setSortColumn] = useState<WellDataSortColumn>("dateTime");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc"); // newest first by default
 
-  // Track if initial fetch has been done
-  const [hasFetched, setHasFetched] = useState(false);
+  const historyRequest = useRef(0);
+  const [savedHistory, setSavedHistory] = useState(false);
+  const [refreshingSavedHistory, setRefreshingSavedHistory] = useState(false);
 
   // Always fetch 50 rows and cache them - display limit controls what we show
   const fetchData = useCallback(async (forceRefresh: boolean = false) => {
+    const request = ++historyRequest.current, generation = getSessionGeneration();
+    const active = () => request === historyRequest.current && generation === getSessionGeneration();
     setError(null);
     try {
-      console.log("[WellData] Fetching history for:", wellName, "limit: 50 (always fetch max)");
-      const response = await requestWellHistory(wellName, 50); // Always fetch 50
+      const presentation = await loadWellHistoryPresentation(wellName, forceRefresh);
+      if (!active() || presentation && !presentation.isCurrent()) return;
+      const response = presentation?.response;
 
       if (!response) {
         setError(t('wellData.errorTimeout'));
@@ -87,41 +92,59 @@ export default function WellDataScreen() {
         return;
       }
 
-      setData(response);
-      // Log first few rows to debug
-      console.log("[WellData] First 3 rows:", JSON.stringify((response.rows || []).slice(0, 3)));
-      // Filter out blank/invalid rows when caching - not when displaying
-      // A valid row must have dateTime AND level AND bbls (all display fields)
-      const validRows = (response.rows || []).filter((row, idx) => {
-        const hasDate = row.dateTime && row.dateTime.trim() !== "";
-        const hasLevel = row.topLevel && row.topLevel.trim() !== "" && /\d+'/.test(row.topLevel);
-        const hasBbls = row.bbls && row.bbls.trim() !== "";
-        const valid = hasDate && hasLevel && hasBbls;
-        if (!valid && idx < 10) {
-          console.log("[WellData] Filtered out row", idx, "- date:", hasDate, "level:", hasLevel, "bbls:", hasBbls, "row:", row.dateTime, row.topLevel, row.bbls);
-        }
-        return valid;
-      });
-      console.log("[WellData] Received", response.rows?.length, "rows, filtered to", validRows.length, "valid rows");
-      setCachedRows(validRows);
-      // Track total rows AVAILABLE in the DB for button states (20/35/50), not
-      // the count that survived the local validity filter on the fetched page.
-      // response.totalRows is the well's true pull count; gating on validRows
-      // wrongly greyed out 50 on wells with hundreds of pulls (e.g. Atlas = 540).
-      setTotalRowsAvailable(response.totalRows);
-      setHasFetched(true);
+      const apply = (response: WellHistoryResponse) => {
+        if (!active() || !presentation?.isCurrent()) return;
+        setData(response);
+        // Log first few rows to debug
+        console.log("[WellData] First 3 rows:", JSON.stringify((response.rows || []).slice(0, 3)));
+        // Filter out blank/invalid rows when caching - not when displaying
+        // A valid row must have dateTime AND level AND bbls (all display fields)
+        const validRows = (response.rows || []).filter((row, idx) => {
+          const hasDate = row.dateTime && row.dateTime.trim() !== "";
+          const hasLevel = row.topLevel && row.topLevel.trim() !== "" && /\d+'/.test(row.topLevel);
+          const hasBbls = row.bbls && row.bbls.trim() !== "";
+          const valid = hasDate && hasLevel && hasBbls;
+          if (!valid && idx < 10) {
+            console.log("[WellData] Filtered out row", idx, "- date:", hasDate, "level:", hasLevel, "bbls:", hasBbls, "row:", row.dateTime, row.topLevel, row.bbls);
+          }
+          return valid;
+        });
+        console.log("[WellData] Received", response.rows?.length, "rows, filtered to", validRows.length, "valid rows");
+        setCachedRows(validRows);
+        // Track total rows AVAILABLE in the DB for button states (20/35/50), not
+        // the count that survived the local validity filter on the fetched page.
+        // response.totalRows is the well's true pull count; gating on validRows
+        // wrongly greyed out 50 on wells with hundreds of pulls (e.g. Atlas = 540).
+        setTotalRowsAvailable(response.totalRows);
+      };
+      apply(response);
+      setSavedHistory(presentation?.source === 'saved');
+      setRefreshingSavedHistory(!!presentation?.refresh);
+      if (presentation?.refresh) {
+        void presentation.refresh.then(fresh => {
+          if (!active() || !presentation.isCurrent()) return;
+          if (fresh?.status === 'success') { apply(fresh); setSavedHistory(false); }
+        }).catch(() => {}).finally(() => {
+          if (active() && presentation.isCurrent()) setRefreshingSavedHistory(false);
+        });
+      }
     } catch (err) {
+      if (!active()) return;
       console.error("[WellData] Error:", err);
       setError(err instanceof Error ? err.message : t('wellData.errorFetchFailed'));
     }
   }, [wellName]);
 
   useEffect(() => {
-    if (!hasFetched) {
-      setLoading(true);
-      fetchData(false).finally(() => setLoading(false));
-    }
-  }, [fetchData, hasFetched]);
+    let active = true;
+    setLoading(true);
+    setData(null);
+    setCachedRows([]);
+    setSavedHistory(false);
+    setRefreshingSavedHistory(false);
+    void fetchData(false).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; historyRequest.current++; };
+  }, [fetchData]);
 
   // Get current driver name and admin status for display logic
   useEffect(() => {
@@ -469,6 +492,11 @@ export default function WellDataScreen() {
       {/* Data Display */}
       {!loading && !error && data && (
         <>
+          {savedHistory && <Text style={{ color: '#9CA3AF', textAlign: 'center', padding: 6 }}>
+            {refreshingSavedHistory
+              ? t('wellData.savedRefreshing', { defaultValue: 'Saved history · refreshing…' })
+              : t('wellData.savedHistory', { defaultValue: 'Saved history' })}
+          </Text>}
           {/* Stats Summary */}
           {stats && (
             <View style={styles.statsRow}>

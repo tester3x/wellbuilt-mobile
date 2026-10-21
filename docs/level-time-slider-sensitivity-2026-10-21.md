@@ -15,6 +15,13 @@ the full existing range. No dependency files or versions were changed.
 actual gesture calculation, covering no-motion touch, both directions, bounds,
 unchanged props and live screen wiring. TypeScript reports errors in untouched
 manager, WhatsNew, auth and hook files; none name the changed modules. This is
-a source checkpoint queued for the next Mobile build, not an installed update.
-The user previously requested batching minor changes instead of another build
-for each adjustment. Actual finger feel remains to be tested on device.
+a source checkpoint, with actual finger feel remaining to be tested on device.
+
+The user subsequently authorized a build and ZFold installation. Mobile97 build
+`1159b52d-f466-4f87-a6da-e47057a2ec60` finished from source
+`62fa99cd334c95c3ed7b7a8c6925cdcbeae5f587`. Source/profile/project,
+package/version, ARM64 ABI, shared-account provider and cryptographic signature
+were verified. APK SHA256:
+`e5ac1a2465bfbcf9537201b098851a40fdb12ca193c42ec9b13801146c46bcb7`.
+The first artifact download timed out; retry succeeded. Installation is pending:
+the ZFold disconnected before adb install could begin. No app data was cleared.

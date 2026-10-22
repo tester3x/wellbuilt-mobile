@@ -44,7 +44,7 @@ import { uploadTankPacket, uploadEditPacket } from '../firebase';
 import {
   SYNC_FAILED_THRESHOLD,
   computeBackoffMs,
-  flushQueue,
+  flushQueue, queuePacket, mutateQueuedPullInPlace, clearQueue,
   getQueuedPackets,
   smartUploadEditPacket,
   smartUploadTankPacket,
@@ -389,5 +389,32 @@ describe('pull history compatibility + reconciliation', () => {
     expect(entry.syncStatus).toBe('submitted'); // GS3: upload ≠ processed
     expect(entry.submittedAt).toBeGreaterThan(0);
     expect(entry.sentConfirmedAt).toBeUndefined();
+  });
+});
+
+
+describe('receipt-only removal under concurrent storage activity', () => {
+  test('concurrent enqueues preserve every unsent packet', async () => {
+    await Promise.all(Array.from({length:12}, (_,n)=>queuePacket('pull',pullParams('fixture-'+n))));
+    expect(rawQueue()).toHaveLength(12);
+  });
+  test('an old send receipt cannot erase a newer in-place edit', async () => {
+    await queuePacket('pull',pullParams('fixture-revision'));
+    let ready!:()=>void, release!:()=>void;
+    const started=new Promise<void>(r=>ready=r), waiting=new Promise<void>(r=>release=r);
+    mockedUploadTank.mockImplementation(async()=>{ready();await waiting;return{packetId:'fixture-revision'};});
+    const draining=flushQueue();await started;
+    await mutateQueuedPullInPlace('fixture-revision',{bblsTaken:185});
+    await queuePacket('pull',pullParams('fixture-next'));
+    release();await draining;
+    expect(rawQueue()).toHaveLength(2);
+    expect(rawQueue().find(p=>p.packetId==='fixture-revision').data.bblsTaken).toBe(185);
+  });
+  test('unreadable or nonempty queues cannot be cleared or overwritten', async () => {
+    await queuePacket('pull',pullParams('fixture-preserved'));
+    await expect(clearQueue()).rejects.toThrow('pending_delivery_cannot_be_cleared');
+    mockStore[QUEUE_KEY]='not-json';
+    await expect(queuePacket('pull',pullParams('fixture-new'))).rejects.toThrow();
+    expect(mockStore[QUEUE_KEY]).toBe('not-json');
   });
 });

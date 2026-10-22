@@ -1,11 +1,13 @@
 const {createPlatformDeliveryRuntime}=require('./policy');
 const native=require('./index');
 const {scheduleDeliveryTimer}=require('./deliveryTimer');
+const {installCallableFetch}=require('./callableFetch');
 let rn={};try{rn=require('react-native');}catch{}
 let runtime;
 const listeners=new Set();
 exports.subscribePending=fn=>{listeners.add(fn);return()=>listeners.delete(fn);};
 exports.getDelivery=()=>{
+ installCallableFetch();
  if(runtime)return runtime;
  runtime=createPlatformDeliveryRuntime({now:()=>Date.now(),schedule:scheduleDeliveryTimer,notifyPending:()=>{for(const fn of listeners)fn();}});
  if(native?.connectionState){

@@ -9,8 +9,13 @@ import android.os.Handler
 import android.os.Looper
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.Promise
+import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
 class WellbuiltPlatformModule:Module(){
+ private val deliveryHandler=Handler(Looper.getMainLooper())
+ private val deliveryTimers=ConcurrentHashMap<String,Runnable>()
+ private val deliveryPromises=ConcurrentHashMap<String,Promise>()
  private var accountObserver:ContentObserver?=null
  private var connectivity:ConnectivityManager?=null
  private var callback:ConnectivityManager.NetworkCallback?=null
@@ -75,7 +80,17 @@ class WellbuiltPlatformModule:Module(){
    for(pkg in AccountTrust.pins.keys){if(pkg==context().packageName||AccountTrust.trusted(context(),pkg))try{context().contentResolver.registerContentObserver(Uri.parse("content://"+pkg+".wbplatform"),false,observer)}catch(_:Exception){}}
 
   }
-  OnDestroy {accountObserver?.let{context().contentResolver.unregisterContentObserver(it)};accountObserver=null;callback?.let{try{connectivity?.unregisterNetworkCallback(it)}catch(_:Exception){}};callback=null;connectivity=null}
+  OnDestroy {for(timer in deliveryTimers.values)deliveryHandler.removeCallbacks(timer);deliveryTimers.clear();deliveryPromises.clear();accountObserver?.let{context().contentResolver.unregisterContentObserver(it)};accountObserver=null;callback?.let{try{connectivity?.unregisterNetworkCallback(it)}catch(_:Exception){}};callback=null;connectivity=null}
+  // Handler deadlines continue independently of display-frame JS timers. They
+  // do not acquire a wake lock or authorize any delivery; the bounded service
+  // and existing queue adapters still own those responsibilities.
+  AsyncFunction("deliveryDelay"){id:String,milliseconds:Int,promise:Promise ->
+   val timer=Runnable {deliveryTimers.remove(id);deliveryPromises.remove(id)?.resolve(null)}
+   deliveryPromises.put(id,promise)?.resolve(null)
+   deliveryTimers.put(id,timer)?.let{deliveryHandler.removeCallbacks(it)}
+   deliveryHandler.postDelayed(timer,milliseconds.coerceIn(0,3600000).toLong())
+  }
+  AsyncFunction("cancelDeliveryDelay"){id:String ->deliveryTimers.remove(id)?.let{deliveryHandler.removeCallbacks(it)};deliveryPromises.remove(id)?.resolve(null);true}
   AsyncFunction("connectionState"){ ->mapOf("reachable" to reachable())}
   AsyncFunction("readAccount"){ ->latest(context())}
   AsyncFunction("publishAccount"){raw:String,expectedGrant:String?->

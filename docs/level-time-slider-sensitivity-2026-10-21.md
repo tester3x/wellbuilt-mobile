@@ -23,5 +23,6 @@ The user subsequently authorized a build and ZFold installation. Mobile97 build
 package/version, ARM64 ABI, shared-account provider and cryptographic signature
 were verified. APK SHA256:
 `e5ac1a2465bfbcf9537201b098851a40fdb12ca193c42ec9b13801146c46bcb7`.
-The first artifact download timed out; retry succeeded. Installation is pending:
-the ZFold disconnected before adb install could begin. No app data was cleared.
+The first artifact download timed out; retry succeeded. After the ZFold was
+reconnected, in-place installation succeeded and Package Manager confirms
+versionCode 97. No app data was cleared. Actual finger feel remains a user test.

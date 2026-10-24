@@ -29,3 +29,21 @@ and reconstructed-bottom defects using downloaded live processing source.
 Its candidate fix and interval-definition discussion are tracked in the
 Watchdog/backend lane. Raw customer evidence, timings, logs and cloud snapshots
 remain outside Git. Do not broadly deploy another lane's older Functions index.
+
+## Built and installed
+
+Mobile100 builda946a682-ee92-4b47-8b95-6fff02ab5970 completed from
+source2d6219e. Expected package/version, signing certificate, ARM64 and existing
+native protected account/delivery bridge were verified against the prior99 APK.
+SHA256:a193f4889d29c2cb18992ab50ffb7556df10bc7161f21efe35987b7cb34d4d95.
+Data-preserving installation succeeded on S24 and ZFold; package queries confirm
+versionCode100 on both. S24 cold startup retained the valid current estimate and
+account/well access. The pre-existing legacy revision-listener permission error
+also occurs on99; no auth/rules were changed to silence it. No new startup crash
+was observed. Actual missing/null withdrawal through processResponsePacket and
+persisted storage is covered by the focused tests.
+
+The ZFold was actively in use, so post-install screen controls were stopped.
+Do not describe its post-install overnight display as physically verified yet.
+Server current projection correction and deployed source verification are
+recorded in the backend lane; a new full outgoing refresh withdraws stale ON.

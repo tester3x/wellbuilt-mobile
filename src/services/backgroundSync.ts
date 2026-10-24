@@ -92,8 +92,8 @@ interface ResponsePacket {
   lastPullBottomLevel?: string;
   isEdit?: boolean;  // True if this response is from an edit packet
   originalPacketId?: string;  // The packet that was edited
-  windowBblsDay?: string;    // Window-averaged bbls/day from Cloud Function
-  overnightBblsDay?: string; // Longest-gap bbls/day from Cloud Function
+  windowBblsDay?: string | null;    // Window-averaged bbls/day from Cloud Function
+  overnightBblsDay?: string | null; // Overnight bbls/day from Cloud Function
   lastPullDriverId?: string; // Driver hash of who did the last pull
   lastPullDriverName?: string; // Driver name of who did the last pull
   lastPullPacketId?: string; // PacketId of the last pull (for pull history dedup)
@@ -104,6 +104,14 @@ const parseFeet = (raw: string): number => parseLevelToFeet(raw) ?? 0;
 
 // Check if well is down
 const isWellDown = (raw: string): boolean => isDownLevelToken(raw);
+
+// Outgoing responses are complete snapshots. RTDB omits null-valued keys, so
+// a missing estimate also withdraws the old value; it is not a partial update.
+function productionEstimate(raw: unknown): number | null {
+  if ((typeof raw !== 'string' && typeof raw !== 'number') || raw === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+}
 
 // Parse flow rate string (H:MM:SS) to minutes
 const parseFlowRateToMinutes = (flowRate: string): number => {
@@ -161,8 +169,8 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
   }
 
   // Parse bbls/day values from Cloud Function
-  const windowBblsDay = packet.windowBblsDay ? parseInt(packet.windowBblsDay, 10) : undefined;
-  const overnightBblsDay = packet.overnightBblsDay ? parseInt(packet.overnightBblsDay, 10) : undefined;
+  const windowBblsDay = productionEstimate(packet.windowBblsDay);
+  const overnightBblsDay = productionEstimate(packet.overnightBblsDay);
 
   // For edit packets, force update to bypass timestamp comparison
   // (edits may have older timestamps but we still want to show the corrected data)

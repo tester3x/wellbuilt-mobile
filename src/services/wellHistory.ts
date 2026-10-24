@@ -282,8 +282,8 @@ export async function saveLevelSnapshot(
   flowRateMinutes?: number,
   lastPullDateTimeUTC?: string,
   forceUpdate: boolean = false,  // Skip timestamp comparison (for edits)
-  windowBblsDay?: number,
-  overnightBblsDay?: number,
+  windowBblsDay?: number | null,
+  overnightBblsDay?: number | null,
 ): Promise<void> {
   try {
     if (Object.keys(cachedSnapshots).length === 0) await loadLevelSnapshots();
@@ -372,8 +372,10 @@ export async function saveLevelSnapshot(
       lastPullBottomLevelFeet: lastPullBottomLevelFeet ?? existingSnapshot?.lastPullBottomLevelFeet,
       flowRate: validFlowRate || existingSnapshot?.flowRate,
       flowRateMinutes: validFlowRateMinutes ?? existingSnapshot?.flowRateMinutes,
-      windowBblsDay: windowBblsDay ?? existingSnapshot?.windowBblsDay,
-      overnightBblsDay: overnightBblsDay ?? existingSnapshot?.overnightBblsDay,
+      // undefined: this local update does not carry production estimates.
+      // null: the authoritative response withdrew the estimate. Do not revive it.
+      windowBblsDay: windowBblsDay === undefined ? existingSnapshot?.windowBblsDay : windowBblsDay ?? undefined,
+      overnightBblsDay: overnightBblsDay === undefined ? existingSnapshot?.overnightBblsDay : overnightBblsDay ?? undefined,
     };
 
     await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(cachedSnapshots));

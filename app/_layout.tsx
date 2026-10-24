@@ -18,6 +18,7 @@ import { useWhatsNew } from '../hooks/use-whats-new';
 import { SyncToastHost } from '../src/components/SyncToast';
 import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/services/wellHistory';
 import { startDeliveryReconciler } from '../src/services/deliveryStatus';
+import { startTankInfoDelivery } from '../src/services/tankInfo';
 import { startEditDelivery, setDeliveryForeground } from '../src/services/editDelivery';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
 import { resumePullHistoryBackfillOnAuth } from '../src/services/pullHistory';
@@ -114,6 +115,7 @@ function MobileRootContent() {
     // Ordered edit delivery (GS3): dependent edits survive restart and
     // release only after their original pull is confirmed processed.
     startEditDelivery();
+    const stopTankInfoDelivery = startTankInfoDelivery();
 
     // Resume the cross-app history backfill once a Firebase user hydrates on cold
     // start, so a momentary startup "No driverId" never permanently skips queued work.
@@ -121,7 +123,7 @@ function MobileRootContent() {
 
     // Flush any packets that were queued while app was closed
     flushQueue();
-    return () => appStateSub.remove();
+    return () => { appStateSub.remove(); stopTankInfoDelivery(); };
   }, [platformAccountReady]);
 
   // IMPORTANT: Always render the Stack — even during loading.

@@ -41,6 +41,8 @@ import Animated, {
 import { useTankFlip } from '../../src/hooks/useTankFlip';
 import { TankFlipWater } from '../../src/components/TankFlipWater';
 import { roamingFishPosition, movementFishFacing, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
+import { TankInfoModal } from '../../src/components/TankInfoModal';
+import type { TankConfig } from '../../src/services/tankInfo';
 import { TankPelican } from '../../src/components/TankPelican';
 import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -308,6 +310,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
   const [wellConfig, setWellConfig] = useState<WellConfig | null>(null);
+  const [showTankInfo, setShowTankInfo] = useState(false);
   const [pullRecord, setPullRecord] = useState<WellPullRecord | null>(null);
   // Flow rate now stored in levelSnapshot (not separately cached) to prevent stale values
   const [levelSnapshot, setLevelSnapshot] = useState<LevelSnapshot | null>(null);
@@ -1344,6 +1347,20 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           </View>
         </View>
         </Pressable>
+        {/* Sibling of the tank Pressable: never bubbles into its double/long press. */}
+        <Pressable testID="tank-info-button" accessibilityRole="button" accessibilityLabel={t('tankInfo.open')}
+          style={styles.tankInfoTouchTarget}
+          onPressIn={() => { lastTankTapTimeRef.current = 0; }}
+          onPress={() => { lastTankTapTimeRef.current = 0; setShowTankInfo(true); }}>
+          <View style={styles.tankInfoBadge}><Text style={styles.tankInfoBadgeText}>i</Text></View>
+        </Pressable>
+        {showTankInfo && isActive && <TankInfoModal wellName={wellName}
+          fallback={(wellConfig || {}) as unknown as TankConfig}
+          onClose={() => { lastTankTapTimeRef.current = 0; setShowTankInfo(false); }}
+          onSaved={() => { void (async () => {
+            try { await loadWellConfig(true); setWellConfig(await getWellConfig(wellName)); }
+            catch { /* Confirmed info stays cached; normal catalogue refresh retries. */ }
+          })(); }} />}
       </View>
 
       {/* Quick stats */}
@@ -2933,6 +2950,15 @@ const styles = StyleSheet.create({
     // its FEET stay on the number's top edge and only the body shrinks.
     transformOrigin: 'center bottom',
   },
+  tankInfoTouchTarget: {
+    position: 'absolute', top: INTERIOR_TOP - 3, right: INTERIOR_RIGHT - 19,
+    width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 20,
+  },
+  tankInfoBadge: {
+    width: 18, height: 18, borderRadius: 9, backgroundColor: '#2563EB',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tankInfoBadgeText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   tankBadge: {
     position: 'absolute',
     bottom: INTERIOR_BOTTOM + 10,  // FIXED: was top, should be bottom

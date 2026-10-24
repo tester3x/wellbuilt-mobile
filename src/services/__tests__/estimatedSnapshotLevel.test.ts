@@ -1,6 +1,18 @@
 import { estimatedSnapshotLevel } from '../downSnapshot';
 const now = Date.parse('2026-10-05T22:00:00Z');
 describe('snapshot projection across navigation and refresh', () => {
+  it('preserves the backdated whole-inch top while retaining fractions created by the full load deduction', () => {
+    // 10ft 5.5in at 2 PM becomes 10ft 5in at 1:30 PM at 60 min/in.
+    const readingTime = now, normalizedTime = now - 30 * 60000;
+    const normalizedTop = (10 * 12 + 5) / 12;
+    const base = normalizedTop - 185 / 40;
+    const snapshot = { lastPullBottomLevelFeet: base, timestamp: normalizedTime,
+      flowRateMinutes: 60 * 12 };
+    const unnormalizedResult = (10 * 12 + 5.5) / 12 - 185 / 40;
+    expect(estimatedSnapshotLevel(snapshot, 0, readingTime)).toBeCloseTo(unnormalizedResult);
+    expect(estimatedSnapshotLevel(snapshot, 0, normalizedTime) * 12).toBeCloseTo(69.5);
+    expect(estimatedSnapshotLevel(snapshot, 0, readingTime) * 12).toBeCloseTo(70);
+  });
   it('deducts the full load and keeps producing one inch per fifteen minutes', () => {
     const topFeet = 12, loadBbls = 185, bankBblsPerFoot = 40;
     const calculatedBase = topFeet - loadBbls / bankBblsPerFoot;

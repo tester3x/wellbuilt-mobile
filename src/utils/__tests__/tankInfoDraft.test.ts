@@ -1,4 +1,4 @@
-import { changeTankInfoField, dimensionFeet, editableTankConfig, previewTankBankRate, tankInfoChanges } from '../tankInfoDraft';
+import { changeTankInfoField, dimensionFeet, editableTankConfig, formatTankInfoNumber, previewTankBankRate, tankInfoChanges, tankInfoDraft } from '../tankInfoDraft';
 import en from '../../i18n/locales/en.json';
 import es from '../../i18n/locales/es.json';
 test('plaque dimensions support feet/inches and decimal feet consistently', () => {
@@ -20,4 +20,16 @@ test('bank rate remains derived and unknowns are not replaced with invented tank
   expect(editableTankConfig({ numTanks: 4, bblPerFoot: 134.4 }).perTankBblPerFoot).toBe(33.6);
   expect(tankInfoChanges({ activeTanks: 4, totalTanks: 4 }, { activeTanks: '2', totalTanks: '4' })).toEqual({ activeTanks: 2 });
   expect(() => tankInfoChanges({ activeTanks: 4, totalTanks: 4 }, { activeTanks: '5', totalTanks: '4' })).toThrow();
+});
+
+test('rounded modal and edit values preserve precise measurements on unrelated saves', () => {
+  const config = { loadLine: 1 + 4 / 12, tankNotes: '', perTankBblPerFoot: 33.612345 };
+  const draft = tankInfoDraft(config);
+  expect(formatTankInfoNumber(config.loadLine)).toBe('1.33');
+  expect(draft.loadLine).toBe('1.33');
+  expect(formatTankInfoNumber(20)).toBe('20');
+  expect(formatTankInfoNumber(0)).toBe('0');
+  expect(formatTankInfoNumber(undefined)).toBe('');
+  expect(tankInfoChanges(config, { ...draft, tankNotes: 'Updated notes' })).toEqual({ tankNotes: 'Updated notes' });
+  expect(tankInfoChanges({ loadLine: 1 }, { loadLine: '1 4' })).toEqual({ loadLine: 1 + 4 / 12 });
 });

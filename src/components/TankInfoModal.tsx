@@ -4,7 +4,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useTranslation } from 'react-i18next';
 import { onTankInfoChange, pendingTankInfo, readTankInfo, refreshTankInfo, saveTankInfo,
   type TankConfig, type TankEdit, type TankInfo } from '../services/tankInfo';
-import { changeTankInfoField, editableTankConfig, previewTankBankRate, tankInfoChanges, tankInfoDraft, tankInfoNumbers } from '../utils/tankInfoDraft';
+import { changeTankInfoField, editableTankConfig, formatTankInfoNumber, tankInfoChanges, tankInfoDraft, tankInfoNumbers } from '../utils/tankInfoDraft';
 
 export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
   wellName: string; fallback: TankConfig; onClose(): void; onSaved(): void;
@@ -83,10 +83,8 @@ export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
               }}
               keyboardType={['tankHeight', 'tankDiameter', 'loadLine', 'allowedBottom'].includes(key) ? 'default' : 'decimal-pad'}
               placeholder={t('tankInfo.unknown')} placeholderTextColor="#8290a6" />
-              : <Text style={[styles.value, styles.rowValue]}>{config[key] ?? t('tankInfo.unknown')}</Text>}
+              : <Text style={[styles.value, styles.rowValue]}>{formatTankInfoNumber(config[key]) || t('tankInfo.unknown')}</Text>}
           </View>)}
-          <View style={styles.row}><Text style={[styles.label, styles.rowLabel]}>{t('tankInfo.bankRate')}</Text>
-            <Text style={[styles.value, styles.rowValue]}>{(edit ? previewTankBankRate(draft) : config.bblPerFoot) ?? t('tankInfo.unknown')}</Text></View>
           {edit && <Text style={styles.hint}>{t('tankInfo.unitsHint')}</Text>}
           <View style={edit ? styles.editRow : styles.row}><Text style={[styles.label, !edit && styles.rowLabel]}>{t('tankInfo.h2sStatus')}</Text>
           {edit ? <View style={styles.picker}><Picker selectedValue={draft.h2sStatus}

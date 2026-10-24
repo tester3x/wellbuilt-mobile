@@ -2,6 +2,11 @@ import type { TankConfig } from '../services/tankInfo';
 export const tankInfoNumbers = ['totalTanks', 'activeTanks', 'tankHeight', 'tankDiameter', 'tankCapacity',
   'perTankBblPerFoot', 'loadLine', 'allowedBottom'] as const;
 const feetFields = new Set(['tankHeight', 'tankDiameter', 'loadLine', 'allowedBottom']);
+export function formatTankInfoNumber(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '';
+  const number = Number(value);
+  return Number.isFinite(number) ? String(Number(number.toFixed(2))) : String(value);
+}
 export function dimensionFeet(text: string): number {
   const trimmed = text.trim().replace(/[′’]/g, "'").replace(/[″“”]/g, '"');
   if (/^\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
@@ -19,7 +24,8 @@ export function editableTankConfig(config: TankConfig): TankConfig {
 }
 export function tankInfoDraft(config: TankConfig): Record<string, string> {
   const values = editableTankConfig(config);
-  return Object.fromEntries([...tankInfoNumbers, 'h2sStatus', 'tankNotes'].map(key => [key, String(values[key] ?? '')]));
+  return { ...Object.fromEntries(tankInfoNumbers.map(key => [key, formatTankInfoNumber(values[key])])),
+    h2sStatus: String(values.h2sStatus ?? ''), tankNotes: String(values.tankNotes ?? '') };
 }
 export function changeTankInfoField(draft: Record<string, string>, key: string, text: string, manualRate: boolean): Record<string, string> {
   const next = { ...draft, [key]: text };
@@ -41,6 +47,9 @@ export function tankInfoChanges(config: TankConfig, draft: Record<string, string
   const original = editableTankConfig(config), patch: TankConfig = {};
   for (const key of tankInfoNumbers) {
     const text = draft[key]?.trim(); if (!text) continue;
+    // Formatting an untouched field must not write its rounded display value
+    // back over the precise stored calibration or feet/inches measurement.
+    if (text === formatTankInfoNumber(original[key])) continue;
     if (!feetFields.has(key) && !/^\d+(?:\.\d+)?$/.test(text)) throw Error('invalid_number');
     const value = feetFields.has(key) ? dimensionFeet(text) : Number(text);
     if (key.includes('Tanks') && (!Number.isInteger(value) || value < 1 || value > 100)) throw Error('invalid_count');

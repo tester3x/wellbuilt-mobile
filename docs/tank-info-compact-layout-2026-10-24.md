@@ -28,3 +28,23 @@ Installed with data-preserving replacement on ZFold at the requested truck stop;
 package manager confirmed versionCode 106. S24 retains M105. Physical modal fit
 and badge placement remain unverified because the user was actively working and
 screen control stopped during the JSA investigation.
+
+## Follow-up after M106 field review
+
+Removed the connected-bank BBL/ft row from both modal modes. This is presentation
+only; multi-tank bank calibration remains distinct from per-tank calibration in
+storage and calculations. Raised the badge and its independent touch target by
+another three layout points. Gesture handlers are unchanged.
+
+Numeric values now display at most two decimal places in view and initial edit
+fields. Untouched rounded edit fields are omitted from the update patch, keeping
+precise stored measurements/calibration during unrelated edits. Feet/inches input
+still parses at full precision. A read-only server check confirmed the owner's
+`1 4` load-line edit saved correctly as 1 + 4/12 feet, with its revision/update
+metadata. No repair or live data change was needed.
+
+Validation: five draft tests and targeted lint pass. Regression coverage includes
+rounded view/edit values, exact feet/inches parsing and saving notes without
+rounding stored measurements. Existing unrelated full-project TypeScript errors
+remain; none refer to the modified files. This follow-up is source only: no new
+APK built or installed. ZFold remains M106.

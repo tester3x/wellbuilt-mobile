@@ -20,3 +20,11 @@ diagnostics in the changed modal or tank-screen file. Diff whitespace check pass
 
 Source only: no new APK built or installed for this follow-up. Both phones retain
 M105. Physical fit and badge placement should be checked on the next APK.
+
+Follow-up: M106 build `324e37c4-a72e-413b-ab97-9f8f8d96672a` finished from
+`66e1c75177c719bae5abe2d4cd7302836c46f215`. APK SHA-256
+`E209A08940783679E64C014907F72FABEF89886CE7E3C99739011C9CA708CFE8`.
+Installed with data-preserving replacement on ZFold at the requested truck stop;
+package manager confirmed versionCode 106. S24 retains M105. Physical modal fit
+and badge placement remain unverified because the user was actively working and
+screen control stopped during the JSA investigation.

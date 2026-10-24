@@ -2951,7 +2951,7 @@ const styles = StyleSheet.create({
     transformOrigin: 'center bottom',
   },
   tankInfoTouchTarget: {
-    position: 'absolute', top: INTERIOR_TOP - 3, right: INTERIOR_RIGHT - 19,
+    position: 'absolute', top: INTERIOR_TOP - 15, right: INTERIOR_RIGHT - 19,
     width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 20,
   },
   tankInfoBadge: {

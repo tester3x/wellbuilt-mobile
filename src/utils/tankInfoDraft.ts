@@ -5,6 +5,7 @@ const feetFields = new Set(['tankHeight', 'tankDiameter', 'loadLine', 'allowedBo
 export function dimensionFeet(text: string): number {
   const trimmed = text.trim().replace(/[′’]/g, "'").replace(/[″“”]/g, '"');
   if (/^\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  if (/^\d+(?:\.\d+)?'$/.test(trimmed)) return Number(trimmed.slice(0, -1));
   const match = trimmed.match(/^(\d+)(?:'\s*|\s+)(\d+(?:\.\d+)?)"?$/);
   if (!match || Number(match[2]) >= 12) throw Error('invalid_dimension');
   return Number(match[1]) + Number(match[2]) / 12;
@@ -19,6 +20,22 @@ export function editableTankConfig(config: TankConfig): TankConfig {
 export function tankInfoDraft(config: TankConfig): Record<string, string> {
   const values = editableTankConfig(config);
   return Object.fromEntries([...tankInfoNumbers, 'h2sStatus', 'tankNotes'].map(key => [key, String(values[key] ?? '')]));
+}
+export function changeTankInfoField(draft: Record<string, string>, key: string, text: string, manualRate: boolean): Record<string, string> {
+  const next = { ...draft, [key]: text };
+  if (key === 'tankDiameter' && !manualRate) {
+    try {
+      const diameter = dimensionFeet(text);
+      if (diameter >= 1 && diameter <= 100)
+        next.perTankBblPerFoot = String(Math.round(Math.PI * (diameter / 2) ** 2 / 5.614583333333333 * 10) / 10);
+    } catch { /* Leave partial input editable until its dimension is complete. */ }
+  }
+  return next;
+}
+export function previewTankBankRate(draft: Record<string, string>): number | undefined {
+  const count = Number(draft.activeTanks), perTank = Number(draft.perTankBblPerFoot);
+  return Number.isInteger(count) && count > 0 && Number.isFinite(perTank) && perTank > 0
+    ? Math.round(count * perTank * 10000) / 10000 : undefined;
 }
 export function tankInfoChanges(config: TankConfig, draft: Record<string, string>): TankConfig {
   const original = editableTankConfig(config), patch: TankConfig = {};

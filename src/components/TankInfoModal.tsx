@@ -4,7 +4,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useTranslation } from 'react-i18next';
 import { onTankInfoChange, pendingTankInfo, readTankInfo, refreshTankInfo, saveTankInfo,
   type TankConfig, type TankEdit, type TankInfo } from '../services/tankInfo';
-import { editableTankConfig, tankInfoChanges, tankInfoDraft, tankInfoNumbers } from '../utils/tankInfoDraft';
+import { changeTankInfoField, editableTankConfig, previewTankBankRate, tankInfoChanges, tankInfoDraft, tankInfoNumbers } from '../utils/tankInfoDraft';
 
 export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
   wellName: string; fallback: TankConfig; onClose(): void; onSaved(): void;
@@ -14,6 +14,7 @@ export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<TankEdit>(), [busy, setBusy] = useState(true), [error, setError] = useState('');
   const config = editableTankConfig(info?.config || fallback);
+  const manualRate = useRef(false);
   const onSavedRef = useRef(onSaved); onSavedRef.current = onSaved;
   useEffect(() => {
     let active = true;
@@ -39,6 +40,7 @@ export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
     return () => { active = false; unsubscribe(); };
   }, [wellName, t]);
   const beginEdit = () => {
+    manualRate.current = false;
     setDraft(tankInfoDraft(pending?.state === 'blocked' ? { ...config, ...pending.patch } : config));
     setEdit(true); setError('');
   };
@@ -67,20 +69,19 @@ export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
           {busy && <ActivityIndicator color="#60a5fa" />}
           {!!error && <Text accessibilityRole="alert" style={styles.notice}>{error}</Text>}
           {!!pending && <Text style={styles.notice}>{t(pending.state === 'blocked' ? 'tankInfo.blocked' : 'tankInfo.pending')}</Text>}
-          {['ndicName', 'ndicApiNo', 'operator', 'route'].map(key => <View key={key} style={styles.row}>
-            <Text style={styles.label}>{t('tankInfo.' + key)}</Text>
-            <Text style={styles.value}>{config[key] || t('tankInfo.unknown')}</Text>
-          </View>)}
           {tankInfoNumbers.map(key => <View key={key} style={styles.row}>
             <Text style={styles.label}>{t('tankInfo.' + key)}</Text>
             {edit ? <TextInput accessibilityLabel={t('tankInfo.' + key)} style={styles.input}
-              value={draft[key]} onChangeText={value => setDraft(d => ({ ...d, [key]: value }))}
+              value={draft[key]} onChangeText={value => {
+                if (key === 'perTankBblPerFoot') manualRate.current = value.trim() !== '';
+                setDraft(d => changeTankInfoField(d, key, value, manualRate.current));
+              }}
               keyboardType={['tankHeight', 'tankDiameter', 'loadLine', 'allowedBottom'].includes(key) ? 'default' : 'decimal-pad'}
               placeholder={t('tankInfo.unknown')} placeholderTextColor="#8290a6" />
               : <Text style={styles.value}>{config[key] ?? t('tankInfo.unknown')}</Text>}
           </View>)}
           <View style={styles.row}><Text style={styles.label}>{t('tankInfo.bankRate')}</Text>
-            <Text style={styles.value}>{config.bblPerFoot ?? t('tankInfo.unknown')}</Text></View>
+            <Text style={styles.value}>{(edit ? previewTankBankRate(draft) : config.bblPerFoot) ?? t('tankInfo.unknown')}</Text></View>
           {edit && <Text style={styles.hint}>{t('tankInfo.unitsHint')}</Text>}
           <Text style={styles.label}>{t('tankInfo.h2sStatus')}</Text>
           {edit ? <View style={styles.picker}><Picker selectedValue={draft.h2sStatus}
@@ -95,6 +96,10 @@ export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
           {!!config.tankSerialNumber && <Text style={styles.value}>{config.tankSerialNumber}</Text>}
           {!!config.tankInfoUpdatedBy && <Text style={styles.hint}>{t('tankInfo.updatedBy', { name: config.tankInfoUpdatedBy,
             date: config.tankInfoUpdatedAt ? new Date(Number(config.tankInfoUpdatedAt)).toLocaleString() : '' })}</Text>}
+          {['ndicName', 'ndicApiNo', 'operator', 'route'].map(key => <View key={key} style={styles.row}>
+            <Text style={styles.label}>{t('tankInfo.' + key)}</Text>
+            <Text style={styles.value}>{config[key] || t('tankInfo.unknown')}</Text>
+          </View>)}
           <Text style={styles.label}>{t('tankInfo.primaryDriver')}</Text>
           <Text style={styles.value}>{info?.primaryDrivers.map(d => d.name + (d.allRoutes ? ' (' + t('tankInfo.allRoutes') + ')' : '')).join(', ') || t('tankInfo.notDesignated')}</Text>
 

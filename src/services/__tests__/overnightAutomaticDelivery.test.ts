@@ -24,6 +24,30 @@ jest.mock('../wellAlerts',()=>({scheduleWellAlert:jest.fn(async()=>{})}));
 
 describe('automatic ON delivery after new pulls',()=>{
  beforeEach(()=>{jest.resetModules();Object.keys(mockStore).forEach(k=>delete mockStore[k]);mockRestResponse=null;mockRevision='initial';});
+ test('successive AFR changes persist and reach the screen through listener, foreground and revision recovery',async()=>{
+  const sync=await import('../backgroundSync'),history=await import('../wellHistory');
+  const screen=jest.fn();sync.onSyncStatusChange(screen);sync.startBackgroundSync();
+  const response=(i:number,flowRate:string,bbls24hrs:string)=>({...sequence[i].response,flowRate,bbls24hrs,isEdit:false});
+  const assertRate=(minutes:number,daily:number)=>{
+   const snapshot=history.getLevelSnapshotSync('Example');
+   expect(snapshot?.flowRateMinutes).toBe(minutes);
+   // Same bank/rate conversion used by the well card: 60 BBL/ft.
+   expect(Math.round(60*1440/snapshot!.flowRateMinutes!)).toBe(daily);
+   expect(JSON.parse(mockStore['@wellbuilt_level_snapshots']).Example.flowRateMinutes).toBe(minutes);
+   expect(screen).toHaveBeenLastCalledWith(false);
+  };
+  try{
+   await mockCallbacks.initial({response_Example:response(0,'24:00:00','60')});assertRate(1440,60);
+   await mockCallbacks.update('Example',response(1,'12:00:00','120'));assertRate(720,120);
+   sync.stopBackgroundSync();mockRestResponse=response(2,'18:00:00','80');mockRevision='afr-foreground';
+   await sync.syncOnForeground();assertRate(1080,80);
+   sync.startBackgroundSync();mockRestResponse=response(3,'16:00:00','90');mockRevision='afr-revision';
+   let unsubscribe=()=>{};
+   const complete=new Promise<void>(resolve=>{let started=false;unsubscribe=sync.onSyncStatusChange(busy=>{if(busy)started=true;else if(started){unsubscribe();resolve();}});});
+   mockCallbacks.revision('afr-revision');await complete;assertRate(960,90);
+   await mockCallbacks.update('Example',response(0,'24:00:00','60'));assertRate(960,90);
+  }finally{sync.stopBackgroundSync();}
+ });
  test('initial restoration and successive listener events update durable snapshots and notify the screen',async()=>{
   const sync=await import('../backgroundSync'),history=await import('../wellHistory');
   const screen=jest.fn();sync.onSyncStatusChange(screen);sync.startBackgroundSync();

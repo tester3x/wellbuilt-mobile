@@ -1,6 +1,17 @@
 import { estimatedSnapshotLevel } from '../downSnapshot';
 const now = Date.parse('2026-10-05T22:00:00Z');
 describe('snapshot projection across navigation and refresh', () => {
+  it('deducts the full load and keeps producing one inch per fifteen minutes', () => {
+    const topFeet = 12, loadBbls = 185, bankBblsPerFoot = 40;
+    const calculatedBase = topFeet - loadBbls / bankBblsPerFoot;
+    const snapshot = { levelFeet: calculatedBase, lastPullBottomLevelFeet: calculatedBase,
+      timestamp: now, flowRateMinutes: 15 * 12 };
+    expect(estimatedSnapshotLevel(snapshot, 0, now)).toBe(7.375);
+    expect(estimatedSnapshotLevel(snapshot, 0, now + 15 * 60000))
+      .toBeCloseTo(calculatedBase + 1 / 12);
+    expect(estimatedSnapshotLevel(snapshot, 0, now + 30 * 60000))
+      .toBeCloseTo(calculatedBase + 2 / 12);
+  });
   it.each([
     [6 + 5 / 12, '2026-09-26T00:52:51Z', 213.1],
     [7.5, '2026-09-28T03:33:01Z', 440.37],

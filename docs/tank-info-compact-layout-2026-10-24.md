@@ -46,5 +46,14 @@ metadata. No repair or live data change was needed.
 Validation: five draft tests and targeted lint pass. Regression coverage includes
 rounded view/edit values, exact feet/inches parsing and saving notes without
 rounding stored measurements. Existing unrelated full-project TypeScript errors
-remain; none refer to the modified files. This follow-up is source only: no new
-APK built or installed. ZFold remains M106.
+remain; none refer to the modified files.
+
+Built M107 from 2f8ec17e13aa095a8c995837c1319045840c2aeb, EAS build
+83d49b49-f429-47c5-bf52-79f9242bf773. Verified package, version, ARM64-only
+architecture and signing continuity with M106. SHA256:
+85a3f2c363ef9bf4143e8c8361e086c981ceb7bb96d6dd732326c712d69d2181.
+Installed and package-verified on S24 and ZFold. On S24, inspected Gabriel 7:
+view and edit both show load-line 1.33, the connected-bank row is absent,
+full NDIC name/API appear first, view contents fit the screen, and the raised
+badge opens the panel independently. Cancelled edit without saving or changing
+well data. Device images/identity evidence remain outside Git.

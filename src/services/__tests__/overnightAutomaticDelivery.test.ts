@@ -1,6 +1,7 @@
 // Synthetic responses generated through the deployed server refresh helper.
 // No real wells, accounts, driver records or cloud mutations are involved.
 import sequence from './fixtures/overnightAutoResponses.json';
+import pipelineSequence from './fixtures/inventoryAutoResponses.json';
 const mockStore:Record<string,string>={};
 const mockCallbacks:any={};
 let mockRestResponse:any=null;
@@ -24,6 +25,41 @@ jest.mock('../wellAlerts',()=>({scheduleWellAlert:jest.fn(async()=>{})}));
 
 describe('automatic ON delivery after new pulls',()=>{
  beforeEach(()=>{jest.resetModules();Object.keys(mockStore).forEach(k=>delete mockStore[k]);mockRestResponse=null;mockRevision='initial';});
+ test('four-tank inventory AFR changes after successive pulls through listener and revision recovery',async()=>{
+  const sync=await import('../backgroundSync'),history=await import('../wellHistory');
+  const screen=jest.fn();sync.onSyncStatusChange(screen);sync.startBackgroundSync();
+  const assertDaily=(index:number)=>{
+   const snapshot=history.getLevelSnapshotSync('ExampleBank');
+   expect(snapshot?.lastPullDateTimeUTC).toBe(pipelineSequence[index].response.lastPullDateTimeUTC);
+   // Server daily output and the app's seconds-precision rate round separately.
+   expect(Math.abs(Math.round(134.4*1440/snapshot!.flowRateMinutes!)
+     -Number(pipelineSequence[index].response.bbls24hrs))).toBeLessThanOrEqual(1);
+   expect(JSON.parse(mockStore['@wellbuilt_level_snapshots']).ExampleBank.flowRateMinutes)
+     .toBe(snapshot!.flowRateMinutes);
+   expect(screen).toHaveBeenLastCalledWith(false);
+  };
+  try{
+   await mockCallbacks.initial({response_ExampleBank:pipelineSequence[0].response});assertDaily(0);
+   await mockCallbacks.update('ExampleBank',{...pipelineSequence[1].response,isEdit:false});assertDaily(1);
+   mockRestResponse={...pipelineSequence[2].response,isEdit:false};mockRevision='pipeline-sixth-load';
+   let unsubscribe=()=>{};
+   const complete=new Promise<void>(resolve=>{let started=false;unsubscribe=sync.onSyncStatusChange(busy=>{if(busy)started=true;else if(started){unsubscribe();resolve();}});});
+   mockCallbacks.revision('pipeline-sixth-load');await complete;assertDaily(2);
+   await mockCallbacks.update('ExampleBank',{...pipelineSequence[0].response,isEdit:false});assertDaily(2);
+  }finally{sync.stopBackgroundSync();}
+ });
+ test('four-tank pipeline catches up automatically after foreground reconnection',async()=>{
+  const sync=await import('../backgroundSync'),history=await import('../wellHistory');
+  sync.startBackgroundSync();await mockCallbacks.initial({response_ExampleBank:pipelineSequence[0].response});sync.stopBackgroundSync();
+  mockRestResponse={...pipelineSequence[2].response,isEdit:false};mockRevision='pipeline-offline-catchup';
+  await sync.syncOnForeground();
+  const snapshot=history.getLevelSnapshotSync('ExampleBank');
+  expect(snapshot?.lastPullDateTimeUTC).toBe(pipelineSequence[2].response.lastPullDateTimeUTC);
+  expect(Math.round(134.4*1440/snapshot!.flowRateMinutes!)).toBe(2752);
+  expect(JSON.parse(mockStore['@wellbuilt_level_snapshots']).ExampleBank.flowRateMinutes).toBe(snapshot!.flowRateMinutes);
+  expect((await import('../revisionV2')).peekAppliedRevisionV2()).toBe('pipeline-offline-catchup');
+  sync.stopBackgroundSync();
+ });
  test('successive AFR changes persist and reach the screen through listener, foreground and revision recovery',async()=>{
   const sync=await import('../backgroundSync'),history=await import('../wellHistory');
   const screen=jest.fn();sync.onSyncStatusChange(screen);sync.startBackgroundSync();

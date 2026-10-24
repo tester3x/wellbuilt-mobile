@@ -50,7 +50,21 @@ test('successful HTTP without a matching receipt never removes the edit', async 
   const first = await pendingTankInfo('Example');
   mockFetch.mockResolvedValue({ ok: true, json: async () => ({ result: { ...info, operationId: 'other-operation' } }) });
   await flushTankInfo(); expect((await pendingTankInfo('Example'))?.id).toBe(first!.id);
+  mockFetch.mockImplementation(async (_url, options) => ({ ok: true, json: async () => ({ result: {
+    ...info, config: {}, operationId: JSON.parse(options.body).data.operationId,
+  } }) }));
+  await flushTankInfo(); expect((await pendingTankInfo('Example'))?.id).toBe(first!.id);
   acknowledge(); await flushTankInfo(); expect(await pendingTankInfo('Example')).toBeUndefined();
+});
+test('periodic foreground retry recovers even without a connectivity event', async () => {
+  jest.useFakeTimers();
+  await saveTankInfo('Example', 0, { activeTanks: 2 });
+  const stop = startTankInfoDelivery();
+  try {
+    await flushTankInfo(); acknowledge();
+    await jest.advanceTimersByTimeAsync(30_000); await flushTankInfo();
+    expect(await pendingTankInfo('Example')).toBeUndefined();
+  } finally { stop(); jest.useRealTimers(); }
 });
 test('server refusals stay saved, stop automatic retry, and can be explicitly reviewed without losing the refused record', async () => {
   mockFetch.mockResolvedValue({ ok: false, json: async () => ({ error: { status: 'ABORTED', message: 'tank_info_conflict' } }) });

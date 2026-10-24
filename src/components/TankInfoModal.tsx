@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useTranslation } from 'react-i18next';
-import { pendingTankInfo, readTankInfo, refreshTankInfo, saveTankInfo,
+import { onTankInfoChange, pendingTankInfo, readTankInfo, refreshTankInfo, saveTankInfo,
   type TankConfig, type TankEdit, type TankInfo } from '../services/tankInfo';
 import { editableTankConfig, tankInfoChanges, tankInfoDraft, tankInfoNumbers } from '../utils/tankInfoDraft';
 
@@ -14,8 +14,18 @@ export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<TankEdit>(), [busy, setBusy] = useState(true), [error, setError] = useState('');
   const config = editableTankConfig(info?.config || fallback);
+  const onSavedRef = useRef(onSaved); onSavedRef.current = onSaved;
   useEffect(() => {
     let active = true;
+    const unsubscribe = onTankInfoChange((well, applied) => {
+      if (well !== wellName || !active) return;
+      void (async () => {
+        const [cached, saved] = await Promise.all([readTankInfo(wellName), pendingTankInfo(wellName)]);
+        if (!active) return;
+        if (cached) setInfo(cached); setPending(saved);
+        if (applied) onSavedRef.current();
+      })().catch(() => {});
+    });
     void (async () => {
       try {
         const cached = await readTankInfo(wellName);
@@ -26,7 +36,7 @@ export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
       } catch { if (active) setError(t('tankInfo.offline')); }
       finally { if (active) setBusy(false); }
     })();
-    return () => { active = false; };
+    return () => { active = false; unsubscribe(); };
   }, [wellName, t]);
   const beginEdit = () => {
     setDraft(tankInfoDraft(pending?.state === 'blocked' ? { ...config, ...pending.patch } : config));
@@ -42,7 +52,7 @@ export function TankInfoModal({ wellName, fallback, onClose, onSaved }: {
         pending?.state === 'blocked' ? pending.id : undefined);
       const saved = await pendingTankInfo(wellName); setPending(saved);
       const confirmed = await readTankInfo(wellName); if (confirmed) setInfo(confirmed);
-      setEdit(false); if (!saved) onSaved();
+      setEdit(false);
     } catch { setError(t('tankInfo.invalid')); }
     finally { setBusy(false); }
   };

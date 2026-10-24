@@ -12,6 +12,13 @@ export type TankInfo = { ok: true; wellName: string; config: TankConfig; canEdit
 export type TankEdit = { id: string; wellName: string; revision: number; patch: TankConfig;
   state: 'pending' | 'blocked' | 'superseded'; error?: string };
 type Scope = { key: string; generation: number; user: NonNullable<ReturnType<typeof getFirebaseAuth>['currentUser']> };
+const listeners = new Set<(well: string, applied: boolean) => void>();
+export function onTankInfoChange(listener: (well: string, applied: boolean) => void): () => void {
+  listeners.add(listener); return () => { listeners.delete(listener); };
+}
+function notify(well: string, applied = false) {
+  for (const listener of listeners) { try { listener(well, applied); } catch { /* UI listeners cannot interrupt delivery. */ } }
+}
 let tail: Promise<unknown> = Promise.resolve();
 function serial<T>(fn: () => Promise<T>): Promise<T> {
   const run = tail.then(fn, fn); tail = run.catch(() => {}); return run;
@@ -86,6 +93,7 @@ export async function saveTankInfo(well: string, revision: number, patch: TankCo
     rows.push({ id: Crypto.randomUUID(), wellName: well, revision, patch, state: 'pending' });
     await AsyncStorage.setItem(queueKey(s), JSON.stringify(rows)); assertCurrent(s);
   });
+  notify(well);
   await flushTankInfo();
 }
 const flights = new Map<string, Promise<void>>();
@@ -103,6 +111,7 @@ export async function flushTankInfo(): Promise<void> {
           wellName: row.wellName, operationId: row.id, expectedRevision: row.revision, patch: row.patch,
         });
         if (!validInfo(result, row.wellName) || result.operationId !== row.id
+          || !Number.isSafeInteger(result.config.tankInfoRevision)
           || Number(result.config.tankInfoRevision) <= row.revision) throw Error('tank_info_missing_ack');
         await serial(async () => {
           assertCurrent(s);
@@ -110,6 +119,7 @@ export async function flushTankInfo(): Promise<void> {
           const latest = await queue(s); assertCurrent(s);
           await AsyncStorage.setItem(queueKey(s), JSON.stringify(latest.filter(op => op.id !== row.id)));
         });
+        notify(row.wellName, true);
       } catch (error) {
         if (!current(s)) return;
         const e = error as Error & { status?: string };
@@ -120,6 +130,7 @@ export async function flushTankInfo(): Promise<void> {
             if (op) { op.state = 'blocked'; op.error = e.status; }
             await AsyncStorage.setItem(queueKey(s), JSON.stringify(latest));
           });
+          notify(row.wellName);
         }
         // All failures, including lost acknowledgement, preserve the same operation.
       }

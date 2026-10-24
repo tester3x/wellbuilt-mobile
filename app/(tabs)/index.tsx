@@ -82,6 +82,7 @@ import {
 import { getTankDimensions, hp, isTablet, spacing, wp } from '../../src/ui/layout';
 import { useAppAlert } from '../../components/AppAlert';
 import { debugLog, autoFlushIfNeeded } from '../../src/services/debugLog';
+import { captureWellSelectionOwner, loadSelectedWells, saveSelectedWells } from '../../src/services/wellSelection';
 import { isCurrentUserViewer } from '../../src/services/driverAuth';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -97,7 +98,7 @@ interface WellConfigMap {
 }
 
 // Fetch well_config from Firebase (via wellConfig service)
-// Uses cached version by default - only fetches from Firebase if cache is stale (3+ days)
+// Server-first assigned catalogue with owner-bound offline fallback.
 async function fetchWellConfigMap(forceRefresh: boolean = false): Promise<WellConfigMap | null> {
   try {
     const config = await loadWellConfig(forceRefresh);
@@ -1568,6 +1569,10 @@ export default function MainScreen() {
   const previousIndex = useRef(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
+  const selectionCatalogueRef = useRef<{
+    owner: Awaited<ReturnType<typeof captureWellSelectionOwner>>;
+    eligible: string[];
+  } | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [showMore, setShowMore] = useState(false); // WB-M "More" sheet (Route Me / Summary / Switch Apps)
   const [tempSelectedIndex, setTempSelectedIndex] = useState(0);
@@ -1588,6 +1593,8 @@ export default function MainScreen() {
   const [pickerScrolling, setPickerScrolling] = useState(false);
   const [sliderActive, setSliderActive] = useState(false);
   const [wells, setWells] = useState<string[]>([]);
+  const visibleWellRef = useRef({ well: wells[currentIndex], index: currentIndex });
+  visibleWellRef.current = { well: wells[currentIndex], index: currentIndex };
   const homeStartedAt=useRef(Date.now());
   const reportedHome=useRef(false);
   useEffect(()=>{
@@ -1601,7 +1608,7 @@ export default function MainScreen() {
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false); // Sync indicator
   const [currentWellHasDraft, setCurrentWellHasDraft] = useState(false); // Draft indicator for Pull button
   const [isViewer, setIsViewer] = useState(false); // Viewer-only mode (can't submit pulls)
-  const [appForegroundCount, setAppForegroundCount] = useState(0); // Bumps when app returns to foreground
+  const [appForegroundCount, setAppForegroundCount] = useState(0); // Foreground and visible-screen catalogue refresh generation
   const [showOvernightBbls, setShowOvernightBbls] = useState(false); // Global overnight vs segment bbls/day toggle
   const lastTickIndex = useRef(0);
   const wellRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1797,7 +1804,7 @@ export default function MainScreen() {
   }, []);
 
   // Trigger refresh when screen comes into focus (returning from record.tsx, summary, or settings)
-  // This only runs when navigating TO this screen, not on swipes
+  // Also refresh on foreground and the visible-screen catalogue cadence, not on swipes.
   useFocusEffect(
     useCallback(() => {
       // Skip if we're still doing initial sync - wells will load when sync finishes
@@ -1818,6 +1825,10 @@ export default function MainScreen() {
       // Bump refresh trigger to make WellView reload and check for pending
       setRefreshTrigger(prev => prev + 1);
 
+      let cancelled = false;
+      const generation = getSessionGeneration();
+      const isCurrentLoad = () => !cancelled && generation === getSessionGeneration();
+
       // Load wells from config and filter by selections
       // This handles: returning from Settings (well selection changed),
       // returning from Summary (jump to well), fresh install
@@ -1827,6 +1838,7 @@ export default function MainScreen() {
         let usedCache = false;
         try {
           const cachedWells = await AsyncStorage.getItem(STORAGE_KEY_LAST_GOOD_WELLS);
+          if (!isCurrentLoad()) return;
           if (cachedWells) {
             const parsed = JSON.parse(cachedWells) as string[];
             if (parsed.length > 0 && wells.length === 0) {
@@ -1844,11 +1856,13 @@ export default function MainScreen() {
         // STEP 2: Full load — fetch config, apply filters, sort by route.
         // If this succeeds, it silently replaces the cached list.
         // If it fails, the cached list stays visible.
+        let catalogueResolved = false;
         let config: WellConfigMap | null = null;
         let allWellNames: string[] = [];
         let filteredWells: string[] = [];
 
         try {
+          const selectionOwner = await captureWellSelectionOwner();
           // Check if user is viewer-only (uses SecureStore — can throw on some devices)
           try {
             const viewerStatus = await isCurrentUserViewer();
@@ -1871,8 +1885,9 @@ export default function MainScreen() {
             console.log('[Main] Error loading load size:', e);
           }
 
-          // Fetch well config - uses cache (no Firebase call unless cache is stale)
+          // Fetch the latest assigned catalogue, with durable offline fallback.
           config = await fetchWellConfigMap();
+          if (!isCurrentLoad()) return;
           setWellConfigMap(config); // Save for route info display
           allWellNames = config ? Object.keys(config) : [];
 
@@ -1882,53 +1897,18 @@ export default function MainScreen() {
             config = await fetchWellConfigMap(true);
             setWellConfigMap(config);
             allWellNames = config ? Object.keys(config) : [];
-            if (allWellNames.length > 0) {
-              // Reset selected wells filtered by assignment (not all wells)
-              const assignment = await fetchDriverRouteAssignment();
-              const filteredConfig = scopedWellsForDisplay(config!, assignment);
-              const assignedWellNames = Object.keys(filteredConfig);
-              console.log('[Main] Recovery: selecting', assignedWellNames.length, 'assigned wells (from', allWellNames.length, 'total)');
-              await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
-            }
           }
 
           // Filter wells by driver's route assignment FIRST, then by user selections
           const assignment = await fetchDriverRouteAssignment();
           const assignedConfig = scopedWellsForDisplay(config!, assignment);
-          let assignedWellNames = Object.keys(assignedConfig);
+          const assignedWellNames = Object.keys(assignedConfig);
           console.log('[Main] Route assignment filter:', assignedWellNames.length, 'of', allWellNames.length, 'wells', assignment.status);
 
-          // Load user's selected wells from Settings, intersected with assigned wells
-          filteredWells = assignedWellNames;
-          try {
-            const savedSelections = await AsyncStorage.getItem(STORAGE_KEY_SELECTED_WELLS);
-            if (savedSelections) {
-              const selected = JSON.parse(savedSelections) as string[];
-              if (selected.length > 0) {
-                const assignedSet = new Set(assignedWellNames);
-                const selectedSet = new Set(selected);
-                // Only show wells that are BOTH selected AND assigned
-                filteredWells = assignedWellNames.filter(w => selectedSet.has(w));
-                // If saved selections had stale wells, clean them up
-                const cleanedSelections = selected.filter(w => assignedSet.has(w));
-                if (cleanedSelections.length !== selected.length) {
-                  console.log('[Main] Cleaned', selected.length - cleanedSelections.length, 'stale wells from selections');
-                  await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(cleanedSelections));
-                }
-              }
-            }
-          } catch (e) {
-            console.log('[Main] Corrupted selectedWells JSON, resetting to assigned wells:', e);
-            filteredWells = assignedWellNames;
-            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
-          }
-
-          // RECOVERY: If filtering resulted in 0 wells, reset to all assigned wells
-          if (filteredWells.length === 0 && assignedWellNames.length > 0) {
-            console.log('[Main] No wells after filtering — resetting to assigned wells');
-            filteredWells = assignedWellNames;
-            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
-          }
+          filteredWells = await loadSelectedWells(selectionOwner, assignedWellNames);
+          catalogueResolved = true;
+          if (!isCurrentLoad()) return;
+          selectionCatalogueRef.current = { owner: selectionOwner, eligible: assignedWellNames };
 
           // Load saved route order and sort wells accordingly
           let routeOrder: string[] = [];
@@ -1972,6 +1952,7 @@ export default function MainScreen() {
         } catch (e) {
           // CRITICAL CATCH: Something unexpected blew up above.
           // Ensure we still load SOMETHING — try to get wells from config as last resort.
+          if (!isCurrentLoad() || (e instanceof Error && e.message === 'selection_session_changed')) return;
           console.error('[Main] CRITICAL: loadSelectedWellsAndJump crashed, attempting recovery:', e);
           debugLog(`Well load CRASHED: ${e}. Attempting recovery...`, 'error');
           try {
@@ -1980,7 +1961,10 @@ export default function MainScreen() {
               setWellConfigMap(config);
             }
             if (config) {
-              filteredWells = Object.keys(config).sort();
+              const owner = await captureWellSelectionOwner();
+              const assignment = await fetchDriverRouteAssignment();
+              filteredWells = await loadSelectedWells(owner, Object.keys(scopedWellsForDisplay(config, assignment)));
+              catalogueResolved = true;
               console.log('[Main] Recovery: loaded', filteredWells.length, 'wells from config fallback');
               debugLog(`Well recovery: loaded ${filteredWells.length} wells from config fallback`, 'warn');
             }
@@ -1990,26 +1974,8 @@ export default function MainScreen() {
           }
         }
 
-        // FALLBACK: If we STILL have 0 wells, try reading config straight from AsyncStorage
-        if (filteredWells.length === 0) {
-          try {
-            const rawConfig = await AsyncStorage.getItem('@wellbuilt_well_config');
-            if (rawConfig) {
-              const parsed = JSON.parse(rawConfig);
-              const keys = Object.keys(parsed);
-              if (keys.length > 0) {
-                filteredWells = keys.sort();
-                console.log('[Main] FALLBACK: loaded', filteredWells.length, 'wells directly from AsyncStorage config');
-                debugLog(`Well recovery: loaded ${filteredWells.length} wells from AsyncStorage config`, 'warn');
-              }
-            }
-          } catch (lastResortError) {
-            console.error('[Main] AsyncStorage config read also failed:', lastResortError);
-          }
-        }
-
         // LAST RESORT: Load the last known good well list from previous session
-        if (filteredWells.length === 0) {
+        if (!catalogueResolved && filteredWells.length === 0) {
           try {
             const lastGood = await AsyncStorage.getItem(STORAGE_KEY_LAST_GOOD_WELLS);
             if (lastGood) {
@@ -2025,11 +1991,27 @@ export default function MainScreen() {
           }
         }
 
+        if (!isCurrentLoad()) return;
+        if (catalogueResolved && filteredWells.length === 0) {
+          setWells([]);
+          setCurrentIndex(0);
+          await AsyncStorage.setItem(STORAGE_KEY_LAST_GOOD_WELLS, '[]');
+          return;
+        }
+
         // Set wells — if we got results, update the list (replaces instant cache if it was used)
         if (filteredWells.length > 0) {
           console.log('[Main] Loaded', filteredWells.length, 'wells');
-          setWells(filteredWells);
-          setCurrentIndex(prev => Math.min(prev, Math.max(0, filteredWells.length - 1)));
+          const previousVisible = visibleWellRef.current;
+          const retained = filteredWells.indexOf(previousVisible.well || '');
+          setWells(previous => previous.length === filteredWells.length
+            && previous.every((well, i) => well === filteredWells[i]) ? previous : filteredWells);
+          setCurrentIndex(prev => retained >= 0 ? retained : Math.min(prev, filteredWells.length - 1));
+          if (retained >= 0 && retained !== previousVisible.index) {
+            setTimeout(() => {
+              if (isCurrentLoad()) flatListRef.current?.scrollToIndex({ index: retained, animated: false });
+            }, 100);
+          }
 
           // Save as last known good for next time
           try {
@@ -2088,8 +2070,15 @@ export default function MainScreen() {
       };
       loadSelectedWellsAndJump();
 
+      // Refresh the assigned catalogue while this screen remains visible too.
+      const catalogueTimer = setInterval(() => {
+        if (AppState.currentState === 'active') setAppForegroundCount(n => n + 1);
+      }, 60_000);
+
       // Cleanup: cancel retry timer when focus changes
       return () => {
+        cancelled = true;
+        clearInterval(catalogueTimer);
         if (wellRetryTimer.current) {
           clearTimeout(wellRetryTimer.current);
           wellRetryTimer.current = null;
@@ -2254,28 +2243,24 @@ export default function MainScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Load current selections
-              const savedSelections = await AsyncStorage.getItem(STORAGE_KEY_SELECTED_WELLS);
-              if (savedSelections) {
-                const selections = new Set<string>(JSON.parse(savedSelections));
-                selections.delete(currentWell);
-                await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify([...selections]));
+              const catalogue = selectionCatalogueRef.current;
+              if (!catalogue) return;
+              const selected = await loadSelectedWells(catalogue.owner, catalogue.eligible);
+              const newWells = selected.filter(w => w !== currentWell);
+              await saveSelectedWells(catalogue.owner, catalogue.eligible, newWells);
+              // Update local wells list - remove the current well
+              setWells(newWells);
 
-                // Update local wells list - remove the current well
-                const newWells = wells.filter(w => w !== currentWell);
-                setWells(newWells);
+              // Update last-good-wells cache
+              if (newWells.length > 0) {
+                await AsyncStorage.setItem(STORAGE_KEY_LAST_GOOD_WELLS, JSON.stringify(newWells));
+              }
 
-                // Update last-good-wells cache
-                if (newWells.length > 0) {
-                  await AsyncStorage.setItem(STORAGE_KEY_LAST_GOOD_WELLS, JSON.stringify(newWells));
-                }
-
-                // Adjust current index if needed
-                if (currentIndex >= newWells.length) {
-                  const newIndex = Math.max(0, newWells.length - 1);
-                  setCurrentIndex(newIndex);
-                  await AsyncStorage.setItem(STORAGE_KEY_LAST_WELL, String(newIndex));
-                }
+              // Adjust current index if needed
+              if (currentIndex >= newWells.length) {
+                const newIndex = Math.max(0, newWells.length - 1);
+                setCurrentIndex(newIndex);
+                await AsyncStorage.setItem(STORAGE_KEY_LAST_WELL, String(newIndex));
               }
             } catch (error) {
               console.error('[Main] Error hiding well:', error);

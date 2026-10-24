@@ -1393,7 +1393,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           <View style={styles.statsRow}>
             <Text style={styles.statLeft}>{displayBblsPerHour} {t('units.bbl')}{t('units.perHour')}</Text>
             <Text style={styles.statDivider}>•</Text>
-            <Text style={styles.statRight}>{displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? ' ON' : ''}</Text>
+            <Text style={styles.statRight}>{displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? (levelSnapshot?.overnightEstimatedTime ? ' ON ≈' : ' ON') : ''}</Text>
           </View>
         </Pressable>
 

@@ -44,4 +44,17 @@ describe('authoritative production estimate withdrawal', () => {
     await sync.processResponsePacket({ ...packet, timestamp: '2026-10-19T12:00:00Z', lastPullDateTimeUTC: '2026-10-19T12:00:00Z' });
     expect(history.getLevelSnapshotSync('Test Well')?.overnightBblsDay).toBe(900);
   });
+
+  test('estimated ON clock metadata persists locally, then clears with exact or withdrawn ON', async()=>{
+    const {history,sync,packet}=await fixture();
+    await sync.processResponsePacket({...packet,overnightBblsDay:'644',overnightEstimatedTime:true});
+    expect(history.getLevelSnapshotSync('Test Well')).toMatchObject({overnightBblsDay:644,overnightEstimatedTime:true});
+    await history.saveLevelSnapshot('Test Well',9,packet.timestamp,false);
+    expect(history.getLevelSnapshotSync('Test Well')?.overnightEstimatedTime).toBe(true);
+    await sync.processResponsePacket({...packet,overnightBblsDay:'650',overnightEstimatedTime:false});
+    expect(history.getLevelSnapshotSync('Test Well')).toMatchObject({overnightBblsDay:650,overnightEstimatedTime:false});
+    await sync.processResponsePacket({...packet,overnightBblsDay:null,overnightEstimatedTime:true});
+    expect(history.getLevelSnapshotSync('Test Well')?.overnightBblsDay).toBeUndefined();
+    expect(history.getLevelSnapshotSync('Test Well')?.overnightEstimatedTime).toBe(false);
+  });
 });

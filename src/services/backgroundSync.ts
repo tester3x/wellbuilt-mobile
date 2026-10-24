@@ -93,6 +93,7 @@ interface ResponsePacket {
   isEdit?: boolean;  // True if this response is from an edit packet
   originalPacketId?: string;  // The packet that was edited
   windowBblsDay?: string | null;    // Window-averaged bbls/day from Cloud Function
+  overnightEstimatedTime?: boolean;
   overnightBblsDay?: string | null; // Overnight bbls/day from Cloud Function
   lastPullDriverId?: string; // Driver hash of who did the last pull
   lastPullDriverName?: string; // Driver name of who did the last pull
@@ -177,7 +178,7 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
   const forceUpdate = packet.isEdit === true;
 
   if (wellIsDown || levelFeet > 0) {
-    await saveLevelSnapshot(packet.wellName, levelFeet, timestampForCalc, wellIsDown, packet.lastPullDateTime, lastPullBbls, packet.lastPullTopLevel, packet.lastPullBottomLevel, flowRate, flowRateMinutes, packet.lastPullDateTimeUTC, forceUpdate, windowBblsDay, overnightBblsDay);
+    await saveLevelSnapshot(packet.wellName, levelFeet, timestampForCalc, wellIsDown, packet.lastPullDateTime, lastPullBbls, packet.lastPullTopLevel, packet.lastPullBottomLevel, flowRate, flowRateMinutes, packet.lastPullDateTimeUTC, forceUpdate, windowBblsDay, overnightBblsDay, packet.overnightEstimatedTime === true);
 
     // Schedule alert based on flow rate from snapshot (active wells only)
     const snapshot = getLevelSnapshotSync(packet.wellName);

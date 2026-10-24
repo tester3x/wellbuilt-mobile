@@ -47,3 +47,17 @@ The ZFold was actively in use, so post-install screen controls were stopped.
 Do not describe its post-install overnight display as physically verified yet.
 Server current projection correction and deployed source verification are
 recorded in the backend lane; a new full outgoing refresh withdraws stale ON.
+
+
+## ZFold acceptance completed
+
+After the user reopened Mobile and authorized continuing, foreground-guarded,
+read-only checks confirmed that a previously cached withdrawn ON estimate now
+falls back to AFR without an ON label in either toggle position. A second well
+with no supported ON estimate also displays AFR without a stale label. A valid
+corrected ON estimate remains available and switches correctly to the daily AFR
+view. The explicitly configured continuous-hauling well uses AFR in both views,
+without an ON label, and received a fresh real pull during verification.
+The original well selection and ON toggle state were restored. No operational
+job, level, inspection, shift or HOS record was created or edited by these checks.
+Screenshots and exact customer values remain outside Git.

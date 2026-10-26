@@ -10,4 +10,8 @@ That check also identified a pre-existing client count issue: the compact editor
 
 Client draft, delivery and gesture regressions and changed-file lint passed. Expo v57 versioned documentation was reviewed as instructed; this focused change retains the app's existing SDK/runtime dependencies.
 
-Build and installation acceptance will be appended after the new APK is ready.
+M108 build `6cbf72a4-a0b1-47c1-9a3a-37dcc0cdbffe` finished from exact client product commit `297c7844497af2992deaf33cb7cae16fbc898cd5`. APK SHA-256: `1828266998C36E888A1018F303D6DA1A57633C5158E7253790CC2F2E970B15B3`. Package/version/ARM64 architecture and signing continuity with M107 were verified. Installed on the ZFold using data-preserving replacement; package manager confirms versionCode 108.
+
+Physical acceptance: the visible count was reduced and saved, both stored counts and the tank badge changed, the existing-load model recalculated and the main-card AFR updated without another load or restart. The count was then restored through the same app editor, restoring the correct calibration and daily rate. All original packet IDs, timestamps, top readings, barrel quantities and historical import provenance were verified unchanged; both operations have completed recalculation receipts. Device captures and reconciliation evidence remain outside Git. The S24 was not connected for this installation.
+
+Existing display precision note: the main card derives its whole-barrel daily display from rounded rate text, so an integer-boundary difference of one BBL/day from the precise server value was observed during the temporary count test. The restored setup agrees on both surfaces. This change addresses automatic recalculation and does not replace the existing main-card formatting policy.

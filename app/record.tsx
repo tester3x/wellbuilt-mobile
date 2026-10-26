@@ -1254,15 +1254,18 @@ function RecordScreenInner() {
         </View>
       </ScrollView>
 
-      {/* Closing the keypad only finishes input. Submit stays explicit and
-          appears after closing so it does not crowd the form. */}
-      {!keypad.isOpen && (
+      {/* New pulls submit via the keypad's gold Done key (enabled only when
+          the whole form is complete/valid, from either measurement field) —
+          no footer button, which keeps the info box + form visible above the
+          keypad. Edit mode keeps Submit + Cancel (it has no info box and
+          needs a back-out). */}
+      {isEditMode && (
         <View style={[styles.buttonBlock, { paddingBottom: Math.max(insets.bottom, 12) + 12 }]}>
           <TouchableOpacity
             style={[
               styles.button,
-              isEditMode && styles.buttonEdit,
-              (isSending || !keypadDoneEnabled) && styles.buttonDisabled
+              styles.buttonEdit,
+              isSending && styles.buttonDisabled
             ]}
             onPress={() => {
               const flushed = keypad.flushActiveDraft();
@@ -1271,17 +1274,17 @@ function RecordScreenInner() {
                 level: flushed?.fieldKey === LEVEL_FIELD_KEY ? flushed.committed : committedLevelRef.current,
               });
             }}
-            disabled={isSending || !keypadDoneEnabled}
+            disabled={isSending}
           >
             <Text style={styles.buttonText}>{submitButtonText}</Text>
           </TouchableOpacity>
 
-          {isEditMode && <TouchableOpacity
+          <TouchableOpacity
             style={styles.cancelButton}
             onPress={() => router.back()}
           >
             <Text style={styles.cancelButtonText}>{t('recordExtra.cancel')}</Text>
-          </TouchableOpacity>}
+          </TouchableOpacity>
         </View>
       )}
 
@@ -1356,7 +1359,7 @@ function RecordScreenInner() {
 
       {/* Custom Alert Modal */}
       <AppAlert {...alert.alertProps} />
-      <MeasurementKeypadSlot />
+      <MeasurementKeypadSlot doneEnabled={keypadDoneEnabled} />
 
       {/* Canonical blocking busy state — paints only if the submit runs past
           ~200ms (no flash for instant submits), dims the form, and relabels to

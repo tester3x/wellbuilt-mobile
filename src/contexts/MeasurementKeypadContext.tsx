@@ -1034,7 +1034,7 @@ export function MeasurementKeypadDismissOverlay({ children }: { children: ReactN
   );
 }
 
-export function MeasurementKeypadSlot() {
+export function MeasurementKeypadSlot({ doneEnabled = true }: { doneEnabled?: boolean }) {
   const ctx = useContext(MeasurementKeypadContext);
   const [rendered, setRendered] = useState(false);
   const [showNext, setShowNext] = useState(true);
@@ -1092,7 +1092,7 @@ export function MeasurementKeypadSlot() {
         { paddingBottom: slotGeometry.safeAreaPadding, transform: [{ translateY }] },
       ]}
     >
-      <TankLevelKeypad visible showNext={showNext} />
+      <TankLevelKeypad visible showNext={showNext} doneAllowed={doneEnabled} />
     </Animated.View>
   );
 }

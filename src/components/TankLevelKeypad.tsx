@@ -1,5 +1,4 @@
 import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
 import { Platform, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MEASUREMENT_KEYPAD_HEIGHT } from '../utils/measurementKeypadLayout';
 import { useMeasurementKeypad } from '../contexts/MeasurementKeypadContext';
@@ -42,13 +41,11 @@ function ActionButton({
   onPress,
   variant,
   blocked,
-  closeIcon,
 }: {
   label: string;
   onPress: () => void;
   variant: 'done' | 'next' | 'delete' | 'nav';
   blocked?: boolean;
-  closeIcon?: boolean;
 }) {
   return (
     <TouchableOpacity
@@ -69,7 +66,6 @@ function ActionButton({
       onPress={blocked ? NOOP : onPress}
       activeOpacity={blocked ? 1 : 0.2}
       accessibilityRole="button"
-      accessibilityLabel={closeIcon ? 'Close keypad' : label}
       // vc18 field result: on Android, accessibilityState.disabled is applied
       // to the NATIVE view's enabled flag, which strips the view out of touch
       // claiming — blocked keys fell through to the dismiss overlay exactly
@@ -79,7 +75,7 @@ function ActionButton({
         ? { accessibilityHint: blocked ? 'Unavailable' : undefined }
         : { accessibilityState: { disabled: !!blocked } })}
     >
-      {closeIcon ? <Ionicons name="chevron-down" size={26} color="#000" /> : <Text
+      <Text
         style={[
           variant === 'done' ? styles.doneText : styles.keyLabel,
           variant === 'next' ? styles.nextText : null,
@@ -88,7 +84,7 @@ function ActionButton({
         ]}
       >
         {label}
-      </Text>}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -103,7 +99,11 @@ export interface TankLevelKeypadProps {
   /** The active session advances to another field — enables Next. Next is
    *  ALWAYS rendered (uniform layout); false only dims it. */
   showNext?: boolean;
-
+  /** Whether Done may act right now. The caller decides why (Record Load:
+   *  whole form complete/valid from live values); the keypad additionally
+   *  requires the active draft itself to be committable. Default true keeps
+   *  plain commit-gated Done. */
+  doneAllowed?: boolean;
 }
 
 /**
@@ -112,11 +112,12 @@ export interface TankLevelKeypadProps {
  * Row1: 1 2 3 ' Next
  * Row2: 4 5 6 " Delete
  * Row3: 7 8 9 < >
- * Row4: 0 SPACE(×2) . Close
+ * Row4: 0 SPACE(×2) . Done (WB M commits and submits)
  */
-export default function TankLevelKeypad({ visible, showNext = true }: TankLevelKeypadProps) {
+export default function TankLevelKeypad({ visible, showNext = true, doneAllowed = true }: TankLevelKeypadProps) {
   const keypad = useMeasurementKeypad();
   const canCommit = keypad.canCommit;
+  const doneBlocked = !canCommit || !doneAllowed;
   const nextBlocked = !showNext || !canCommit;
 
   if (!visible) return null;
@@ -164,7 +165,7 @@ export default function TankLevelKeypad({ visible, showNext = true }: TankLevelK
             flex={2}
           />
           <KeyButton label="." onPress={symbol('.')} />
-          <ActionButton label="Close keypad" closeIcon onPress={keypad.commitAndDismiss} variant="done" />
+          <ActionButton label="Done" onPress={keypad.commitDone} variant="done" blocked={doneBlocked} />
         </View>
       </View>
     </View>

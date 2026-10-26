@@ -15,4 +15,19 @@ Validation before build:
 - Project TypeScript still reports existing unrelated errors; none reference changed app/keypad/navigation files.
 - No backend, dependency, runtime, tank calibration or pull data changes.
 
-M109 was built and installed on S24 with a close-only chevron; superseded by the owner clarification above. Corrected build and acceptance pending.
+M109 was built and installed on S24 with a close-only chevron; superseded by the owner clarification above.
+
+## Final M110 delivery
+
+- EAS build `ae89ca37-00cf-4ef1-9def-c2041c533055` finished from exact source `378a64ecb715dc2fe2f027560949b0a63b865fd5`.
+- APK package `com.wellbuiltmobile.app`, versionCode 110, versionName 2.1.0, ARM64.
+- Signature continuity verified: `4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b`.
+- APK SHA256: `79730CC96EFD75280CE45D0790321AD696AD96CFD833D9DA97D2EB145C81767C`.
+- Data-preserving replacement installation succeeded on S24 and ZFold; package-manager version 110 verified on both.
+- S24 M110 physical acceptance: new arrangement and bottom-right Done displayed, system navigation hidden with keypad, tapping form-blocked Done kept keypad open without submitting, hardware Back dismissed keypad while staying on Record Load and restored navigation. Second Back returned to main screen.
+- Earlier M109 draft-only check exercised valid level-to-barrels Next handoff and close-only semantics before the owner corrected that behavior. Those screenshots do not prove M110 submission; M110 Done submission is covered by the focused provider and Record Load wiring tests. No production pull was submitted during acceptance.
+- Temporary M109 values were cleared through Clear Form before final installation. No app data reset, tank edit, backend deployment or dependency change.
+- An earlier blank-scroll-space tap did not dismiss the keypad; this existing overlay path was not changed. Hardware Back and explicit completion were the acceptance paths for this update.
+
+83 focused tests pass with final M110 source. Full-suite unrelated failures described above remain outside this change. APKs and device evidence are private files outside Git.
+

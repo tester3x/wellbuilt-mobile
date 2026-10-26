@@ -2468,14 +2468,14 @@ export default function MainScreen() {
         {/* Center - route name and well name */}
         <View style={styles.headerCenter}>
           {/* Route name - smaller, in route color */}
-          {wellConfigMap && wells[currentIndex] && wellConfigMap[wells[currentIndex]]?.route && (
-            <Text style={[
-              styles.routeName,
-              { color: getRouteColor(wellConfigMap[wells[currentIndex]]?.route || '') }
-            ]}>
-              {wellConfigMap[wells[currentIndex]]?.route}
-            </Text>
-          )}
+          {/* Reserve both metadata rows while the catalogue loads. Adding
+              them later resizes the tank area immediately after the spinner. */}
+          <Text style={[
+            styles.routeName,
+            { color: getRouteColor(wellConfigMap?.[wells[currentIndex]]?.route || '') }
+          ]} numberOfLines={1}>
+            {wellConfigMap?.[wells[currentIndex]]?.route || '\u00a0'}
+          </Text>
           <TouchableOpacity onPress={openPicker} style={styles.wellNameButton}>
             <Text style={styles.wellName}>{wells[currentIndex]}</Text>
             <Text style={styles.wellNameArrow}>▼</Text>
@@ -2483,11 +2483,9 @@ export default function MainScreen() {
               <ActivityIndicator size="small" color="#60A5FA" style={styles.syncIndicator} />
             )}
           </TouchableOpacity>
-          {wellConfigMap?.[wells[currentIndex]]?.operator ? (
-            <Text style={styles.operatorName} numberOfLines={1}>
-              {wellConfigMap[wells[currentIndex]].operator}
-            </Text>
-          ) : null}
+          <Text style={styles.operatorName} numberOfLines={1}>
+            {wellConfigMap?.[wells[currentIndex]]?.operator || '\u00a0'}
+          </Text>
           <Text style={styles.positionIndicator}>{currentIndex + 1} {t('homeExtra.of')} {wells.length}</Text>
         </View>
 

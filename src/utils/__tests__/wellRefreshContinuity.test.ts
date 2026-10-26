@@ -1,3 +1,4 @@
+import React from 'react';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { runInNewContext } from 'vm';
@@ -75,4 +76,33 @@ test('cancelled refresh cannot overwrite the visible observation', async () => {
   const h = harness(); h.cleanup(); h.finish({}); await tick();
   expect(h.shown()).toEqual(old);
   expect(h.scope.setLastPullInfo).not.toHaveBeenCalled();
+});
+
+
+test('actual header keeps route/operator rows in place before and after catalogue hydration', () => {
+  let header = '';
+  function find(node: ts.Node) {
+    if (ts.isJsxElement(node) && node.openingElement.attributes.getText(ast).includes('styles.headerCenter'))
+      header = node.getText(ast);
+    ts.forEachChild(node, find);
+  }
+  find(ast);
+  expect(header).not.toBe('');
+  const compiled = ts.transpileModule('const header = ' + header, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React },
+  }).outputText + '\nheader';
+  const render = (config: unknown) => runInNewContext(compiled, {
+    React, View: 'View', Text: 'Text', TouchableOpacity: 'Button', ActivityIndicator: 'Spinner',
+    styles: { headerCenter: 'center', routeName: 'route', operatorName: 'operator' },
+    wellConfigMap: config, wells: ['Olson'], currentIndex: 0, isBackgroundSyncing: false,
+    getRouteColor: () => '#fff', openPicker: () => {}, t: () => 'of',
+  }) as React.ReactElement<{children: React.ReactElement<{style: unknown; children: unknown}>[]}>;
+  const pending = render(null).props.children.filter(n => n.type === 'Text');
+  const loaded = render({Olson: {route: 'Tallgrass', operator: 'OASIS'}}).props.children.filter(n => n.type === 'Text');
+  expect(pending).toHaveLength(3);
+  expect(loaded).toHaveLength(3);
+  expect(pending[0].props.children).toBe('\u00a0');
+  expect(pending[1].props.children).toBe('\u00a0');
+  expect(loaded[0].props.children).toBe('Tallgrass');
+  expect(loaded[1].props.children).toBe('OASIS');
 });

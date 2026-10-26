@@ -29,6 +29,11 @@ export function tankInfoDraft(config: TankConfig): Record<string, string> {
 }
 export function changeTankInfoField(draft: Record<string, string>, key: string, text: string, manualRate: boolean): Record<string, string> {
   const next = { ...draft, [key]: text };
+  // The compact editor has one visible count. When the whole bank is in use,
+  // correcting that count must also correct the hidden active-bank count.
+  // Preserve an explicitly smaller active bank rather than silently enabling tanks.
+  if (key === 'totalTanks' && Number(draft.activeTanks) === Number(draft.totalTanks))
+    next.activeTanks = text;
   if (key === 'tankDiameter' && !manualRate) {
     try {
       const diameter = dimensionFeet(text);

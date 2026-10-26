@@ -15,6 +15,21 @@ test('connected-bank preview follows dimensions and count while preserving a del
 test('modal close labels resolve in both supported languages', () => {
   expect(en.common.close).toBe('Close'); expect(es.common.close).toBe('Cerrar');
 });
+
+test.each(['2', '6'])('the single visible count corrects an all-active bank to %s tanks', count => {
+  const config = { totalTanks: 4, activeTanks: 4, perTankBblPerFoot: 25.5 };
+  const blank = changeTankInfoField(tankInfoDraft(config), 'totalTanks', '', false);
+  const draft = changeTankInfoField(blank, 'totalTanks', count, false);
+  expect(previewTankBankRate(draft)).toBe(Number(count) * 25.5);
+  expect(tankInfoChanges(config, draft)).toEqual({ totalTanks: Number(count), activeTanks: Number(count) });
+});
+
+test('a physical count correction preserves a known partially active bank', () => {
+  const config = { totalTanks: 4, activeTanks: 2, perTankBblPerFoot: 25.5 };
+  const draft = changeTankInfoField(tankInfoDraft(config), 'totalTanks', '6', false);
+  expect(draft.activeTanks).toBe('2');
+  expect(tankInfoChanges(config, draft)).toEqual({ totalTanks: 6 });
+});
 test('bank rate remains derived and unknowns are not replaced with invented tank specifications', () => {
   expect(editableTankConfig({}).tankHeight).toBeUndefined();
   expect(editableTankConfig({ numTanks: 4, bblPerFoot: 134.4 }).perTankBblPerFoot).toBe(33.6);

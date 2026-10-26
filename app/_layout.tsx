@@ -1,6 +1,7 @@
 import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as NavigationBar from 'expo-navigation-bar';
+import { refreshAppNavigationBar } from '../src/utils/keypadNavigationBar';
 import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import { AppState, Platform, StatusBar, View, StyleSheet } from 'react-native';
@@ -49,8 +50,7 @@ function MobileRootContent() {
     // Configure Android system navigation — keep visible and non-immersive
     const configureSystemNav = () => {
       if (Platform.OS === 'android') {
-        NavigationBar.setVisibilityAsync('visible');
-        NavigationBar.setBehaviorAsync('inset-touch');
+        void refreshAppNavigationBar();
         NavigationBar.setBackgroundColorAsync('#00000000');
         NavigationBar.setButtonStyleAsync('light');
         StatusBar.setHidden(false);

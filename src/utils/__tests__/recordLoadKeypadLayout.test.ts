@@ -61,7 +61,8 @@ describe('Record Load / Pull Edit — Issue 2: duplicate Tank Level placeholder 
 describe('Record Load / Pull Edit — Issue 3: bottom safe area owned by the slot exactly once', () => {
   it('the slot is the geometry owner: uses the effective clearance via the single helper', () => {
     expect(context).toMatch(/useSafeAreaInsets/);
-    // Effective bottom = max(live inset, pre-hide initial inset), applied once.
+    // Hidden Android navigation does not leave a stale bottom gap.
+    expect(context).toContain("Platform.OS === 'android' ? 0 : getEffectiveBottomClearance");
     expect(context).toMatch(/getEffectiveBottomClearance\(\s*insets\.bottom,\s*initialWindowSafeAreaInsets\?\.bottom/);
     expect(context).toMatch(/getMeasurementSlotGeometry\(effectiveBottom\)/);
     expect(context).toMatch(/paddingBottom:\s*slotGeometry\.safeAreaPadding/);

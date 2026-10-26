@@ -1,4 +1,5 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Platform, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MEASUREMENT_KEYPAD_HEIGHT } from '../utils/measurementKeypadLayout';
 import { useMeasurementKeypad } from '../contexts/MeasurementKeypadContext';
@@ -41,11 +42,13 @@ function ActionButton({
   onPress,
   variant,
   blocked,
+  closeIcon,
 }: {
   label: string;
   onPress: () => void;
   variant: 'done' | 'next' | 'delete' | 'nav';
   blocked?: boolean;
+  closeIcon?: boolean;
 }) {
   return (
     <TouchableOpacity
@@ -66,6 +69,7 @@ function ActionButton({
       onPress={blocked ? NOOP : onPress}
       activeOpacity={blocked ? 1 : 0.2}
       accessibilityRole="button"
+      accessibilityLabel={closeIcon ? 'Close keypad' : label}
       // vc18 field result: on Android, accessibilityState.disabled is applied
       // to the NATIVE view's enabled flag, which strips the view out of touch
       // claiming — blocked keys fell through to the dismiss overlay exactly
@@ -75,7 +79,7 @@ function ActionButton({
         ? { accessibilityHint: blocked ? 'Unavailable' : undefined }
         : { accessibilityState: { disabled: !!blocked } })}
     >
-      <Text
+      {closeIcon ? <Ionicons name="chevron-down" size={26} color="#000" /> : <Text
         style={[
           variant === 'done' ? styles.doneText : styles.keyLabel,
           variant === 'next' ? styles.nextText : null,
@@ -84,7 +88,7 @@ function ActionButton({
         ]}
       >
         {label}
-      </Text>
+      </Text>}
     </TouchableOpacity>
   );
 }
@@ -99,33 +103,20 @@ export interface TankLevelKeypadProps {
   /** The active session advances to another field — enables Next. Next is
    *  ALWAYS rendered (uniform layout); false only dims it. */
   showNext?: boolean;
-  /** Whether Done may act right now. The caller decides why (Record Load:
-   *  whole form complete/valid from live values); the keypad additionally
-   *  requires the active draft itself to be committable. Default true keeps
-   *  plain commit-gated Done. */
-  doneAllowed?: boolean;
+
 }
 
 /**
  * Keys-only surface — 4 rows × 5 columns. Draft/caret live in the active form field.
  *
- * 7/27 — phone-style digit order (was calculator 789/456/123). Only the numeric
- * positions changed; the feet/inches/decimal (col 4) and Done/Next/Delete/nav
- * (col 5) keys keep their rows.
- * Row1: 1 2 3 ' Done — gold completion key. Blocked unless the active draft
- *   commits AND doneAllowed (caller-supplied gate; Record Load passes
- *   whole-form readiness from live values, edit mode passes true).
- * Row2: 4 5 6 " Next — always rendered so the keypad shape never changes
- *   between fields; enabled only when the session advances to another field
- *   (session.onNext, e.g. Tank Level → BBLs) and the draft commits. Terminal
- *   fields (BBLs) show it dimmed/inert.
- * Row3: 7 8 9 . Delete
- * Row4: 0 SPACE(×2) < >
+ * Row1: 1 2 3 ' Next
+ * Row2: 4 5 6 " Delete
+ * Row3: 7 8 9 < >
+ * Row4: 0 SPACE(×2) . Close
  */
-export default function TankLevelKeypad({ visible, showNext = true, doneAllowed = true }: TankLevelKeypadProps) {
+export default function TankLevelKeypad({ visible, showNext = true }: TankLevelKeypadProps) {
   const keypad = useMeasurementKeypad();
   const canCommit = keypad.canCommit;
-  const doneBlocked = !canCommit || !doneAllowed;
   const nextBlocked = !showNext || !canCommit;
 
   if (!visible) return null;
@@ -134,15 +125,8 @@ export default function TankLevelKeypad({ visible, showNext = true, doneAllowed 
   const symbol = (ch: string) => () => keypad.applyKey({ label: ch, value: ch });
 
   return (
-    <View
-      style={styles.sheet}
-      // Touch fence: the keypad surface is never "blank form area". Any touch
-      // no individual key claimed (blocked keys under native a11y/disabled
-      // quirks, gaps between keys) is claimed HERE, so responder negotiation
-      // never reaches MeasurementKeypadDismissOverlay's blank-area detection —
-      // its dismiss-tap candidate is never armed by a keypad touch. The
-      // release also must not bubble into the overlay's onTouchEnd. Blank
-      // form-area taps outside this sheet keep their dismiss behavior.
+    <View style={styles.sheet}
+      // Preserve the touch fence: blocked Next and gaps must not dismiss.
       onStartShouldSetResponder={() => true}
       onTouchEnd={(e) => e.stopPropagation()}
     >
@@ -152,7 +136,7 @@ export default function TankLevelKeypad({ visible, showNext = true, doneAllowed 
           <KeyButton label="2" onPress={digit('2')} />
           <KeyButton label="3" onPress={digit('3')} />
           <KeyButton label="'" onPress={symbol("'")} />
-          <ActionButton label="Done" onPress={keypad.commitDone} variant="done" blocked={doneBlocked} />
+          <ActionButton label="Next" onPress={keypad.commitNext} variant="next" blocked={nextBlocked} />
         </View>
 
         <View style={styles.row}>
@@ -160,19 +144,15 @@ export default function TankLevelKeypad({ visible, showNext = true, doneAllowed 
           <KeyButton label="5" onPress={digit('5')} />
           <KeyButton label="6" onPress={digit('6')} />
           <KeyButton label='"' onPress={symbol('"')} />
-          <ActionButton label="Next" onPress={keypad.commitNext} variant="next" blocked={nextBlocked} />
+          <ActionButton label="DELETE" onPress={() => keypad.applyKey({ label: 'DELETE', action: 'delete' })} variant="delete" />
         </View>
 
         <View style={styles.row}>
           <KeyButton label="7" onPress={digit('7')} />
           <KeyButton label="8" onPress={digit('8')} />
           <KeyButton label="9" onPress={digit('9')} />
-          <KeyButton label="." onPress={symbol('.')} />
-          <ActionButton
-            label="DELETE"
-            onPress={() => keypad.applyKey({ label: 'DELETE', action: 'delete' })}
-            variant="delete"
-          />
+          <ActionButton label="‹" onPress={keypad.cursorLeft} variant="nav" />
+          <ActionButton label="›" onPress={keypad.cursorRight} variant="nav" />
         </View>
 
         <View style={styles.row}>
@@ -183,8 +163,8 @@ export default function TankLevelKeypad({ visible, showNext = true, doneAllowed 
             actionLabel
             flex={2}
           />
-          <ActionButton label="‹" onPress={keypad.cursorLeft} variant="nav" />
-          <ActionButton label="›" onPress={keypad.cursorRight} variant="nav" />
+          <KeyButton label="." onPress={symbol('.')} />
+          <ActionButton label="Close keypad" closeIcon onPress={keypad.commitAndDismiss} variant="done" />
         </View>
       </View>
     </View>

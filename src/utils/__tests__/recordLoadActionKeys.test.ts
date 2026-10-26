@@ -32,7 +32,7 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
   // The Next handler alone — Done behavior is asserted separately, never conflated.
   const levelNextHandler = levelBlock.slice(levelBlock.indexOf('onNextComplete='), levelBlock.indexOf('onDoneComplete='));
 
-  describe('1+5+8. uniform layout: Next and Done always rendered, on both fields', () => {
+  describe('1+5+8. uniform layout: Next and Close always rendered, on both fields', () => {
     it('Next is rendered unconditionally — enabled state is the only variable', () => {
       expect(keypad).toMatch(/<ActionButton label="Next" onPress=\{keypad\.commitNext\} variant="next" blocked=\{nextBlocked\} \/>/);
       // no conditional rendering around the workflow slot anymore
@@ -41,9 +41,9 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
       expect((keypad.match(/label="Next"/g) ?? []).length).toBe(1);
     });
 
-    it('Done is rendered unconditionally in its existing gold position', () => {
-      expect(keypad).toMatch(/<ActionButton label="Done" onPress=\{keypad\.commitDone\} variant="done" blocked=\{doneBlocked\} \/>/);
-      expect((keypad.match(/label="Done"/g) ?? []).length).toBe(1);
+    it('Close is always available without submitting', () => {
+      expect(keypad).toContain('label="Close keypad" closeIcon onPress={keypad.commitAndDismiss}');
+      expect(keypad).not.toContain('onPress={keypad.commitDone}');
     });
   });
 
@@ -179,15 +179,15 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
       expect(record).toMatch(/const liveLevel = keypad\.isActiveField\(LEVEL_FIELD_KEY\) \? keypad\.draft : level/);
       expect(record).toMatch(/const liveBarrels = keypad\.isActiveField\(BBLS_FIELD_KEY\) \? keypad\.draft : barrels/);
       expect(record).toMatch(/isRecordLoadSubmitReady\(\{ wellName, level: liveLevel, barrels: liveBarrels, wellDown \}\)/);
-      expect(record).toMatch(/<MeasurementKeypadSlot doneEnabled=\{keypadDoneEnabled\} \/>/);
-      // slot hands the gate to the keypad
-      expect(ctx).toMatch(/<TankLevelKeypad visible showNext=\{showNext\} doneAllowed=\{doneEnabled\} \/>/);
+      expect(record).toContain('disabled={isSending || !keypadDoneEnabled}');
+      // Closing input is independent of submit validation
+      expect(ctx).toContain('<TankLevelKeypad visible showNext={showNext} />');
     });
   });
 
   describe('15. blocked Done/Next are truly inert (vc17 field defect)', () => {
-    it('Done blocked = !canCommit || !doneAllowed', () => {
-      expect(keypad).toMatch(/const doneBlocked = !canCommit \|\| !doneAllowed;/);
+    it('Close is not blocked by missing required fields', () => {
+      expect(keypad).not.toMatch(/const doneBlocked/);
     });
 
     it('blocked keys keep their touch target — no responder-releasing disabled={blocked}', () => {
@@ -222,8 +222,8 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
       expect(sheet).toMatch(/onTouchEnd=\{\(e\) => e\.stopPropagation\(\)\}/);
     });
 
-    it('enabled wiring is untouched: Done → commitDone, Next → commitNext', () => {
-      expect(keypad).toMatch(/<ActionButton label="Done" onPress=\{keypad\.commitDone\} variant="done" blocked=\{doneBlocked\} \/>/);
+    it('Close dismisses; Next advances without submitting', () => {
+      expect(keypad).toContain('label="Close keypad" closeIcon onPress={keypad.commitAndDismiss}');
       expect(keypad).toMatch(/<ActionButton label="Next" onPress=\{keypad\.commitNext\} variant="next" blocked=\{nextBlocked\} \/>/);
     });
 
@@ -288,11 +288,11 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
   describe('layout/keys otherwise unchanged (no redesign)', () => {
     it('4 rows, same digits/symbols/action keys', () => {
       expect((keypad.match(/<View style=\{styles\.row\}>/g) ?? []).length).toBe(4);
-      for (const label of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', "'", '.', 'SPACE', 'DELETE', 'Done', 'Next', '‹', '›']) {
+      for (const label of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', "'", '.', 'SPACE', 'DELETE', 'Close keypad', 'Next', '‹', '›']) {
         expect(keypad).toContain(`label="${label}"`);
       }
       expect(keypad).toContain('label=\'"\''); // inches key uses single-quoted JSX
-      expect(keypad).toContain("Row1: 1 2 3 ' Done");
+      expect(keypad).toContain("Row1: 1 2 3 ' Next");
       expect(bblsBlock).toMatch(/variant="numeric"/);
     });
   });

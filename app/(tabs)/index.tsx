@@ -315,6 +315,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Flow rate now stored in levelSnapshot (not separately cached) to prevent stale values
   const [levelSnapshot, setLevelSnapshot] = useState<LevelSnapshot | null>(null);
   const [lastPullInfo, setLastPullInfo] = useState<{dateTime: string, dateTimeUTC?: string, bbls: number, topLevel?: string, bottomLevel?: string} | null>(null);
+  const lastPullWellRef = useRef(wellName);
   const [targetFraction, setTargetFraction] = useState<number | null>(null);
   const [drainCompleteSignal, setDrainCompleteSignal] = useState(0); // Triggers live update effect after drain finishes
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
@@ -523,8 +524,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     let isMounted = true;
     const loadData = async () => {
       try {
-        // Clear stale data from previous well immediately to prevent showing wrong well's info
-        setLastPullInfo(null);
+        // Keep the same well's accepted details visible during a refresh.
+        // Clearing them on every sync collapses this row and flashes the layout.
+        // A different well must never inherit the previous well's details.
+        if (lastPullWellRef.current !== wellName) {
+          lastPullWellRef.current = wellName;
+          setLastPullInfo(null);
+        }
         // Don't clear levelSnapshot here - it causes flickering. Instead rely on proper loading.
 
         // Load well config - MUST await since it's async
@@ -548,6 +554,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
         setLevelSnapshot(snapshot);
         if (snapshot?.unavailable) {
+          setLastPullInfo(null);
           setIsLoadingInitial(false);
           return;
         }
@@ -607,6 +614,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             topLevel: lastPullTopLevel,
             bottomLevel: lastPullBottomLevel,
           });
+        } else {
+          // Clear only after an accepted read actually has no last pull.
+          setLastPullInfo(null);
         }
 
         // Load persisted slider position (keeps driver's last setting)

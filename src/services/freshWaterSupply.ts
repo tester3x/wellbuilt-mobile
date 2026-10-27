@@ -6,7 +6,8 @@ import { getDriverSession } from './driverAuth';
 const QUEUE_KEY = '@wellbuilt_fresh_water_deliveries_v1';
 export type FreshWaterDeliveryDraft = {
   deliveryId: string;
-  wellName: string;
+  groupId?: string;
+  wellName?: string; // Older queued entries are retained for review, never silently reassigned.
   deliveredAtUTC: string;
   deliveredBbl: number;
   measuredBeforeFeet?: number;
@@ -16,10 +17,14 @@ export type FreshWaterDeliveryDraft = {
 };
 export type FreshWaterSupply = {
   ok: true;
-  wellName: string;
+  groupId: string;
+  name: string;
+  wellNames: string[];
   config: { enabled: true; tankCount: number; tankHeightFeet: number; bblPerFootPerTank: number; dailyUseBbl: number };
   status: null | { levelFeet: number; projectedFeet: number | null; asOfUTC: string; dailyUseBbl: number; lastMeasuredFeet: number | null; lastMeasuredAtUTC: string | null };
 };
+export type FreshWaterTankGroup = { groupId: string; name: string; wellNames: string[];
+  config: FreshWaterSupply['config'] };
 
 let queueOperation: Promise<unknown> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
@@ -38,8 +43,11 @@ async function writeQueue(queue: FreshWaterDeliveryDraft[]) {
   await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
 }
 
-export async function getFreshWaterSupply(wellName: string) {
-  return authorizedCallable<FreshWaterSupply>('getWbmFreshWaterSupply', { wellName });
+export async function listFreshWaterTankGroups() {
+  return authorizedCallable<{ ok: true; groups: FreshWaterTankGroup[] }>('getWbmFreshWaterTankGroups', {});
+}
+export async function getFreshWaterSupply(groupId: string) {
+  return authorizedCallable<FreshWaterSupply>('getWbmFreshWaterTankGroups', { groupId });
 }
 
 export async function pendingFreshWaterDeliveries(): Promise<FreshWaterDeliveryDraft[]> {
@@ -49,13 +57,13 @@ export async function pendingFreshWaterDeliveries(): Promise<FreshWaterDeliveryD
 }
 
 export async function queueFreshWaterDelivery(input: {
-  wellName: string; deliveredBbl: number; measuredBeforeFeet?: number;
+  groupId: string; deliveredBbl: number; measuredBeforeFeet?: number;
 }): Promise<FreshWaterDeliveryDraft> {
   const session = await getDriverSession();
   if (!session?.driverId || !session.companyId || session.isViewer) throw new Error('Driver session required');
   const entry: FreshWaterDeliveryDraft = {
     deliveryId: `fw_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`,
-    wellName: input.wellName,
+    groupId: input.groupId,
     deliveredAtUTC: new Date().toISOString(),
     deliveredBbl: input.deliveredBbl,
     ...(input.measuredBeforeFeet === undefined ? {} : { measuredBeforeFeet: input.measuredBeforeFeet }),
@@ -83,9 +91,13 @@ export async function flushFreshWaterDeliveries(): Promise<{ sent: number; pendi
         kept.push(entry);
         continue;
       }
+      if (!entry.groupId) {
+        kept.push({ ...entry, error: 'Older delivery needs review: no tank group was recorded.' });
+        continue;
+      }
       try {
-        const { ok } = await authorizedCallable<{ ok: boolean }>('ingestWbmFreshWaterDelivery', {
-          wellName: entry.wellName,
+        const { ok } = await authorizedCallable<{ ok: boolean }>('ingestWbmFreshWaterGroupDelivery', {
+          groupId: entry.groupId,
           deliveryId: entry.deliveryId,
           deliveredAtUTC: entry.deliveredAtUTC,
           deliveredBbl: entry.deliveredBbl,

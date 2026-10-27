@@ -44,7 +44,7 @@ import { roamingFishPosition, movementFishFacing, floatingPosition, fishScatterD
 import { TankInfoModal } from '../../src/components/TankInfoModal';
 import type { TankConfig } from '../../src/services/tankInfo';
 import { TankPelican } from '../../src/components/TankPelican';
-import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
+import { backToSuite } from '../../src/services/hubNavigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MoreMenu, moreMenuStyles } from '../../src/components/MoreMenu';
 import { MORE_MENU_TOKENS } from '../../src/constants/moreMenuTokens';
@@ -2451,7 +2451,7 @@ export default function MainScreen() {
           onClose={() => setShowMore(false)}
           onRouteMe={() => router.push('/route-me')}
           onSummary={handleSummaryPress}
-          onSwitchApps={() => DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT)}
+          onBackToSuite={() => { void backToSuite(); }}
           bottomInset={insets.bottom}
         />
       </GestureHandlerRootView>
@@ -2570,7 +2570,7 @@ export default function MainScreen() {
         onClose={() => setShowMore(false)}
         onRouteMe={() => router.push('/route-me')}
         onSummary={handleSummaryPress}
-        onSwitchApps={() => DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT)}
+        onBackToSuite={() => { void backToSuite(); }}
         bottomInset={insets.bottom}
       />
 

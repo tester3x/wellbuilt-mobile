@@ -1006,7 +1006,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
 
     const currentLevel = displayFeet;
-    const allowedBottom = wellConfig?.allowedBottom ?? 3;
+    const allowedBottom = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.allowedBottom ?? 3;
     const bblFt = bblsPerFoot;
 
     // Calculate feet needed for one load
@@ -1452,8 +1452,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       {/* Slider - tap to peek values, long press to unlock */}
       {(() => {
         // Calculate slider minimum: use loadLine (1.33') or allowedBottom if lower
-        const literalLoadLine = wellConfig?.loadLine ?? 1.33;
-        const allowedBottom = wellConfig?.allowedBottom ?? 3;
+        const literalLoadLine = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.loadLine ?? 1.33;
+        const allowedBottom = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.allowedBottom ?? 3;
         // If allowedBottom < literal load line, use allowedBottom only
         // Otherwise use literal load line as minimum, with allowedBottom marker if higher
         const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;

@@ -742,6 +742,11 @@ export default function SummaryScreen() {
   // Then wells not yet ready (by when they will become ready - soonest first)
   const getSortedWells = (wells: WellSummaryData[]): WellSummaryData[] => {
     return [...wells].sort((a, b) => {
+      if (a.routeType === 'freshwater' && b.routeType === 'freshwater') {
+        const estimate=(well:WellSummaryData)=>well.unavailable ? Infinity : estimatedSnapshotLevel({routeType:well.routeType,
+          levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight);
+        return estimate(a)-estimate(b) || a.wellName.localeCompare(b.wellName);
+      }
       // Down wells go to bottom
       if (a.isDown && !b.isDown) return 1;
       if (!a.isDown && b.isDown) return -1;

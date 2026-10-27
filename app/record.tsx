@@ -470,13 +470,13 @@ function RecordScreenInner() {
         setEstLevel(formatFeetInches(estimatedLevel));
         setEstLevelFeet(estimatedLevel);
 
-        const bbls = Math.max(Math.round((estimatedLevel - loadLine) * bblPerFt), 0);
+        const bbls = Math.max(Math.round((rules(config?.routeType).operationSign > 0 ? tankHeightFeet - estimatedLevel : estimatedLevel - loadLine) * bblPerFt), 0);
         setEstBbls(bbls);
       } else if (baseLvl > 0) {
         baseLvl = clampTankLevel(baseLvl, tankHeightFeet);
         setEstLevel(formatFeetInches(baseLvl));
         setEstLevelFeet(baseLvl);
-        const bbls = Math.max(Math.round((baseLvl - loadLine) * bblPerFt), 0);
+        const bbls = Math.max(Math.round((rules(config?.routeType).operationSign > 0 ? tankHeightFeet - baseLvl : baseLvl - loadLine) * bblPerFt), 0);
         setEstBbls(bbls);
       }
 
@@ -506,7 +506,7 @@ function RecordScreenInner() {
     setEstLevel(formatFeetInches(estimatedLevel));
     setEstLevelFeet(estimatedLevel);
 
-    const bbls = Math.max(Math.round((estimatedLevel - loadLineRef.current) * bblPerFoot), 0);
+    const bbls = Math.max(Math.round((rules(routeType).operationSign > 0 ? tankHeightFeet - estimatedLevel : estimatedLevel - loadLineRef.current) * bblPerFoot), 0);
     setEstBbls(bbls);
   }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode, tankHeightFeet, routeType]);
 

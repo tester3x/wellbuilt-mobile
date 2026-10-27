@@ -281,7 +281,7 @@
     "tomorrow": "Tomorrow",
     "pull": "Pull",
     "fill": "Fill",
-    "lastPull": "Last pull:",
+    "lastPull": "Last load:",
     "nextPull": "Next Pull",
     "waitingForWellBuilt": "Waiting for WellBuilt...",
     "serverNoResponse": "Server hasn't replied, still waiting...",

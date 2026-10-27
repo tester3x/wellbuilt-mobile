@@ -281,7 +281,7 @@
     "tomorrow": "Mañana",
     "pull": "Extraer",
     "fill": "Llenar",
-    "lastPull": "Última extracción:",
+    "lastPull": "Última carga:",
     "nextPull": "Próxima Extracción",
     "waitingForWellBuilt": "Esperando a WellBuilt...",
     "serverNoResponse": "El servidor no ha respondido, aún esperando...",

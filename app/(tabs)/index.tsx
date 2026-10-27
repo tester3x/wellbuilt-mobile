@@ -1,6 +1,7 @@
 import { thresholdTime } from '@tester3x/water-hauling';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getFreshWaterSupply } from '../../src/services/freshWaterSupply';
+import { tankViewport, tankSceneScale } from '../../src/ui/tankViewport';
 import { resolveTankHeight, tankFillFraction } from '../../src/utils/tankHeight';
 import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,8 @@ import {
   AppState,
   DeviceEventEmitter,
   Dimensions,
+  useWindowDimensions,
+  ScrollView,
   FlatList,
   Image,
   Modal,
@@ -297,6 +300,8 @@ const parseFlowRateToMinutes = (flowRate: string): number => {
 interface WellViewProps {
   wellName: string;
   isActive: boolean;
+  cardWidth?: number;
+  viewportHeight?: number;
   getPreviousLevel: () => number; // Getter for previous well's level (0-1)
   onLevelChange?: (level: number) => void; // Report current level to parent
   refreshTrigger?: number; // Triggers data reload after sync
@@ -308,7 +313,7 @@ interface WellViewProps {
   onToggleOvernightBbls?: () => void; // Toggle handler (persists to AsyncStorage)
 }
 
-const WellView = React.memo(function WellView({ wellName, isActive, getPreviousLevel, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
+const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, getPreviousLevel, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
@@ -334,6 +339,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // showOvernightBbls is now a prop from MainScreen (global toggle)
   const hasAnimated = useRef(false);
   const prevIsActive = useRef(isActive);
+  const tankScale=tankSceneScale(cardWidth,viewportHeight,TANK_WIDTH,TANK_HEIGHT);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
@@ -1279,12 +1285,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   };
 
   return (
-    <View style={styles.wellView}>
+    <View style={[styles.wellView,{width:'100%',flex:0,justifyContent:'flex-start'}]}>
       {/* Top section - tank and stats */}
       <View style={styles.topSection}>
         {/* Tank - double-tap for Performance, long-press to hide well */}
-        <View style={styles.tankSection}>
-        <Pressable onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
+        <View style={[styles.tankSection,{height:TANK_HEIGHT*tankScale}]}>
+        <Pressable style={{transform:[{scale:tankScale}]}} onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
           onPress={() => { if (!fishTouchedRef.current) handleNormalTankTap(); }}
           onLongPress={() => { if (!fishTouchedRef.current) handleTankLongPress(); }} delayLongPress={500}>
         <View pointerEvents="none" style={styles.tankOuter} onLayout={event => { const { x, y } = event.nativeEvent.layout; tankTouchOffset.current = { x: x + INTERIOR_LEFT, y: y + INTERIOR_TOP }; }}>
@@ -1479,8 +1485,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       </View>
       </View>
 
-      {wellConfig?.routeType === 'freshwater' && <View>
-        <TouchableOpacity onPress={()=>setDeliveryPicker('date')}><Text style={styles.nextPullLabel}>Delivery time: {deliveryAt ? formatDateTime(deliveryAt) : 'Now'} (change)</Text></TouchableOpacity>
+      {wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',paddingHorizontal:12}}>
+        <TouchableOpacity onPress={()=>setDeliveryPicker('date')}><Text style={styles.nextPullLabel}>Assumed delivery: {deliveryAt ? formatDateTime(deliveryAt) : 'Now'} (change)</Text></TouchableOpacity>
         {deliveryAt && <TouchableOpacity onPress={()=>setDeliveryAt(null)}><Text style={styles.nextPullLabel}>Use now</Text></TouchableOpacity>}
         {deliveryPicker && <DateTimePicker value={deliveryAt ?? new Date()} mode={deliveryPicker} onChange={(event,date)=>{
           const mode=deliveryPicker;setDeliveryPicker(null);
@@ -1528,7 +1534,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               {showNextPull ? (
                 // Next Pull Ready - shows in same spot as slider info when locked
                 <>
-                  <Text style={styles.nextPullLabel}>{wellConfig?.routeType === 'freshwater' ? 'Next delivery' : t('well.nextPull', 'Next Pull')}</Text>
+                  <Text style={styles.nextPullLabel}>{wellConfig?.routeType === 'freshwater' ? 'Minimum '+(wellConfig.allowedBottom==null?'unknown':formatFeetInches(wellConfig.allowedBottom))+' (no delivery)' : t('well.nextPull', 'Next Pull')}</Text>
                   <Text style={[
                     styles.nextPullTime,
                     nextPullReady.isReady && styles.nextPullReady
@@ -1636,6 +1642,10 @@ export default function MainScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
+  const windowSize=useWindowDimensions();
+  const {columns,cardWidth,viewportHeight}=tankViewport(windowSize.width,windowSize.height);
+  const [visibleWellIndices,setVisibleWellIndices]=useState<number[]>([]);
+  const [focusedIndex,setFocusedIndex]=useState<number|null>(null);
   const pickerListRef = useRef<FlatList>(null);
 
   // Track levels for ALL wells, not just the active one
@@ -1643,6 +1653,9 @@ export default function MainScreen() {
   const previousIndex = useRef(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
+  useEffect(()=>{setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
+    flatListRef.current?.scrollToOffset({offset:cardWidth*currentIndex,animated:false});
+  },[cardWidth,columns]);
   const selectionCatalogueRef = useRef<{
     owner: Awaited<ReturnType<typeof captureWellSelectionOwner>>;
     eligible: string[];
@@ -1667,6 +1680,7 @@ export default function MainScreen() {
   const [pickerScrolling, setPickerScrolling] = useState(false);
   const [sliderActive, setSliderActive] = useState(false);
   const [wells, setWells] = useState<string[]>([]);
+  const actionIndex=Math.max(0,Math.min(focusedIndex ?? currentIndex,wells.length-1));
   const visibleWellRef = useRef({ well: wells[currentIndex], index: currentIndex });
   visibleWellRef.current = { well: wells[currentIndex], index: currentIndex };
   const homeStartedAt=useRef(Date.now());
@@ -2163,8 +2177,8 @@ export default function MainScreen() {
 
   // Check for draft when current well changes (separate from focus effect)
   useEffect(() => {
-    if (wells.length > 0 && currentIndex >= 0 && currentIndex < wells.length) {
-      const wellName = wells[currentIndex];
+    if (wells.length > 0 && actionIndex >= 0 && actionIndex < wells.length) {
+      const wellName = wells[actionIndex];
       const key = getDraftKey(wellName);
       AsyncStorage.getItem(key).then(draftJson => {
         if (!draftJson) {
@@ -2182,7 +2196,7 @@ export default function MainScreen() {
         }
       });
     }
-  }, [wells, currentIndex]);
+  }, [wells, actionIndex]);
 
   // Note: Well loading is now handled entirely by useFocusEffect above
   // It runs when initial sync completes (isInitialSyncing changes) AND on screen focus
@@ -2216,10 +2230,10 @@ export default function MainScreen() {
     if (wells.length > 0) {
       router.push({
         pathname: '/record',
-        params: { wellName: wells[currentIndex] },
+        params: { wellName: wells[actionIndex] },
       });
     }
-  }, [router, wells, currentIndex, isViewer, alert, t]);
+  }, [router, wells, actionIndex, isViewer, alert, t]);
 
   // Navigate to settings
   const handleSettingsPress = useCallback(() => {
@@ -2232,10 +2246,12 @@ export default function MainScreen() {
   }, [router]);
 
   // Handle well change from swipe
-  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    setVisibleWellIndices(viewableItems.flatMap(item=>item.index==null?[]:[item.index]));
     if (viewableItems.length > 0 && viewableItems[0].index !== null) {
+      setFocusedIndex(null);
       const newIndex = viewableItems[0].index;
       // Save current as previous BEFORE updating to new
       if (newIndex !== currentIndex) {
@@ -2249,10 +2265,10 @@ export default function MainScreen() {
   const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
 
   // Open picker for well selection
-  const openPicker = () => {
+  const openPicker = (index=currentIndex) => {
     setWellSearch('');
-    setTempSelectedIndex(currentIndex);
-    lastTickIndex.current = currentIndex;
+    setTempSelectedIndex(index);
+    lastTickIndex.current = index;
     setPickerScrolling(false);
     setShowPicker(true);
   };
@@ -2288,8 +2304,8 @@ export default function MainScreen() {
   }, []);
 
   // Navigate to current well's performance detail on tank double-tap
-  const handleTankDoubleTap = useCallback(() => {
-    const currentWell = wells[currentIndex];
+  const handleTankDoubleTap = useCallback((targetWell?:string) => {
+    const currentWell = targetWell || wells[currentIndex];
     if (currentWell) {
       router.push({
         pathname: '/performance-detail',
@@ -2299,8 +2315,8 @@ export default function MainScreen() {
   }, [router, wells, currentIndex]);
 
   // Hide well from My Wells on tank long-press
-  const handleTankLongPress = useCallback(() => {
-    const currentWell = wells[currentIndex];
+  const handleTankLongPress = useCallback((targetWell?:string) => {
+    const currentWell = targetWell || wells[currentIndex];
     if (!currentWell) return;
 
     // Show confirmation dialog
@@ -2346,28 +2362,23 @@ export default function MainScreen() {
   }, [wells, currentIndex, alert, t]);
 
   const renderWell = useCallback(({ item, index }: { item: string; index: number }) => (
-    <View style={{ width: SCREEN_WIDTH }}>
-      <WellView
-        wellName={item}
-        isActive={index === currentIndex}
-        getPreviousLevel={getPreviousLevel}
-        onLevelChange={(level) => handleLevelChange(item, level)}
-        refreshTrigger={refreshTrigger}
-        onSliderActiveChange={setSliderActive}
-        loadBbls={loadBbls}
-        onTankDoubleTap={handleTankDoubleTap}
-        onTankLongPress={handleTankLongPress}
-        showOvernightBbls={showOvernightBbls}
-        onToggleOvernightBbls={handleToggleOvernightBbls}
-      />
+    <View style={{width:cardWidth,flex:1,minHeight:0,borderWidth:1,borderColor:actionIndex===index?'#2563EB':'transparent'}} onTouchStart={()=>setFocusedIndex(index)}>
+      <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
+        <Text style={{color:getRouteColor(wellConfigMap?.[item]?.route || ''),fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.route || '\u00a0'}</Text>
+        <Text style={{color:'#F9FAFB',fontSize:18,fontWeight:'700'}} numberOfLines={1}>{wellConfigMap?.[item]?.displayName || item}</Text>
+        <Text style={{color:'#9CA3AF',fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.operator || '\u00a0'}</Text>
+      </TouchableOpacity>
+      <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{paddingBottom:16}} nestedScrollEnabled showsVerticalScrollIndicator>
+      <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight}
+        isActive={visibleWellIndices.includes(index)}
+        getPreviousLevel={getPreviousLevel} onLevelChange={level=>handleLevelChange(item,level)}
+        refreshTrigger={refreshTrigger} onSliderActiveChange={setSliderActive} loadBbls={loadBbls}
+        onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
+        showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
+      </ScrollView>
     </View>
-  ), [currentIndex, getPreviousLevel, handleLevelChange, refreshTrigger, loadBbls, handleTankDoubleTap, handleTankLongPress, showOvernightBbls, handleToggleOvernightBbls]);
-
-  const getItemLayout = (_: any, index: number) => ({
-    length: SCREEN_WIDTH,
-    offset: SCREEN_WIDTH * index,
-    index,
-  });
+  ),[cardWidth,viewportHeight,visibleWellIndices,actionIndex,wellConfigMap,getPreviousLevel,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
 
   if (!isReady) {
     return (
@@ -2508,39 +2519,10 @@ export default function MainScreen() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Header with tappable well name and settings */}
-      <View style={styles.header}>
-        {/* Empty spacer for balance */}
-        <View style={styles.headerSpacer} />
-
-        {/* Center - route name and well name */}
-        <View style={styles.headerCenter}>
-          {/* Route name - smaller, in route color */}
-          {/* Reserve both metadata rows while the catalogue loads. Adding
-              them later resizes the tank area immediately after the spinner. */}
-          <Text style={[
-            styles.routeName,
-            { color: getRouteColor(wellConfigMap?.[wells[currentIndex]]?.route || '') }
-          ]} numberOfLines={1}>
-            {wellConfigMap?.[wells[currentIndex]]?.route || '\u00a0'}
-          </Text>
-          <TouchableOpacity onPress={openPicker} style={styles.wellNameButton}>
-            <Text style={styles.wellName}>{wellConfigMap?.[wells[currentIndex]]?.displayName || wells[currentIndex]}</Text>
-            <Text style={styles.wellNameArrow}>▼</Text>
-            {isBackgroundSyncing && (
-              <ActivityIndicator size="small" color="#60A5FA" style={styles.syncIndicator} />
-            )}
-          </TouchableOpacity>
-          <Text style={styles.operatorName} numberOfLines={1}>
-            {wellConfigMap?.[wells[currentIndex]]?.operator || '\u00a0'}
-          </Text>
-          <Text style={styles.positionIndicator}>{currentIndex + 1} {t('homeExtra.of')} {wells.length}</Text>
-        </View>
-
-        {/* Right - settings button */}
-        <TouchableOpacity onPress={() => router.push('/settings')} style={styles.settingsButton}>
-          <Text style={styles.settingsIcon}>⚙</Text>
-        </TouchableOpacity>
+      {/* Global settings is shared; each visible card owns its well metadata. */}
+      <View style={[styles.header,{paddingTop:Math.max(insets.top,8),paddingBottom:4}]}>
+        <Text style={{color:'#F9FAFB',fontSize:16}}>Wells</Text>
+        <TouchableOpacity accessibilityLabel="Settings" onPress={()=>router.push('/settings')} style={styles.settingsButton}><Text style={styles.settingsIcon}>⚙</Text></TouchableOpacity>
       </View>
 
       {/* Swipeable well views - with memory optimization for Android */}
@@ -2550,18 +2532,20 @@ export default function MainScreen() {
         renderItem={renderWell}
         keyExtractor={(item) => item}
         horizontal
-        pagingEnabled
+        snapToInterval={cardWidth}
+        decelerationRate="fast"
+        style={{flex:1,minHeight:0}}
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         getItemLayout={getItemLayout}
         initialScrollIndex={Math.min(currentIndex, Math.max(0, wells.length - 1))}
-        removeClippedSubviews={Platform.OS === 'android'}
+        removeClippedSubviews={false}
         maxToRenderPerBatch={2}
         windowSize={3}
-        initialNumToRender={1}
+        initialNumToRender={columns}
         updateCellsBatchingPeriod={100}
-        extraData={currentIndex}
+        extraData={[currentIndex,focusedIndex,visibleWellIndices,cardWidth]}
         directionalLockEnabled={true}
         alwaysBounceVertical={Platform.OS === 'ios'}
         alwaysBounceHorizontal={true}
@@ -2591,7 +2575,7 @@ export default function MainScreen() {
           <TouchableOpacity style={styles.navButton} onPress={handlePullPress} disabled={isViewer}>
             <Text style={[styles.navIcon, styles.navIconAccent, isViewer && styles.navIconDisabled]}>🛢️</Text>
             <Text style={[styles.navLabel, styles.navLabelAccent, isViewer && styles.navLabelDisabled]}>
-              {isViewer ? t('homeExtra.viewOnly') : wellConfigMap?.[wells[currentIndex]]?.routeType === 'freshwater' ? 'Delivery' : t('nav.pull')}
+              {isViewer ? t('homeExtra.viewOnly') : wellConfigMap?.[wells[actionIndex]]?.routeType === 'freshwater' ? 'Delivery' : t('nav.pull')}
             </Text>
             {currentWellHasDraft && !isViewer && (
               <View style={styles.draftIndicator}>

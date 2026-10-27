@@ -3,7 +3,7 @@
     "name": "WellBuilt Mobile",
     "slug": "WellBuiltMobile",
     "version": "2.1.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "wellbuiltmobile",
     "userInterfaceStyle": "automatic",
@@ -48,7 +48,7 @@
         "INTERNET"
       ],
       "package": "com.wellbuiltmobile.app",
-      "versionCode": 117
+      "versionCode": 118
     },
     "web": {
       "output": "static",

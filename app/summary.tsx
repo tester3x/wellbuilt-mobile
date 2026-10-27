@@ -1,4 +1,4 @@
-import { thresholdTime } from '@tester3x/water-hauling';
+import { freshwaterSummaryPlanning, summarySliderValue } from '../src/services/freshwaterSummaryPlanning';
 import { resolveTankHeight } from '../src/utils/tankHeight';
 import { Slider } from '@miblanchard/react-native-slider';
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -185,6 +185,8 @@ export default function SummaryScreen() {
   const [sliderMode, setSliderMode] = useState<'feet' | 'time'>('feet');
   const [sliderFeet, setSliderFeet] = useState(DEFAULT_SLIDER_FEET);
   const [sliderHours, setSliderHours] = useState(DEFAULT_SLIDER_HOURS);
+  const [projectionNow,setProjectionNow]=useState(Date.now);
+  useEffect(()=>{const timer=setInterval(()=>setProjectionNow(Date.now()),30000);return()=>clearInterval(timer);},[]);
   const [pullBbls, setPullBbls] = useState(DEFAULT_PULL_BBLS);
   const [pullBblsInput, setPullBblsInput] = useState(String(DEFAULT_PULL_BBLS));
   
@@ -449,7 +451,9 @@ export default function SummaryScreen() {
   };
 
   // Handle sliding complete - start the lock timer only when released
-  const handleSlidingComplete = () => {
+  const handleSlidingComplete = (value: number | number[]) => {
+    if(sliderMode==='feet')handleSliderFeetChange(summarySliderValue(value,MIN_SLIDER_FEET,maxSliderFeet));
+    else handleSliderHoursChange(summarySliderValue(value,MIN_SLIDER_HOURS,MAX_SLIDER_HOURS));
     resetSliderLockTimer();
   };
 
@@ -546,15 +550,18 @@ export default function SummaryScreen() {
   // Render well row with calculated values
   const renderWellRow = (well: WellSummaryData) => {
     if (well.routeType === 'freshwater') {
-      const at=well.unavailable ? null : thresholdTime('freshwater',estimatedSnapshotLevel({routeType:well.routeType,levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,isDown:well.isDown,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight),new Date().toISOString(),well.dailyBbl,well.bblPerFoot || 0,well.allowedBottom,well.isDown);
-      const level=well.unavailable ? '--' : formatFeetInches(estimatedSnapshotLevel({routeType:well.routeType,levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,isDown:well.isDown,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight));
+      const plan=freshwaterSummaryPlanning(well,sliderFeet,sliderHours,projectionNow);
+      const atParts=sliderMode==='feet' ? plan.targetAt ? formatDateTimeSplit(new Date(plan.targetAt)) : {time:'--',date:''}
+        : {time:plan.future==null?'--':formatFeetInches(plan.future),date:''};
+      const minimumParts=plan.minimumAt ? formatDateTimeSplit(new Date(plan.minimumAt)) : {time:well.isDown?'Paused':'--',date:''};
       return <TouchableOpacity key={well.wellName} style={styles.wellRow} onPress={()=>handleWellPress(well.wellName)}>
         <View style={styles.wellRowMain}>
           <Text style={[styles.wellText,styles.colWell]} numberOfLines={1}>{well.displayName || well.wellName}</Text>
-          <Text style={[styles.wellText,styles.colLevel]}>{level}</Text>
-          <Text style={[styles.wellText,styles.colAt]}>{well.dailyBbl == null ? '--' : well.dailyBbl.toFixed(1)+' BBL/day'}</Text>
-          <Text style={[styles.wellText,styles.colReady]}>{well.isDown ? 'Paused' : at ? new Date(at).toLocaleString(undefined,{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) : '--'}</Text>
+          <Text style={[styles.wellText,styles.colLevel]}>{plan.current==null?'--':formatFeetInches(plan.current)}</Text>
+          <View style={[styles.colAt,styles.colTwoLine]}><Text style={styles.wellText}>{atParts.time}</Text>{!!atParts.date&&<Text style={styles.dateSubText}>{atParts.date}</Text>}</View>
+          <View style={[styles.colReady,styles.colTwoLine,{alignItems:'flex-end'}]}><Text style={styles.wellText}>{minimumParts.time}</Text>{!!minimumParts.date&&<Text style={styles.dateSubText}>{minimumParts.date}</Text>}<Text style={styles.dateSubText}>{Number.isFinite(well.allowedBottom)?'Minimum '+formatFeetInches(well.allowedBottom):'Minimum unknown'}</Text></View>
         </View>
+        {expandedWell===well.wellName&&<View style={styles.wellRowMain}><Text style={styles.wellText}>Estimated consumption: {well.dailyBbl==null?'Unknown':well.dailyBbl+' BBL/day'}{well.isDown?' · paused':''}</Text></View>}
       </TouchableOpacity>;
     }
     const currentLevel = getCurrentLevel(well);
@@ -896,10 +903,10 @@ export default function SummaryScreen() {
                       <Text style={[styles.tableHeaderText, styles.colAt]}>
                         @ {sliderMode === 'feet'
                           ? formatFeetInches(sliderFeet)
-                          : formatDateTime(new Date(Date.now() + sliderHours * 60 * 60 * 1000))
+                          : '+'+sliderHours+'h · '+formatDateTime(new Date(projectionNow + sliderHours * 60 * 60 * 1000))
                         }
                       </Text>
-                      <Text style={[styles.tableHeaderText, styles.colReady]}>{t('summary.columnReady')}</Text>
+                      <Text style={[styles.tableHeaderText, styles.colReady]}>{route.wells.some(w=>w.routeType==='freshwater')?'Load / minimum':t('summary.columnReady')}</Text>
                     </View>
                     {getSortedWells(route.wells).map(renderWellRow)}
                   </>
@@ -932,9 +939,9 @@ export default function SummaryScreen() {
               value={sliderMode === 'feet' ? sliderFeet : sliderHours}
               onValueChange={(val) => {
                 if (sliderMode === 'feet') {
-                  handleSliderFeetChange(val[0]);
+                  handleSliderFeetChange(summarySliderValue(val,MIN_SLIDER_FEET,maxSliderFeet));
                 } else {
-                  handleSliderHoursChange(val[0]);
+                  handleSliderHoursChange(summarySliderValue(val,MIN_SLIDER_HOURS,MAX_SLIDER_HOURS));
                 }
               }}
               onSlidingStart={handleSlidingStart}

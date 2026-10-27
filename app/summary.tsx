@@ -28,7 +28,7 @@ import { loadWellPresentation } from "../src/services/wellPresentation";
 import { getSessionGeneration } from "../src/services/wbmSessionFence";
 import { hp, spacing, wp } from "../src/ui/layout";
 import { summaryCurrentLevel as getCurrentLevel, summaryLevelAtTime as getLevelAtTime } from '../src/services/summaryWellLevel';
-import { startingLevelFromSnapshot } from '../src/services/downSnapshot';
+import { startingLevelFromSnapshot, estimatedSnapshotLevel } from '../src/services/downSnapshot';
 import { selectSummaryWellNames } from '../src/services/summaryWellSelection';
 
 const STORAGE_KEY_SELECTED_WELLS = "wellbuilt_selected_wells";
@@ -57,6 +57,7 @@ interface WellSummaryData {
   displayName?: string;
   unavailable?: boolean;
   dailyBbl?: number | null;
+  bblPerFoot?: number;
   tankHeight: number;
   wellName: string;
   route: string;
@@ -287,7 +288,7 @@ export default function SummaryScreen() {
 
         summaryData.push({
           wellName,
-          routeType:config?.routeType,displayName:config?.displayName,unavailable:snapshot?.unavailable,dailyBbl:snapshot?.dailyBbl,
+          routeType:config?.routeType,bblPerFoot:config?.bblPerFoot,displayName:config?.displayName,unavailable:snapshot?.unavailable,dailyBbl:snapshot?.dailyBbl,
           tankHeight: resolveTankHeight(config?.tankHeight),
           route,
           routeColor,
@@ -544,7 +545,7 @@ export default function SummaryScreen() {
   // Render well row with calculated values
   const renderWellRow = (well: WellSummaryData) => {
     if (well.routeType === 'freshwater') {
-      const level=well.unavailable ? '--' : formatFeetInches(Math.max(0,well.levelFeet-Math.max(0,Date.now()-well.snapshotTimestamp)/60000/(well.flowRateMinutes || Infinity)));
+      const level=well.unavailable ? '--' : formatFeetInches(estimatedSnapshotLevel({routeType:well.routeType,levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight));
       return <TouchableOpacity key={well.wellName} style={styles.wellRow} onPress={()=>handleWellPress(well.wellName)}>
         <View style={styles.wellRowMain}>
           <Text style={[styles.wellText,styles.colWell]} numberOfLines={1}>{well.displayName || well.wellName}</Text>

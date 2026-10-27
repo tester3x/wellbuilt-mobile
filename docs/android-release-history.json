@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
+  "packageId": "com.wellbuiltmobile.app",
+  "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+  "versionCodeFloor": 119,
+  "observedAt": "2026-10-27",
+  "installedReports": [
+    {
+      "app": "WB-T",
+      "versionCode": 274,
+      "device": "ZFold",
+      "provenance": "User report; laptop GitHub checkpoint4d1384e4 also records paired installation. Not independently read from desktop device."
+    },
+    {
+      "app": "WBE",
+      "versionCode": 98,
+      "provenance": "User report only; separate package version sequence."
+    },
+    {
+      "app": "WBS",
+      "versionCode": 100,
+      "provenance": "User report only; separate package version sequence."
+    }
+  ],
+  "artifacts": [
+    {
+      "sourceCommit": "1cdc7e89f4e11c3c17cd53ae8a818c4b0d3bb4c5",
+      "versionCode": 119,
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "8970fbb56ee0e87ee0f18a7deb7e530c86af4952ce1684a0b7a473decf87b6fd",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "local Android SDK/Gradle, arm64-v8a",
+      "evidencePacket": "wbm-last-load-20261027-return.md",
+      "crossComputerReconciliation": "Incomplete: other-machine branch tips not included; do not claim full reconciliation."
+    }
+  ],
+  "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
+  "notes": "Historical floors only, not fresh allocation approval. Re-query all sources before reserving; do not allocate a new build for this documentation task."
+}

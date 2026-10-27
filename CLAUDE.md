@@ -1,3 +1,7 @@
+## Mandatory build/release preflight — both computers
+
+Read [AGENTS.md](AGENTS.md) and [docs/android-release-reconciliation.md](docs/android-release-reconciliation.md) before any build. Use the registered home, fresh GitHub reconciliation, immutable remote version reservation and exact committed clean source. Local SDK/Gradle is the default; no automatic cloud fallback. This requirement supersedes historical build examples below.
+
 # WellBuilt Project
 
 ## First Steps - Read These Files

@@ -1,4 +1,4 @@
-## Expo/EAS build authorization â€” all apps, both computers
+## Expo/EAS build authorization — all apps, both computers
 
 - Batch fixes and features into substantial updates. Do not create cosmetic-only builds.
 - Never start an Expo/EAS cloud build unless Mike specifically requests that build in the current work. A significant batch of changes alone is not authorization.
@@ -14,7 +14,7 @@
 - Shared laptop runner: `C:/dev/TicketTimeExpo/scripts/android-local-build.cjs`; instructions: `C:/dev/TicketTimeExpo/docs/local-android-builds.md` on `wip/etc-hos-timesheet`. Fetch and verify the laptop checkpoint before using it from another computer.
 - Preserve the existing release signing key, application ID, build-profile environment, config plugins and native hooks. Never replace a release key with a debug/new key or uninstall an app to get a build installed.
 - Allocate a version code above the latest installed AND remotely allocated version, coordinate it across computers, and verify the APK signature/package/version against an approved baseline before installation. EAS remote auto-increment does not run during a direct Gradle build.
-- Build an exact committed source snapshot in a separate short-path workspace. Keep signing credentials and generated APKs outside Git. Record source commit, profile, version, APK hash and signing fingerprint; test on S24 before a ZFold rollout.
+- Build the exact committed clean source in the registered home. No extra clone, worktree or source/build copy is authorized. Keep signing credentials and generated APKs outside Git. Record source commit, profile, version, APK hash and signing fingerprint; test on S24 before a ZFold rollout.
 
 ## Cross-computer source checkpoint before every build
 
@@ -22,3 +22,7 @@
 - Before any build, fetch GitHub and compare the active laptop branch, the active desktop branch, and the last installed source checkpoint for that app. Review and integrate relevant changes from both computers before taking the exact committed build snapshot. A commit existing on another branch does not put it into an APK.
 - Preserve both histories and resolve conflicts deliberately. Never reset or force-push over the other computer. Record the merged source commit in the build receipt and handoff note.
 - If another computer pushes changes while an APK is already building, that immutable snapshot does not contain them. Fetch and integrate before the next authorized build; never describe the in-progress APK as containing later commits.
+
+## Mandatory cross-computer reconciliation
+
+Before every Android build on either desktop or laptop, follow [docs/android-release-reconciliation.md](docs/android-release-reconciliation.md) and run the local release gate. Commit/push, freshly fetch every GitHub branch, reconcile relevant other-machine work, check expected ancestry/full delta and combined-source tests, reserve the version remotely, and recheck movement immediately before building. Unpushed other-machine work is undiscoverable. Existing APKs are not evidence of full reconciliation. The current user-authorized workspace policy overrides older checkout/build notes. No app feature or new APK build is authorized by this instruction change alone.

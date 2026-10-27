@@ -869,8 +869,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Below current: 3" grid based on current level (auto-adjusts as tank fills)
   const handleSliderChange = useCallback((value: number) => {
     // Calculate dynamic slider minimum
-    const literalLoadLine = wellConfig?.loadLine ?? 1.33;
-    const allowedBottom = wellConfig?.allowedBottom ?? 3;
+    const literalLoadLine = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.loadLine ?? 1.33;
+    const allowedBottom = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.allowedBottom ?? 3;
     const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;
 
     // Use current displayed level as reference (auto-updates as tank fills)
@@ -1470,7 +1470,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         // - Red: below allowedBottom (danger zone)
         const readyLevel = allowedBottom + (loadBbls / bblsPerFoot);
         let readyTimeColor = '#60A5FA'; // Default blue
-        if (!wellDown && !sliderLocked) {
+        if (!wellDown && !sliderLocked && wellConfig?.routeType !== 'freshwater') {
           if (sliderFeet < allowedBottom) {
             readyTimeColor = '#EF4444'; // Red - below allowed
           } else if (sliderFeet >= readyLevel) {
@@ -1490,7 +1490,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               {showNextPull ? (
                 // Next Pull Ready - shows in same spot as slider info when locked
                 <>
-                  <Text style={styles.nextPullLabel}>{t('well.nextPull', 'Next Pull')}</Text>
+                  <Text style={styles.nextPullLabel}>{wellConfig?.routeType === 'freshwater' ? 'Next delivery' : t('well.nextPull', 'Next Pull')}</Text>
                   <Text style={[
                     styles.nextPullTime,
                     nextPullReady.isReady && styles.nextPullReady
@@ -2486,7 +2486,7 @@ export default function MainScreen() {
             {wellConfigMap?.[wells[currentIndex]]?.route || '\u00a0'}
           </Text>
           <TouchableOpacity onPress={openPicker} style={styles.wellNameButton}>
-            <Text style={styles.wellName}>{wells[currentIndex]}</Text>
+            <Text style={styles.wellName}>{wellConfigMap?.[wells[currentIndex]]?.displayName || wells[currentIndex]}</Text>
             <Text style={styles.wellNameArrow}>▼</Text>
             {isBackgroundSyncing && (
               <ActivityIndicator size="small" color="#60A5FA" style={styles.syncIndicator} />
@@ -2552,7 +2552,7 @@ export default function MainScreen() {
           <TouchableOpacity style={styles.navButton} onPress={handlePullPress} disabled={isViewer}>
             <Text style={[styles.navIcon, styles.navIconAccent, isViewer && styles.navIconDisabled]}>🛢️</Text>
             <Text style={[styles.navLabel, styles.navLabelAccent, isViewer && styles.navLabelDisabled]}>
-              {isViewer ? t('homeExtra.viewOnly') : t('nav.pull')}
+              {isViewer ? t('homeExtra.viewOnly') : wellConfigMap?.[wells[currentIndex]]?.routeType === 'freshwater' ? 'Delivery' : t('nav.pull')}
             </Text>
             {currentWellHasDraft && !isViewer && (
               <View style={styles.draftIndicator}>

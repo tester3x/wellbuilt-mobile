@@ -67,6 +67,7 @@ const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.co
 
 export interface WellConfig {
   routeType?: 'produced-water' | 'freshwater';
+  displayName?: string;
   inventoryGroupId?: string;
   bblPerFoot?: number;
   suppliesWells?: string[];

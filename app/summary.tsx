@@ -54,6 +54,7 @@ const DOUBLE_TAP_DELAY = 300; // Max ms between taps for double-tap
 
 interface WellSummaryData {
   routeType?: 'produced-water' | 'freshwater';
+  displayName?: string;
   unavailable?: boolean;
   dailyBbl?: number | null;
   tankHeight: number;
@@ -286,7 +287,7 @@ export default function SummaryScreen() {
 
         summaryData.push({
           wellName,
-          routeType:config?.routeType,unavailable:snapshot?.unavailable,dailyBbl:snapshot?.dailyBbl,
+          routeType:config?.routeType,displayName:config?.displayName,unavailable:snapshot?.unavailable,dailyBbl:snapshot?.dailyBbl,
           tankHeight: resolveTankHeight(config?.tankHeight),
           route,
           routeColor,
@@ -546,7 +547,7 @@ export default function SummaryScreen() {
       const level=well.unavailable ? '--' : formatFeetInches(Math.max(0,well.levelFeet-Math.max(0,Date.now()-well.snapshotTimestamp)/60000/(well.flowRateMinutes || Infinity)));
       return <TouchableOpacity key={well.wellName} style={styles.wellRow} onPress={()=>handleWellPress(well.wellName)}>
         <View style={styles.wellRowMain}>
-          <Text style={[styles.wellText,styles.colWell]} numberOfLines={1}>{well.wellName}</Text>
+          <Text style={[styles.wellText,styles.colWell]} numberOfLines={1}>{well.displayName || well.wellName}</Text>
           <Text style={[styles.wellText,styles.colLevel]}>{level}</Text>
           <Text style={[styles.wellText,styles.colAt]}>{well.dailyBbl == null ? '--' : well.dailyBbl.toFixed(1)+' BBL/day'}</Text>
           <Text style={[styles.wellText,styles.colReady]}>--</Text>

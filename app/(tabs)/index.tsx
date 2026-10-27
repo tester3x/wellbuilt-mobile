@@ -878,6 +878,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }).catch(()=>{if(!cancelled)setDeliveryBase({feet:null,rate:null,isDown:false});});
     return ()=>{cancelled=true;};
   },[deliveryAt,wellConfig]);
+  useEffect(()=>{if(wellConfig?.routeType === 'freshwater')setSliderFeet(0);},[wellName,wellConfig?.routeType]);
   const planningFeet = deliveryAt ? deliveryBase?.feet ?? null : levelSnapshot?.unavailable ? null : displayFeet;
   const planningRate = deliveryAt ? deliveryBase?.rate ?? null : levelSnapshot?.dailyBbl ?? null;
   const planningDown = deliveryAt ? deliveryBase?.isDown === true : wellDown;
@@ -1494,7 +1495,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         // If allowedBottom < literal load line, use allowedBottom only
         // Otherwise use literal load line as minimum, with allowedBottom marker if higher
         const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;
-        const showAllowedBottomMarker = allowedBottom > literalLoadLine;
+        const showAllowedBottomMarker = wellConfig?.routeType !== 'freshwater' && allowedBottom > literalLoadLine;
 
         // Calculate position of allowedBottom marker as percentage of slider range
         // Account for the slider track width (excluding Pull/Fill labels which are 50px each)
@@ -1563,7 +1564,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 <Text style={[
                   styles.sliderMarkerLeft,
                   !showAllowedBottomMarker && styles.sliderMarkerAllowedBottom
-                ]}>{formatFeetInches(sliderMin)}</Text>
+                ]}>{wellConfig?.routeType === 'freshwater' ? '0 BBL' : formatFeetInches(sliderMin)}</Text>
                 {/* Track area - uses flex to position allowed bottom marker at correct percentage */}
                 <View style={styles.sliderMarkerTrackArea}>
                   {showAllowedBottomMarker && (
@@ -1577,7 +1578,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                     </>
                   )}
                 </View>
-                <Text style={styles.sliderMarkerRight}>{formatFeetInches(tankHeightFeet)}</Text>
+                <Text style={styles.sliderMarkerRight}>{wellConfig?.routeType === 'freshwater' ? Math.floor((tankHeightFeet-(planningFeet ?? tankHeightFeet))*bblsPerFoot)+' BBL' : formatFeetInches(tankHeightFeet)}</Text>
                 <Text style={styles.sliderMarkerArrowRight}>→</Text>
               </View>
 

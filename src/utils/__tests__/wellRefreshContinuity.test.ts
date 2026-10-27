@@ -84,7 +84,7 @@ test('cancelled refresh cannot overwrite the visible observation', async () => {
 test('actual header keeps route/operator rows in place before and after catalogue hydration', () => {
   let header = '';
   function find(node: ts.Node) {
-    if (ts.isJsxElement(node) && node.openingElement.attributes.getText(ast).includes('styles.headerCenter'))
+    if (ts.isJsxElement(node) && node.openingElement.attributes.getText(ast).includes('openPicker(index)'))
       header = node.getText(ast);
     ts.forEachChild(node, find);
   }
@@ -96,7 +96,7 @@ test('actual header keeps route/operator rows in place before and after catalogu
   const render = (config: unknown) => runInNewContext(compiled, {
     React, View: 'View', Text: 'Text', TouchableOpacity: 'Button', ActivityIndicator: 'Spinner',
     styles: { headerCenter: 'center', routeName: 'route', operatorName: 'operator' },
-    wellConfigMap: config, wells: ['Olson'], currentIndex: 0, isBackgroundSyncing: false,
+    wellConfigMap: config, item:'Olson',index:0,setFocusedIndex:()=>{},
     getRouteColor: () => '#fff', openPicker: () => {}, t: () => 'of',
   }) as React.ReactElement<{children: React.ReactElement<{style: unknown; children: unknown}>[]}>;
   const pending = render(null).props.children.filter(n => n.type === 'Text');
@@ -104,7 +104,7 @@ test('actual header keeps route/operator rows in place before and after catalogu
   expect(pending).toHaveLength(3);
   expect(loaded).toHaveLength(3);
   expect(pending[0].props.children).toBe('\u00a0');
-  expect(pending[1].props.children).toBe('\u00a0');
+  expect(pending[2].props.children).toBe('\u00a0');
   expect(loaded[0].props.children).toBe('Tallgrass');
-  expect(loaded[1].props.children).toBe('OASIS');
+  expect(loaded[2].props.children).toBe('OASIS');
 });

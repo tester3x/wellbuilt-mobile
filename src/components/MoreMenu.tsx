@@ -15,6 +15,7 @@ export interface MoreMenuProps {
   visible: boolean;
   onClose: () => void;
   onRouteMe: () => void;
+  onFreshWater: () => void;
   onSummary: () => void;
   onBackToSuite: () => void;
   bottomInset?: number;
@@ -37,6 +38,7 @@ export function MoreMenu({
   visible,
   onClose,
   onRouteMe,
+  onFreshWater,
   onSummary,
   onBackToSuite,
   bottomInset = 0,
@@ -75,6 +77,16 @@ export function MoreMenu({
             <Text style={moreMenuStyles.moreMenuLabel}>
               {t('nav.routeMe', { defaultValue: 'Route Me' })}
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={moreMenuStyles.moreMenuItem}
+            onPress={() => { onClose(); onFreshWater(); }}
+            accessibilityRole="button"
+            accessibilityLabel="Fresh Water Tank Refill"
+          >
+            <Ionicons name="water-outline" size={MORE_MENU_TOKENS.iconSize} color="#fff" />
+            <Text style={moreMenuStyles.moreMenuLabel}>Fresh Water Tank Refill</Text>
           </TouchableOpacity>
 
           {/* In-app action 2: Summary */}

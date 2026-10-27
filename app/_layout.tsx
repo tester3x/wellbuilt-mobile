@@ -23,6 +23,7 @@ import { startEditDelivery, setDeliveryForeground } from '../src/services/editDe
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
 import { resumePullHistoryBackfillOnAuth } from '../src/services/pullHistory';
 import { performPermittedLogout } from '../src/services/driverAuth';
+import { flushFreshWaterDeliveries } from '../src/services/freshWaterSupply';
 import { checkCanonicalSsoLogout } from '../src/services/ssoLogout';
 
 // Lazy import to avoid expo-notifications warning in Expo Go
@@ -63,6 +64,7 @@ function MobileRootContent() {
       // Gate the active-only edit-delivery retry scheduler (foreground = active).
       setDeliveryForeground(state === 'active');
       if (state === 'active') {
+        flushFreshWaterDeliveries().catch(() => undefined);
         configureSystemNav();
         checkCanonicalSsoLogout().then((permit) => {
           if (!permit) return;
@@ -122,6 +124,7 @@ function MobileRootContent() {
 
     // Flush any packets that were queued while app was closed
     flushQueue();
+    flushFreshWaterDeliveries().catch(() => undefined);
     return () => { appStateSub.remove(); stopTankInfoDelivery(); };
   }, [platformAccountReady]);
 
@@ -153,6 +156,7 @@ function MobileRootContent() {
             <Stack.Screen name="settings" />
             <Stack.Screen name="summary" />
             <Stack.Screen name="route-me" />
+            <Stack.Screen name="fresh-water" />
             <Stack.Screen name="about" />
             <Stack.Screen name="manager" />
             <Stack.Screen name="no-access" />

@@ -1,3 +1,7 @@
+import { thresholdTime } from '@tester3x/water-hauling';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { getFreshWaterSupply } from '../../src/services/freshWaterSupply';
+import { tankViewport, tankSceneScale } from '../../src/ui/tankViewport';
 import { resolveTankHeight, tankFillFraction } from '../../src/utils/tankHeight';
 import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +15,8 @@ import {
   AppState,
   DeviceEventEmitter,
   Dimensions,
+  useWindowDimensions,
+  ScrollView,
   FlatList,
   Image,
   Modal,
@@ -294,6 +300,8 @@ const parseFlowRateToMinutes = (flowRate: string): number => {
 interface WellViewProps {
   wellName: string;
   isActive: boolean;
+  cardWidth?: number;
+  viewportHeight?: number;
   getPreviousLevel: () => number; // Getter for previous well's level (0-1)
   onLevelChange?: (level: number) => void; // Report current level to parent
   refreshTrigger?: number; // Triggers data reload after sync
@@ -305,10 +313,13 @@ interface WellViewProps {
   onToggleOvernightBbls?: () => void; // Toggle handler (persists to AsyncStorage)
 }
 
-const WellView = React.memo(function WellView({ wellName, isActive, getPreviousLevel, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
+const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, getPreviousLevel, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
+  const [deliveryAt,setDeliveryAt]=useState<Date | null>(null);
+  const [deliveryPicker,setDeliveryPicker]=useState<'date'|'time'|null>(null);
+  const [deliveryBase,setDeliveryBase]=useState<{feet:number|null;rate:number|null;isDown:boolean}|null>(null);
   const [wellConfig, setWellConfig] = useState<WellConfig | null>(null);
   const tankHeightFeet = resolveTankHeight(wellConfig?.tankHeight);
   useEffect(() => { setSliderFeet(previous => Math.min(previous, tankHeightFeet)); }, [tankHeightFeet]);
@@ -328,6 +339,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // showOvernightBbls is now a prop from MainScreen (global toggle)
   const hasAnimated = useRef(false);
   const prevIsActive = useRef(isActive);
+  const tankScale=tankSceneScale(cardWidth,viewportHeight,TANK_WIDTH,TANK_HEIGHT);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
@@ -542,7 +554,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         const tankHeightFeet = resolveTankHeight(config?.tankHeight);
 
         // Load level snapshot (flow rate is now stored with snapshot, not separately)
-        const snapshot = await getLevelSnapshot(wellName);
+        const snapshot = await getLevelSnapshot(wellName, config);
         if (!isMounted) return;
 
         // Pre-check for pending pull BEFORE setting levelSnapshot.
@@ -864,10 +876,27 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
   }, [wellDown, sliderLocked, activateSliderUI, resetSliderLockTimer, sliderOpacity]);
 
+  useEffect(()=>{
+    if (wellConfig?.routeType !== 'freshwater' || !wellConfig.inventoryGroupId || !deliveryAt) {setDeliveryBase(null);return;}
+    let cancelled=false; setDeliveryBase({feet:null,rate:null,isDown:false});
+    getFreshWaterSupply(wellConfig.inventoryGroupId,deliveryAt.toISOString()).then(supply=>{
+      if(!cancelled) setDeliveryBase({feet:supply.status?.projectedFeet ?? null,rate:supply.status?.dailyUseBbl ?? null,isDown:supply.status?.isDown === true});
+    }).catch(()=>{if(!cancelled)setDeliveryBase({feet:null,rate:null,isDown:false});});
+    return ()=>{cancelled=true;};
+  },[deliveryAt,wellConfig]);
+  useEffect(()=>{if(wellConfig?.routeType === 'freshwater')setSliderFeet(0);},[wellName,wellConfig?.routeType]);
+  const planningFeet = deliveryAt ? deliveryBase?.feet ?? null : levelSnapshot?.unavailable ? null : displayFeet;
+  const planningRate = deliveryAt ? deliveryBase?.rate ?? null : levelSnapshot?.dailyBbl ?? null;
+  const planningDown = deliveryAt ? deliveryBase?.isDown === true : wellDown;
+  const planningTime = deliveryAt ?? new Date();
   // Handle slider changes with custom snapping
   // Above current: standard 3" grid (10'0", 10'3", 10'6"...)
   // Below current: 3" grid based on current level (auto-adjusts as tank fills)
   const handleSliderChange = useCallback((value: number) => {
+    if (wellConfig?.routeType === 'freshwater') {
+      const feet=Math.max(0,Math.min(tankHeightFeet-(planningFeet ?? tankHeightFeet),Math.round(value*60)/60));
+      setSliderFeet(feet); return;
+    }
     // Calculate dynamic slider minimum
     const literalLoadLine = wellConfig?.loadLine ?? 1.33;
     const allowedBottom = wellConfig?.allowedBottom ?? 3;
@@ -894,7 +923,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
     // Save slider position to storage (persists across app restarts)
     saveSliderPosition(wellName, snappedValue);
-  }, [displayFeet, wellName, wellConfig, tankHeightFeet]);
+  }, [displayFeet, wellName, wellConfig, tankHeightFeet, planningFeet]);
 
   // Handle slider drag start - activate UI, cancel lock timer, and notify parent
   const handleSliderStart = useCallback(() => {
@@ -962,6 +991,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
   if (wellDown) {
     readyAtText = t('common.offline');
+  } else if (wellConfig?.routeType === 'freshwater') {
+    const after=planningFeet == null ? null : planningFeet+Math.min(sliderFeet,tankHeightFeet-planningFeet);
+    const minimum=wellConfig.allowedBottom;
+    const at=after == null || minimum == null ? null : thresholdTime('freshwater',after,planningTime.toISOString(),planningRate,bblsPerFoot,minimum,planningDown);
+    readyAtText=planningDown ? 'Consumption paused' : at ? 'To '+formatFeetInches(minimum!)+' @ '+formatDateTimeSuffix(new Date(at),t('well.today'),t('well.tomorrow')) : 'Forecast unavailable';
   } else if (flowMins <= 0) {
     readyAtText = 'N/A';
   } else if (displayFeet < sliderFeet) {
@@ -998,6 +1032,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Calculate "Next Pull Ready" - when well reaches ready level, and how many loads available
   // Uses same logic as summary screen: readyLevel = allowedBottom + (loadBbls / bblsPerFoot)
   const calculateNextPullReady = (): { text: string; isReady: boolean; loads: number } => {
+    if (wellConfig?.routeType === 'freshwater') {
+      const minimum=wellConfig.allowedBottom;
+      const at=planningFeet == null || minimum == null ? null : thresholdTime('freshwater',planningFeet,planningTime.toISOString(),planningRate,bblsPerFoot,minimum,planningDown);
+      return {text:planningDown ? 'Consumption paused' : at ? formatDateTime(new Date(at),t('well.today'),t('well.tomorrow')) : 'Forecast unavailable',isReady:planningFeet != null && minimum != null && planningFeet<=minimum,loads:0};
+    }
     if (wellDown) {
       return { text: t('well.wellIsDown', 'Well is down'), isReady: false, loads: 0 };
     }
@@ -1246,12 +1285,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   };
 
   return (
-    <View style={styles.wellView}>
+    <View style={[styles.wellView,{width:'100%',flex:0,justifyContent:'flex-start'}]}>
       {/* Top section - tank and stats */}
       <View style={styles.topSection}>
         {/* Tank - double-tap for Performance, long-press to hide well */}
-        <View style={styles.tankSection}>
-        <Pressable onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
+        <View style={[styles.tankSection,{height:TANK_HEIGHT*tankScale}]}>
+        <Pressable style={{transform:[{scale:tankScale}]}} onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
           onPress={() => { if (!fishTouchedRef.current) handleNormalTankTap(); }}
           onLongPress={() => { if (!fishTouchedRef.current) handleTankLongPress(); }} delayLongPress={500}>
         <View pointerEvents="none" style={styles.tankOuter} onLayout={event => { const { x, y } = event.nativeEvent.layout; tankTouchOffset.current = { x: x + INTERIOR_LEFT, y: y + INTERIOR_TOP }; }}>
@@ -1358,7 +1397,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           
           {/* BBLs available */}
           <View style={styles.bblsAvailableContainer}>
-            <Text style={styles.bblsAvailableText}>{bblsAvailable} {t('units.bbl')}</Text>
+            <Text style={styles.bblsAvailableText}>{levelSnapshot?.unavailable ? '--' : bblsAvailable} {t('units.bbl')}</Text>
           </View>
         </View>
         </Pressable>
@@ -1424,9 +1463,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           }}
         >
           <View style={styles.statsRow}>
-            <Text style={styles.statLeft}>{displayBblsPerHour} {t('units.bbl')}{t('units.perHour')}</Text>
+            <Text style={styles.statLeft}>{wellConfig?.routeType === 'freshwater' ? (levelSnapshot?.dailyBbl == null ? '--' : (levelSnapshot.dailyBbl/24).toFixed(1)) : displayBblsPerHour} {t('units.bbl')}{t('units.perHour')}</Text>
             <Text style={styles.statDivider}>•</Text>
-            <Text style={styles.statRight}>{displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? (levelSnapshot?.overnightEstimatedTime ? ' ON ≈' : ' ON') : ''}</Text>
+            <Text style={styles.statRight}>{wellConfig?.routeType === 'freshwater' ? (levelSnapshot?.dailyBbl ?? '--') : displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? (levelSnapshot?.overnightEstimatedTime ? ' ON ≈' : ' ON') : ''}</Text>
           </View>
         </Pressable>
 
@@ -1446,15 +1485,23 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       </View>
       </View>
 
+      {wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',paddingHorizontal:12}}>
+        <TouchableOpacity onPress={()=>setDeliveryPicker('date')}><Text style={styles.nextPullLabel}>Assumed delivery: {deliveryAt ? formatDateTime(deliveryAt) : 'Now'} (change)</Text></TouchableOpacity>
+        {deliveryAt && <TouchableOpacity onPress={()=>setDeliveryAt(null)}><Text style={styles.nextPullLabel}>Use now</Text></TouchableOpacity>}
+        {deliveryPicker && <DateTimePicker value={deliveryAt ?? new Date()} mode={deliveryPicker} onChange={(event,date)=>{
+          const mode=deliveryPicker;setDeliveryPicker(null);
+          if(event.type==='set' && date){setDeliveryAt(date);if(mode==='date')setDeliveryPicker('time');}
+        }}/>}
+      </View>}
       {/* Slider - tap to peek values, long press to unlock */}
       {(() => {
         // Calculate slider minimum: use loadLine (1.33') or allowedBottom if lower
-        const literalLoadLine = wellConfig?.loadLine ?? 1.33;
+        const literalLoadLine = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.loadLine ?? 1.33;
         const allowedBottom = wellConfig?.allowedBottom ?? 3;
         // If allowedBottom < literal load line, use allowedBottom only
         // Otherwise use literal load line as minimum, with allowedBottom marker if higher
         const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;
-        const showAllowedBottomMarker = allowedBottom > literalLoadLine;
+        const showAllowedBottomMarker = wellConfig?.routeType !== 'freshwater' && allowedBottom > literalLoadLine;
 
         // Calculate position of allowedBottom marker as percentage of slider range
         // Account for the slider track width (excluding Pull/Fill labels which are 50px each)
@@ -1467,7 +1514,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         // - Red: below allowedBottom (danger zone)
         const readyLevel = allowedBottom + (loadBbls / bblsPerFoot);
         let readyTimeColor = '#60A5FA'; // Default blue
-        if (!wellDown && !sliderLocked) {
+        if (!wellDown && !sliderLocked && wellConfig?.routeType !== 'freshwater') {
           if (sliderFeet < allowedBottom) {
             readyTimeColor = '#EF4444'; // Red - below allowed
           } else if (sliderFeet >= readyLevel) {
@@ -1487,7 +1534,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
               {showNextPull ? (
                 // Next Pull Ready - shows in same spot as slider info when locked
                 <>
-                  <Text style={styles.nextPullLabel}>{t('well.nextPull', 'Next Pull')}</Text>
+                  <Text style={styles.nextPullLabel}>{wellConfig?.routeType === 'freshwater' ? 'Minimum '+(wellConfig.allowedBottom==null?'unknown':formatFeetInches(wellConfig.allowedBottom))+' (no delivery)' : t('well.nextPull', 'Next Pull')}</Text>
                   <Text style={[
                     styles.nextPullTime,
                     nextPullReady.isReady && styles.nextPullReady
@@ -1499,7 +1546,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 // Slider level and ready-at text - fades in/out
                 <Animated.View style={[styles.sliderInfoInner, sliderInfoStyle]}>
                   <View style={styles.sliderValueRow}>
-                    <Text style={[styles.sliderValue, wellDown && styles.textDisabled]}>{formatFeetInches(sliderFeet)}</Text>
+                    <Text style={[styles.sliderValue, wellDown && styles.textDisabled]}>{wellConfig?.routeType === 'freshwater' ? planningFeet == null ? 'Unknown' : formatFeetInches(planningFeet+Math.min(sliderFeet,tankHeightFeet-planningFeet)) : formatFeetInches(sliderFeet)}</Text>
+                    {wellConfig?.routeType === 'freshwater' && <Text style={styles.sliderBbls}> +{Math.round(Math.min(sliderFeet,tankHeightFeet-(planningFeet ?? tankHeightFeet))*bblsPerFoot)} BBL</Text>}
                     {isPlanningPull && bblsToPull > 0 && (
                       <Text style={styles.sliderBbls}>  −{bblsToPull} {t('units.bbl')}</Text>
                     )}
@@ -1522,7 +1570,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 <Text style={[
                   styles.sliderMarkerLeft,
                   !showAllowedBottomMarker && styles.sliderMarkerAllowedBottom
-                ]}>{formatFeetInches(sliderMin)}</Text>
+                ]}>{wellConfig?.routeType === 'freshwater' ? '0 BBL' : formatFeetInches(sliderMin)}</Text>
                 {/* Track area - uses flex to position allowed bottom marker at correct percentage */}
                 <View style={styles.sliderMarkerTrackArea}>
                   {showAllowedBottomMarker && (
@@ -1536,20 +1584,20 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                     </>
                   )}
                 </View>
-                <Text style={styles.sliderMarkerRight}>{formatFeetInches(tankHeightFeet)}</Text>
+                <Text style={styles.sliderMarkerRight}>{wellConfig?.routeType === 'freshwater' ? Math.floor((tankHeightFeet-(planningFeet ?? tankHeightFeet))*bblsPerFoot)+' BBL' : formatFeetInches(tankHeightFeet)}</Text>
                 <Text style={styles.sliderMarkerArrowRight}>→</Text>
               </View>
 
               <View style={styles.sliderRow}>
                 <Text style={[styles.sliderArrowLeft, wellDown && styles.textDisabled]}>←</Text>
-                <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{t('well.pull')}</Text>
+                <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{wellConfig?.routeType === 'freshwater' ? 'Less' : t('well.pull')}</Text>
                 <View style={styles.sliderWrapper} pointerEvents={sliderLocked ? "none" : "auto"}>
                   <Slider
                     containerStyle={styles.slider}
-                    minimumValue={sliderMin}
-                    maximumValue={tankHeightFeet}
+                    minimumValue={wellConfig?.routeType === 'freshwater' ? 0 : sliderMin}
+                    maximumValue={wellConfig?.routeType === 'freshwater' ? Math.max(0.001,tankHeightFeet-(planningFeet ?? tankHeightFeet)) : tankHeightFeet}
                     step={0.01}
-                    value={sliderFeet}
+                    value={wellConfig?.routeType === 'freshwater' ? Math.min(sliderFeet,tankHeightFeet-(planningFeet ?? tankHeightFeet)) : sliderFeet}
                     onValueChange={(val) => handleSliderChange(Array.isArray(val) ? val[0] : val)}
                     onSlidingStart={handleSliderStart}
                     onSlidingComplete={handleSliderEnd}
@@ -1566,7 +1614,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                     )}
                   />
                 </View>
-                <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{t('well.fill')}</Text>
+                <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{wellConfig?.routeType === 'freshwater' ? 'Deliver' : t('well.fill')}</Text>
                 <Text style={[styles.sliderArrowRight, wellDown && styles.textDisabled]}>→</Text>
                 {/* Overlay to capture taps when locked - covers full slider row */}
                 {sliderLocked && (
@@ -1594,6 +1642,10 @@ export default function MainScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
+  const windowSize=useWindowDimensions();
+  const {columns,cardWidth,viewportHeight}=tankViewport(windowSize.width,windowSize.height);
+  const [visibleWellIndices,setVisibleWellIndices]=useState<number[]>([]);
+  const [focusedIndex,setFocusedIndex]=useState<number|null>(null);
   const pickerListRef = useRef<FlatList>(null);
 
   // Track levels for ALL wells, not just the active one
@@ -1601,6 +1653,9 @@ export default function MainScreen() {
   const previousIndex = useRef(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
+  useEffect(()=>{setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
+    flatListRef.current?.scrollToOffset({offset:cardWidth*currentIndex,animated:false});
+  },[cardWidth,columns]);
   const selectionCatalogueRef = useRef<{
     owner: Awaited<ReturnType<typeof captureWellSelectionOwner>>;
     eligible: string[];
@@ -1625,6 +1680,7 @@ export default function MainScreen() {
   const [pickerScrolling, setPickerScrolling] = useState(false);
   const [sliderActive, setSliderActive] = useState(false);
   const [wells, setWells] = useState<string[]>([]);
+  const actionIndex=Math.max(0,Math.min(focusedIndex ?? currentIndex,wells.length-1));
   const visibleWellRef = useRef({ well: wells[currentIndex], index: currentIndex });
   visibleWellRef.current = { well: wells[currentIndex], index: currentIndex };
   const homeStartedAt=useRef(Date.now());
@@ -2121,8 +2177,8 @@ export default function MainScreen() {
 
   // Check for draft when current well changes (separate from focus effect)
   useEffect(() => {
-    if (wells.length > 0 && currentIndex >= 0 && currentIndex < wells.length) {
-      const wellName = wells[currentIndex];
+    if (wells.length > 0 && actionIndex >= 0 && actionIndex < wells.length) {
+      const wellName = wells[actionIndex];
       const key = getDraftKey(wellName);
       AsyncStorage.getItem(key).then(draftJson => {
         if (!draftJson) {
@@ -2140,7 +2196,7 @@ export default function MainScreen() {
         }
       });
     }
-  }, [wells, currentIndex]);
+  }, [wells, actionIndex]);
 
   // Note: Well loading is now handled entirely by useFocusEffect above
   // It runs when initial sync completes (isInitialSyncing changes) AND on screen focus
@@ -2174,10 +2230,10 @@ export default function MainScreen() {
     if (wells.length > 0) {
       router.push({
         pathname: '/record',
-        params: { wellName: wells[currentIndex] },
+        params: { wellName: wells[actionIndex] },
       });
     }
-  }, [router, wells, currentIndex, isViewer, alert, t]);
+  }, [router, wells, actionIndex, isViewer, alert, t]);
 
   // Navigate to settings
   const handleSettingsPress = useCallback(() => {
@@ -2190,10 +2246,12 @@ export default function MainScreen() {
   }, [router]);
 
   // Handle well change from swipe
-  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    setVisibleWellIndices(viewableItems.flatMap(item=>item.index==null?[]:[item.index]));
     if (viewableItems.length > 0 && viewableItems[0].index !== null) {
+      setFocusedIndex(null);
       const newIndex = viewableItems[0].index;
       // Save current as previous BEFORE updating to new
       if (newIndex !== currentIndex) {
@@ -2207,10 +2265,10 @@ export default function MainScreen() {
   const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
 
   // Open picker for well selection
-  const openPicker = () => {
+  const openPicker = (index=currentIndex) => {
     setWellSearch('');
-    setTempSelectedIndex(currentIndex);
-    lastTickIndex.current = currentIndex;
+    setTempSelectedIndex(index);
+    lastTickIndex.current = index;
     setPickerScrolling(false);
     setShowPicker(true);
   };
@@ -2246,8 +2304,8 @@ export default function MainScreen() {
   }, []);
 
   // Navigate to current well's performance detail on tank double-tap
-  const handleTankDoubleTap = useCallback(() => {
-    const currentWell = wells[currentIndex];
+  const handleTankDoubleTap = useCallback((targetWell?:string) => {
+    const currentWell = targetWell || wells[currentIndex];
     if (currentWell) {
       router.push({
         pathname: '/performance-detail',
@@ -2257,8 +2315,8 @@ export default function MainScreen() {
   }, [router, wells, currentIndex]);
 
   // Hide well from My Wells on tank long-press
-  const handleTankLongPress = useCallback(() => {
-    const currentWell = wells[currentIndex];
+  const handleTankLongPress = useCallback((targetWell?:string) => {
+    const currentWell = targetWell || wells[currentIndex];
     if (!currentWell) return;
 
     // Show confirmation dialog
@@ -2304,28 +2362,23 @@ export default function MainScreen() {
   }, [wells, currentIndex, alert, t]);
 
   const renderWell = useCallback(({ item, index }: { item: string; index: number }) => (
-    <View style={{ width: SCREEN_WIDTH }}>
-      <WellView
-        wellName={item}
-        isActive={index === currentIndex}
-        getPreviousLevel={getPreviousLevel}
-        onLevelChange={(level) => handleLevelChange(item, level)}
-        refreshTrigger={refreshTrigger}
-        onSliderActiveChange={setSliderActive}
-        loadBbls={loadBbls}
-        onTankDoubleTap={handleTankDoubleTap}
-        onTankLongPress={handleTankLongPress}
-        showOvernightBbls={showOvernightBbls}
-        onToggleOvernightBbls={handleToggleOvernightBbls}
-      />
+    <View style={{width:cardWidth,flex:1,minHeight:0,borderWidth:1,borderColor:actionIndex===index?'#2563EB':'transparent'}} onTouchStart={()=>setFocusedIndex(index)}>
+      <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
+        <Text style={{color:getRouteColor(wellConfigMap?.[item]?.route || ''),fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.route || '\u00a0'}</Text>
+        <Text style={{color:'#F9FAFB',fontSize:18,fontWeight:'700'}} numberOfLines={1}>{wellConfigMap?.[item]?.displayName || item}</Text>
+        <Text style={{color:'#9CA3AF',fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.operator || '\u00a0'}</Text>
+      </TouchableOpacity>
+      <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{paddingBottom:16}} nestedScrollEnabled showsVerticalScrollIndicator>
+      <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight}
+        isActive={visibleWellIndices.includes(index)}
+        getPreviousLevel={getPreviousLevel} onLevelChange={level=>handleLevelChange(item,level)}
+        refreshTrigger={refreshTrigger} onSliderActiveChange={setSliderActive} loadBbls={loadBbls}
+        onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
+        showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
+      </ScrollView>
     </View>
-  ), [currentIndex, getPreviousLevel, handleLevelChange, refreshTrigger, loadBbls, handleTankDoubleTap, handleTankLongPress, showOvernightBbls, handleToggleOvernightBbls]);
-
-  const getItemLayout = (_: any, index: number) => ({
-    length: SCREEN_WIDTH,
-    offset: SCREEN_WIDTH * index,
-    index,
-  });
+  ),[cardWidth,viewportHeight,visibleWellIndices,actionIndex,wellConfigMap,getPreviousLevel,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
 
   if (!isReady) {
     return (
@@ -2455,6 +2508,7 @@ export default function MainScreen() {
           visible={showMore}
           onClose={() => setShowMore(false)}
           onRouteMe={() => router.push('/route-me')}
+          onFreshWater={() => router.push('/fresh-water')}
           onSummary={handleSummaryPress}
           onBackToSuite={() => { void backToSuite(); }}
           bottomInset={insets.bottom}
@@ -2465,39 +2519,10 @@ export default function MainScreen() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Header with tappable well name and settings */}
-      <View style={styles.header}>
-        {/* Empty spacer for balance */}
-        <View style={styles.headerSpacer} />
-
-        {/* Center - route name and well name */}
-        <View style={styles.headerCenter}>
-          {/* Route name - smaller, in route color */}
-          {/* Reserve both metadata rows while the catalogue loads. Adding
-              them later resizes the tank area immediately after the spinner. */}
-          <Text style={[
-            styles.routeName,
-            { color: getRouteColor(wellConfigMap?.[wells[currentIndex]]?.route || '') }
-          ]} numberOfLines={1}>
-            {wellConfigMap?.[wells[currentIndex]]?.route || '\u00a0'}
-          </Text>
-          <TouchableOpacity onPress={openPicker} style={styles.wellNameButton}>
-            <Text style={styles.wellName}>{wells[currentIndex]}</Text>
-            <Text style={styles.wellNameArrow}>▼</Text>
-            {isBackgroundSyncing && (
-              <ActivityIndicator size="small" color="#60A5FA" style={styles.syncIndicator} />
-            )}
-          </TouchableOpacity>
-          <Text style={styles.operatorName} numberOfLines={1}>
-            {wellConfigMap?.[wells[currentIndex]]?.operator || '\u00a0'}
-          </Text>
-          <Text style={styles.positionIndicator}>{currentIndex + 1} {t('homeExtra.of')} {wells.length}</Text>
-        </View>
-
-        {/* Right - settings button */}
-        <TouchableOpacity onPress={() => router.push('/settings')} style={styles.settingsButton}>
-          <Text style={styles.settingsIcon}>⚙</Text>
-        </TouchableOpacity>
+      {/* Global settings is shared; each visible card owns its well metadata. */}
+      <View style={[styles.header,{paddingTop:Math.max(insets.top,8),paddingBottom:4}]}>
+        <Text style={{color:'#F9FAFB',fontSize:16}}>Wells</Text>
+        <TouchableOpacity accessibilityLabel="Settings" onPress={()=>router.push('/settings')} style={styles.settingsButton}><Text style={styles.settingsIcon}>⚙</Text></TouchableOpacity>
       </View>
 
       {/* Swipeable well views - with memory optimization for Android */}
@@ -2507,18 +2532,20 @@ export default function MainScreen() {
         renderItem={renderWell}
         keyExtractor={(item) => item}
         horizontal
-        pagingEnabled
+        snapToInterval={cardWidth}
+        decelerationRate="fast"
+        style={{flex:1,minHeight:0}}
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         getItemLayout={getItemLayout}
         initialScrollIndex={Math.min(currentIndex, Math.max(0, wells.length - 1))}
-        removeClippedSubviews={Platform.OS === 'android'}
+        removeClippedSubviews={false}
         maxToRenderPerBatch={2}
         windowSize={3}
-        initialNumToRender={1}
+        initialNumToRender={columns}
         updateCellsBatchingPeriod={100}
-        extraData={currentIndex}
+        extraData={[currentIndex,focusedIndex,visibleWellIndices,cardWidth]}
         directionalLockEnabled={true}
         alwaysBounceVertical={Platform.OS === 'ios'}
         alwaysBounceHorizontal={true}
@@ -2548,7 +2575,7 @@ export default function MainScreen() {
           <TouchableOpacity style={styles.navButton} onPress={handlePullPress} disabled={isViewer}>
             <Text style={[styles.navIcon, styles.navIconAccent, isViewer && styles.navIconDisabled]}>🛢️</Text>
             <Text style={[styles.navLabel, styles.navLabelAccent, isViewer && styles.navLabelDisabled]}>
-              {isViewer ? t('homeExtra.viewOnly') : t('nav.pull')}
+              {isViewer ? t('homeExtra.viewOnly') : wellConfigMap?.[wells[actionIndex]]?.routeType === 'freshwater' ? 'Delivery' : t('nav.pull')}
             </Text>
             {currentWellHasDraft && !isViewer && (
               <View style={styles.draftIndicator}>
@@ -2574,6 +2601,7 @@ export default function MainScreen() {
         visible={showMore}
         onClose={() => setShowMore(false)}
         onRouteMe={() => router.push('/route-me')}
+        onFreshWater={() => router.push('/fresh-water')}
         onSummary={handleSummaryPress}
         onBackToSuite={() => { void backToSuite(); }}
         bottomInset={insets.bottom}

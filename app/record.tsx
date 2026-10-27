@@ -1,3 +1,5 @@
+import { resultingLevel, rules } from '@tester3x/water-hauling';
+import { getFreshWaterSupply, queueFreshWaterDelivery, flushFreshWaterDeliveries } from '../src/services/freshWaterSupply';
 import { resolveTankHeight, clampTankLevel } from '../src/utils/tankHeight';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -192,6 +194,7 @@ function RecordScreenInner() {
   const [flowRateMinutes, setFlowRateMinutes] = useState<number>(0); // Minutes per foot for timestamp backdating
   const [lastPullInfo, setLastPullInfo] = useState<string | null>(null);
   const [tankHeightFeet, setTankHeightFeet] = useState(20);
+  const [routeType, setRouteType] = useState<'produced-water' | 'freshwater'>('produced-water');
   const [bblPerFoot, setBblPerFoot] = useState<number>(20); // Default to 1 tank
 
   // Base data for time-adjusted level estimation (backward flow rate)
@@ -400,7 +403,8 @@ function RecordScreenInner() {
       const config = await getWellConfig(wellName);
       const tankHeightFeet = resolveTankHeight(config?.tankHeight);
       setTankHeightFeet(tankHeightFeet);
-      const snapshot = await getLevelSnapshot(wellName);
+      setRouteType(config?.routeType || 'produced-water');
+      const snapshot = await getLevelSnapshot(wellName, config);
 
       // Effective bbl/ft — consume the Dashboard-saved well_config.bblPerFoot
       // (override if set, else derived from capacity/height/activeTanks) via the
@@ -439,6 +443,9 @@ function RecordScreenInner() {
         setFlowRate(config.avgFlowRate);
       }
 
+      if (config?.routeType === 'freshwater' && snapshot?.unavailable) {
+        baseTimestampRef.current=0; baseLevelFeetRef.current=0; setEstLevel(''); setEstBbls(0); return;
+      }
       // Store base data for time-adjusted level estimation
       const loadLine = config?.loadLine ?? 0;
       loadLineRef.current = loadLine;
@@ -458,18 +465,18 @@ function RecordScreenInner() {
       // Calculate initial estimated level (for current time = now)
       if (baseTs > 0 && flowMins > 0 && !snapshot?.isDown) {
         const minutesElapsed = (dateTime.getTime() - baseTs) / (1000 * 60);
-        let estimatedLevel = baseLvl + (minutesElapsed / flowMins);
+        let estimatedLevel = baseLvl + rules(config?.routeType).projectionSign * (minutesElapsed / flowMins);
         estimatedLevel = clampTankLevel(estimatedLevel, tankHeightFeet);
         setEstLevel(formatFeetInches(estimatedLevel));
         setEstLevelFeet(estimatedLevel);
 
-        const bbls = Math.max(Math.round((estimatedLevel - loadLine) * bblPerFt), 0);
+        const bbls = Math.max(Math.round((rules(config?.routeType).operationSign > 0 ? tankHeightFeet - estimatedLevel : estimatedLevel - loadLine) * bblPerFt), 0);
         setEstBbls(bbls);
       } else if (baseLvl > 0) {
         baseLvl = clampTankLevel(baseLvl, tankHeightFeet);
         setEstLevel(formatFeetInches(baseLvl));
         setEstLevelFeet(baseLvl);
-        const bbls = Math.max(Math.round((baseLvl - loadLine) * bblPerFt), 0);
+        const bbls = Math.max(Math.round((rules(config?.routeType).operationSign > 0 ? tankHeightFeet - baseLvl : baseLvl - loadLine) * bblPerFt), 0);
         setEstBbls(bbls);
       }
 
@@ -488,20 +495,37 @@ function RecordScreenInner() {
   // Recalculate estimated level when driver changes date/time picker (backward flow rate)
   // Uses stored base data + flow rate to estimate tank level at any selected time
   useEffect(() => {
-    if (isEditMode) return;
+    if (isEditMode || routeType === 'freshwater') return;
     const baseTs = baseTimestampRef.current;
     const baseLvl = baseLevelFeetRef.current;
     if (baseTs === 0 || flowRateMinutes === 0 || wellIsDownRef.current) return;
 
     const minutesElapsed = (dateTime.getTime() - baseTs) / (1000 * 60);
-    let estimatedLevel = baseLvl + (minutesElapsed / flowRateMinutes);
+    let estimatedLevel = baseLvl + rules(routeType).projectionSign * (minutesElapsed / flowRateMinutes);
     estimatedLevel = clampTankLevel(estimatedLevel, tankHeightFeet);
     setEstLevel(formatFeetInches(estimatedLevel));
     setEstLevelFeet(estimatedLevel);
 
-    const bbls = Math.max(Math.round((estimatedLevel - loadLineRef.current) * bblPerFoot), 0);
+    const bbls = Math.max(Math.round((rules(routeType).operationSign > 0 ? tankHeightFeet - estimatedLevel : estimatedLevel - loadLineRef.current) * bblPerFoot), 0);
     setEstBbls(bbls);
-  }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode, tankHeightFeet]);
+  }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode, tankHeightFeet, routeType]);
+
+  // The server replays history at the observation time, including deliveries and down periods.
+  useEffect(() => {
+    if (isEditMode || routeType !== 'freshwater') return;
+    let cancelled=false;
+    void (async()=>{
+      const cfg=await getWellConfig(wellName);
+      if (!cfg?.inventoryGroupId) return;
+      const supply=await getFreshWaterSupply(cfg.inventoryGroupId,dateTime.toISOString());
+      if (cancelled) return;
+      const feet=supply.status?.projectedFeet;
+      if (feet == null) {setEstLevel('');setEstBbls(0);return;}
+      setEstLevel(formatFeetInches(feet));setEstLevelFeet(feet);
+      setEstBbls(Math.max(0,Math.round((tankHeightFeet-feet)*bblPerFoot)));
+    })().catch(()=>{if(!cancelled){setEstLevel('');setEstBbls(0);}});
+    return ()=>{cancelled=true;};
+  },[dateTime,routeType,wellName,isEditMode,tankHeightFeet,bblPerFoot]);
 
   const formatTimeLabel = (d: Date) => {
     const hours = d.getHours();
@@ -577,6 +601,27 @@ function RecordScreenInner() {
     let submitOutcome: SubmitOutcome = 'failure';
     const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
     const levelValue = committed?.level ?? committedLevelRef.current ?? level;
+    if (routeType === 'freshwater') {
+      const config=await getWellConfig(wellName);
+      if (!config) return;
+      if (isEditMode) { alert.show('Delivery history', 'Delivery corrections require office review.'); return; }
+      const current=parseLevel(levelValue), quantity=Number(barrelsValue);
+      const downCommand = wellDownTouchedRef.current ? wellDownRef.current : undefined;
+      if (quantity > 500 || !Number.isFinite(quantity) || !config.inventoryGroupId || config.equalization === 'unverified' || (current == null && (quantity > 0 || downCommand === undefined))
+        || quantity < 0 || (quantity === 0 && downCommand === undefined && current == null)
+        || (quantity > 0 && resultingLevel('freshwater',current!,quantity,config.bblPerFoot || 0,config.tankHeight || 0) == null)) {
+        alert.show('Check delivery', 'Enter a current level and delivery within the tank capacity. Equalization must be verified.'); return;
+      }
+      if (submitInFlightRef.current) return;
+      submitInFlightRef.current=true;
+      try {
+        await queueFreshWaterDelivery({groupId:config.inventoryGroupId,deliveredBbl:quantity,measuredBeforeFeet:current ?? undefined,deliveredAtUTC:dateTime.toISOString(),wellDown:downCommand});
+        await flushFreshWaterDeliveries();
+        router.back();
+      } catch(error) { alert.show('Delivery saved status',String(error)); }
+      finally { submitInFlightRef.current=false; }
+      return;
+    }
 
     // Resolve Well Down from LIVE refs, not from this closure's captured state.
     // The keypad Done handler is a closure frozen at field-activation time
@@ -1036,7 +1081,8 @@ function RecordScreenInner() {
   const levelHint = getLevelHint(liveLevel, t('record.tankLevelHint'), t('record.invalidFormat'));
 
   // Bottom level after pull: bottom = tankLevel - (bblsTaken / bblPerFoot)
-  const bottomLevelHint = computeBottomLevelHint(liveLevel, liveBarrels, bblPerFoot);
+  const deliveryCurrent=parseLevel(liveLevel), deliveryAfter=deliveryCurrent == null ? null : resultingLevel(routeType,deliveryCurrent,Number(liveBarrels),bblPerFoot,tankHeightFeet);
+  const bottomLevelHint = routeType === 'freshwater' ? (deliveryAfter == null ? null : formatLevelDisplay(deliveryAfter)) : computeBottomLevelHint(liveLevel, liveBarrels, bblPerFoot);
 
   // Keypad Done gate. New load: Done acts only when the WHOLE form would pass
   // submit's required-field validation — evaluated from the same LIVE values
@@ -1046,7 +1092,7 @@ function RecordScreenInner() {
   // the explicit edit-submit control), so it stays draft-gated only.
   const keypadDoneEnabled = isEditMode
     ? true
-    : isRecordLoadSubmitReady({ wellName, level: liveLevel, barrels: liveBarrels, wellDown });
+    : routeType === 'freshwater' ? (Number.isFinite(Number(liveBarrels)) && Number(liveBarrels)>=0 && (deliveryCurrent != null || wellDownTouchedRef.current)) : isRecordLoadSubmitReady({ wellName, level: liveLevel, barrels: liveBarrels, wellDown });
 
   // Title and button text based on mode
   const screenTitle = isEditMode ? t('recordExtra.editPull') : t('record.title');

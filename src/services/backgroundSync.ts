@@ -309,6 +309,7 @@ export async function syncFromProcessedFolder(_retryCount: number = 0): Promise<
 
 /** Foreground wake: one coalesced authenticated status fetch. */
 export async function syncOnForeground(): Promise<number> {
+  void import('./freshWaterSupply').then(m=>m.flushFreshWaterDeliveries()).catch(()=>undefined);
   await loadAppliedIncomingVersion();
   await loadAppliedRevisionV2();
   return runOutgoingStatusSync();

@@ -227,6 +227,9 @@ export async function clearAllLevelSnapshots(): Promise<void> {
 const SNAPSHOT_KEY = "@wellbuilt_level_snapshots";
 
 export interface LevelSnapshot {
+  routeType?: 'produced-water' | 'freshwater';
+  dailyBbl?: number | null;
+  bblPerFoot?: number;
   levelFeet: number;        // Current level at time of snapshot (= bottom level after last pull)
   timestamp: number;        // When the last pull happened (ms since epoch) - used for level estimation
   responseTimestamp: string; // Original timestamp from response packet
@@ -387,7 +390,18 @@ export async function saveLevelSnapshot(
   }
 }
 
-export async function getLevelSnapshot(wellName: string): Promise<LevelSnapshot | null> {
+export async function getLevelSnapshot(wellName: string, config?: {
+  routeType?: 'produced-water' | 'freshwater'; inventoryGroupId?: string; bblPerFoot?: number;
+}): Promise<LevelSnapshot | null> {
+  if (config?.routeType === 'freshwater' && config.inventoryGroupId) {
+    const { getFreshWaterSupply }=await import('./freshWaterSupply');
+    const supply=await getFreshWaterSupply(config.inventoryGroupId);
+    const status=supply.status;
+    return {routeType:'freshwater',isDown:status?.isDown === true,levelFeet:status?.levelFeet ?? 0,timestamp:status ? Date.parse(status.asOfUTC) : 0,
+      responseTimestamp:status?.asOfUTC || '', unavailable:!status || (status.projectedFeet == null),
+      dailyBbl:status?.dailyUseBbl ?? null,bblPerFoot:config.bblPerFoot,
+      flowRateMinutes:status?.dailyUseBbl ? 1440*(config.bblPerFoot || 0)/status.dailyUseBbl : 0};
+  }
   if (Object.keys(cachedSnapshots).length === 0) await loadLevelSnapshots();
   return cachedSnapshots[wellName] || null;
 }
@@ -443,7 +457,7 @@ export interface PendingPull {
 }
 
 export async function savePendingPull(
-  wellName: string, 
+  wellName: string,
   data: Omit<PendingPull, 'wellName'>
 ): Promise<void> {
   const key = PENDING_PULL_KEY + wellName.replace(/\s+/g, '_');

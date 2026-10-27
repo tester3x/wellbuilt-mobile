@@ -1,3 +1,4 @@
+import { rules } from '@tester3x/water-hauling';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { runInNewContext } from 'vm';
@@ -50,18 +51,29 @@ test.each([20, 25])('actual tank screen converts water fraction and clamps slide
   expect(slider).toHaveBeenCalledWith(height);
   expect(saved).toHaveBeenCalledWith('Test', height);
   const maximum = find(n => ts.isJsxAttribute(n) && n.name.getText(ast) === 'maximumValue') as ts.JsxAttribute;
-  expect(execute((maximum.initializer as ts.JsxExpression).expression!.getText(ast), { tankHeightFeet: height })).toBe(height);
+  expect(execute((maximum.initializer as ts.JsxExpression).expression!.getText(ast), { tankHeightFeet: height,wellConfig:{routeType:'produced-water'} })).toBe(height);
 });
 test.each([20, 25])('actual Record Load time-picker estimate respects %s-foot height', height => {
   const { ast, find } = screen('record.tsx');
   const effect = find(n => ts.isCallExpression(n) && n.expression.getText(ast) === 'useEffect' && n.arguments[0].getText(ast).includes('const baseTs = baseTimestampRef.current;')) as ts.CallExpression;
   const shown = jest.fn();
   execute(effect.arguments[0].getText(ast), { isEditMode: false, baseTimestampRef: { current: now - 3 * 3600000 }, baseLevelFeetRef: { current: 19 },
-    flowRateMinutes: 60, wellIsDownRef: { current: false }, dateTime: new Date(now), tankHeightFeet: height, clampTankLevel, formatFeetInches,
+    rules, routeType: 'produced-water', flowRateMinutes: 60, wellIsDownRef: { current: false }, dateTime: new Date(now), tankHeightFeet: height, clampTankLevel, formatFeetInches,
     setEstLevel: jest.fn(), setEstLevelFeet: shown, setEstBbls: jest.fn(), loadLineRef: { current: 1.33 }, bblPerFoot: 20 })();
   expect(shown).toHaveBeenCalledWith(Math.min(22, height));
 });
 
+test('actual shared freshwater slider increases positive delivery and retains capacity bounds',()=>{
+ const {ast,find}=screen('(tabs)/index.tsx');
+ const variable=find(n=>ts.isVariableDeclaration(n)&&n.name.getText(ast)==='handleSliderChange') as ts.VariableDeclaration;
+ const callback=variable.initializer as ts.CallExpression;
+ const setSliderFeet=jest.fn();
+ const change=execute(callback.arguments[0].getText(ast),{wellConfig:{routeType:'freshwater'},planningFeet:13.5,tankHeightFeet:20,setSliderFeet});
+ change(2);expect(setSliderFeet).toHaveBeenLastCalledWith(2);
+ change(200/60);expect(setSliderFeet).toHaveBeenLastCalledWith(200/60);
+ change(100);expect(setSliderFeet).toHaveBeenLastCalledWith(6.5);
+ change(-1);expect(setSliderFeet).toHaveBeenLastCalledWith(0);
+});
 test.each([false, true])('height edits rescale a stationary/down=%s tank without another pull or timer', down => {
   const { ast, find } = screen('(tabs)/index.tsx');
   const effect = find(n => ts.isCallExpression(n) && n.expression.getText(ast) === 'useEffect' && n.arguments[0].getText(ast).includes('setInterval(updateEstimate, LIVE_UPDATE_MS)')) as ts.CallExpression;

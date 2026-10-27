@@ -1,3 +1,4 @@
+import { projectedLevel } from '@tester3x/water-hauling';
 import { resolveTankHeight } from '../utils/tankHeight';
 /**
  * Atomic per-well render snapshot: level, DOWN, flow, pull metadata.
@@ -135,6 +136,9 @@ export function buildWellRenderSnapshot(input: {
 /** Same projection on initial load, navigation, and periodic refresh. */
 export function estimatedSnapshotLevel(
   snapshot: {
+    routeType?: 'produced-water' | 'freshwater';
+    dailyBbl?: number | null;
+    bblPerFoot?: number;
     levelFeet?: number;
     lastPullBottomLevelFeet?: number;
     timestamp: number;
@@ -146,6 +150,9 @@ export function estimatedSnapshotLevel(
   tankHeight?: number,
 ): number {
   const height = resolveTankHeight(tankHeight);
+  if (snapshot.routeType === 'freshwater') return projectedLevel('freshwater',snapshot.levelFeet ?? 0,
+    new Date(snapshot.timestamp).toISOString(),new Date(now).toISOString(),snapshot.isDown ? 0 : snapshot.dailyBbl,
+    snapshot.bblPerFoot || 0,height) ?? 0;
   const base = Math.max(0, Math.min(startingLevelFromSnapshot(snapshot), height));
   const rate = snapshot.flowRateMinutes ?? fallbackFlowMinutes;
   if (snapshot.isDown || !Number.isFinite(rate) || rate <= 0

@@ -2422,6 +2422,7 @@ export default function MainScreen() {
           visible={showMore}
           onClose={() => setShowMore(false)}
           onRouteMe={() => router.push('/route-me')}
+          onFreshWater={() => router.push('/fresh-water')}
           onSummary={handleSummaryPress}
           onSwitchApps={() => DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT)}
           bottomInset={insets.bottom}
@@ -2543,6 +2544,7 @@ export default function MainScreen() {
         visible={showMore}
         onClose={() => setShowMore(false)}
         onRouteMe={() => router.push('/route-me')}
+        onFreshWater={() => router.push('/fresh-water')}
         onSummary={handleSummaryPress}
         onSwitchApps={() => DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT)}
         bottomInset={insets.bottom}

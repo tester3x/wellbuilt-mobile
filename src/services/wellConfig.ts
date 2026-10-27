@@ -74,6 +74,13 @@ export interface WellConfig {
   route?: string;
   operator?: string;
   isDown?: boolean;
+  freshWaterSupply?: {
+    enabled: true;
+    tankCount: number;
+    tankHeightFeet: number;
+    bblPerFootPerTank: number;
+    dailyUseBbl: number;
+  };
 }
 
 export interface WellConfigMap {

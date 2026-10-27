@@ -118,8 +118,10 @@ describe('Task 2 — Keep Android System Navigation Visible', () => {
     expect(layoutSrc).not.toMatch(/StatusBar\.setHidden\(true\)/);
 
     // Explicitly visible and non-immersive inset-touch
-    expect(layoutSrc).toMatch(/NavigationBar\.setVisibilityAsync\('visible'\)/);
-    expect(layoutSrc).toMatch(/NavigationBar\.setBehaviorAsync\('inset-touch'\)/);
+    expect(layoutSrc).toMatch(/void refreshAppNavigationBar\(\)/);
+    const nav = src('src/utils/keypadNavigationBar.ts');
+    expect(nav).toContain("hidden ? 'hidden' : 'visible'");
+    expect(nav).toContain("hidden ? 'overlay-swipe' : 'inset-touch'");
     expect(layoutSrc).toMatch(/NavigationBar\.setButtonStyleAsync\('light'\)/);
     expect(layoutSrc).toMatch(/StatusBar\.setHidden\(false\)/);
 

@@ -1,3 +1,4 @@
+import { resolveTankHeight, clampTankLevel } from '../src/utils/tankHeight';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -120,7 +121,6 @@ const formatMinuteKey = (d: Date): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-const FULL_TANK_FEET = 20;
 
 // Draft data structure for persisting form state (per-well)
 interface DraftData {
@@ -191,6 +191,7 @@ function RecordScreenInner() {
   const [flowRate, setFlowRate] = useState<string | null>(null);
   const [flowRateMinutes, setFlowRateMinutes] = useState<number>(0); // Minutes per foot for timestamp backdating
   const [lastPullInfo, setLastPullInfo] = useState<string | null>(null);
+  const [tankHeightFeet, setTankHeightFeet] = useState(20);
   const [bblPerFoot, setBblPerFoot] = useState<number>(20); // Default to 1 tank
 
   // Base data for time-adjusted level estimation (backward flow rate)
@@ -397,6 +398,8 @@ function RecordScreenInner() {
 
       await loadWellConfig();
       const config = await getWellConfig(wellName);
+      const tankHeightFeet = resolveTankHeight(config?.tankHeight);
+      setTankHeightFeet(tankHeightFeet);
       const snapshot = await getLevelSnapshot(wellName);
 
       // Effective bbl/ft — consume the Dashboard-saved well_config.bblPerFoot
@@ -456,13 +459,14 @@ function RecordScreenInner() {
       if (baseTs > 0 && flowMins > 0 && !snapshot?.isDown) {
         const minutesElapsed = (dateTime.getTime() - baseTs) / (1000 * 60);
         let estimatedLevel = baseLvl + (minutesElapsed / flowMins);
-        estimatedLevel = Math.max(0, Math.min(estimatedLevel, FULL_TANK_FEET));
+        estimatedLevel = clampTankLevel(estimatedLevel, tankHeightFeet);
         setEstLevel(formatFeetInches(estimatedLevel));
         setEstLevelFeet(estimatedLevel);
 
         const bbls = Math.max(Math.round((estimatedLevel - loadLine) * bblPerFt), 0);
         setEstBbls(bbls);
       } else if (baseLvl > 0) {
+        baseLvl = clampTankLevel(baseLvl, tankHeightFeet);
         setEstLevel(formatFeetInches(baseLvl));
         setEstLevelFeet(baseLvl);
         const bbls = Math.max(Math.round((baseLvl - loadLine) * bblPerFt), 0);
@@ -491,13 +495,13 @@ function RecordScreenInner() {
 
     const minutesElapsed = (dateTime.getTime() - baseTs) / (1000 * 60);
     let estimatedLevel = baseLvl + (minutesElapsed / flowRateMinutes);
-    estimatedLevel = Math.max(0, Math.min(estimatedLevel, FULL_TANK_FEET));
+    estimatedLevel = clampTankLevel(estimatedLevel, tankHeightFeet);
     setEstLevel(formatFeetInches(estimatedLevel));
     setEstLevelFeet(estimatedLevel);
 
     const bbls = Math.max(Math.round((estimatedLevel - loadLineRef.current) * bblPerFoot), 0);
     setEstBbls(bbls);
-  }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode]);
+  }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode, tankHeightFeet]);
 
   const formatTimeLabel = (d: Date) => {
     const hours = d.getHours();

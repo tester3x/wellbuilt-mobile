@@ -240,6 +240,7 @@ export interface LevelSnapshot {
   flowRate?: string;             // Flow rate string (e.g., "0:07:25") - stored with snapshot so they stay in sync
   flowRateMinutes?: number;      // Parsed flow rate in minutes (e.g., 7.417)
   windowBblsDay?: number;        // Window-averaged bbls/day (from Cloud Function or history screen)
+  overnightEstimatedTime?: boolean; // ON boundary clock was inferred
   overnightBblsDay?: number;     // Longest-gap (overnight) bbls/day from Cloud Function
   unavailable?: boolean;         // Server had no outgoing status — not 0' or 20'
 }
@@ -282,8 +283,9 @@ export async function saveLevelSnapshot(
   flowRateMinutes?: number,
   lastPullDateTimeUTC?: string,
   forceUpdate: boolean = false,  // Skip timestamp comparison (for edits)
-  windowBblsDay?: number,
-  overnightBblsDay?: number,
+  windowBblsDay?: number | null,
+  overnightBblsDay?: number | null,
+  overnightEstimatedTime?: boolean,
 ): Promise<void> {
   try {
     if (Object.keys(cachedSnapshots).length === 0) await loadLevelSnapshots();
@@ -372,8 +374,11 @@ export async function saveLevelSnapshot(
       lastPullBottomLevelFeet: lastPullBottomLevelFeet ?? existingSnapshot?.lastPullBottomLevelFeet,
       flowRate: validFlowRate || existingSnapshot?.flowRate,
       flowRateMinutes: validFlowRateMinutes ?? existingSnapshot?.flowRateMinutes,
-      windowBblsDay: windowBblsDay ?? existingSnapshot?.windowBblsDay,
-      overnightBblsDay: overnightBblsDay ?? existingSnapshot?.overnightBblsDay,
+      // undefined: this local update does not carry production estimates.
+      // null: the authoritative response withdrew the estimate. Do not revive it.
+      windowBblsDay: windowBblsDay === undefined ? existingSnapshot?.windowBblsDay : windowBblsDay ?? undefined,
+      overnightBblsDay: overnightBblsDay === undefined ? existingSnapshot?.overnightBblsDay : overnightBblsDay ?? undefined,
+      overnightEstimatedTime: overnightBblsDay === undefined ? existingSnapshot?.overnightEstimatedTime : !!(overnightBblsDay && overnightEstimatedTime),
     };
 
     await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(cachedSnapshots));
@@ -414,6 +419,7 @@ export async function markLevelUnavailable(wellName: string): Promise<void> {
       flowRateMinutes: existing?.flowRateMinutes,
       windowBblsDay: existing?.windowBblsDay,
       overnightBblsDay: existing?.overnightBblsDay,
+      overnightEstimatedTime: existing?.overnightEstimatedTime,
     };
     await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(cachedSnapshots));
   } catch (error) {

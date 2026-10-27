@@ -1,3 +1,4 @@
+import {platformDelivery as delivery} from './platformDelivery';
 // src/services/editDelivery.ts
 // Ordered, truthful pull-edit delivery (GS3).
 //
@@ -458,6 +459,7 @@ export async function processEditOperations(
   fetchFn: typeof fetch = fetch,
   opts: ProcessEditOptions = {},
 ): Promise<{ submitted: number; confirmed: number; rejected: number; held: number; attemptedOpIds: string[] }> {
+  if(!delivery.canAttempt())return {submitted:0,confirmed:0,rejected:0,held:0,attemptedOpIds:[]};
   if (_inFlight && !opts.forceOpId) return _inFlight;
   if (_inFlight && opts.forceOpId) {
     const joined = await _inFlight;
@@ -914,6 +916,7 @@ export async function getPendingEditForWell(
 // A SINGLE self-rescheduling deadline timer (never continuous polling). It fires
 // only at the earliest pending edit's next backoff deadline, does nothing when
 // the queue is empty, and runs only while foregrounded + online + authed.
+let unregisterPlatformEdit:(()=>void)|null=null;
 let _started = false;
 let _schedulerEnabled = false;
 let _deliveryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -969,7 +972,8 @@ export async function scheduleEditDelivery(): Promise<void> {
   if (!_schedulerEnabled || !_fg || !_online || !_authed) return;
   const dl = await nextEditDeadline(Date.now());
   if (dl == null) return; // empty queue → zero wakeups
-  const delay = Math.max(0, dl - Date.now());
+  const delay = delivery.wakeDelay([dl],_online);
+  if(delay===null)return;
   _deliveryTimer = setTimeout(() => { void deliverAndSchedule(); }, delay);
   // Background scheduler must never keep the process (or a Jest worker) alive on
   // its own. unref is a no-op on RN's numeric timers and a clean exit on Node.
@@ -988,7 +992,7 @@ export async function scheduleEditDelivery(): Promise<void> {
  *  flush/connectivity/foreground/auth event required. */
 async function deliverAndSchedule(): Promise<void> {
   _deliveryTimer = null;
-  if (_schedulerEnabled && _online && _authed) {
+  if (_schedulerEnabled && _online && _authed && delivery.canAttempt()) {
     await (_deliveryFetch ? processEditOperations(_deliveryFetch) : processEditOperations()).catch(() => null);
   }
   await scheduleEditDelivery();
@@ -996,11 +1000,13 @@ async function deliverAndSchedule(): Promise<void> {
 
 export function setDeliveryForeground(fg: boolean): void {
   _fg = fg;
+  void delivery.changed();
   if (!fg) { clearDeliveryTimer(); return; } // background → cancel
   void deliverAndSchedule();                  // foreground → process overdue + reschedule
 }
 export function setDeliveryOnline(online: boolean): void {
   _online = online;
+  delivery.setReachable(online);
   if (!online) { clearDeliveryTimer(); return; } // offline → cancel/wait
   void deliverAndSchedule();                      // reconnect → immediate retry
 }
@@ -1012,6 +1018,7 @@ export function setDeliveryAuthed(authed: boolean): void {
 /** Test-only reset (and a clean shutdown hook). */
 export function stopEditDelivery(): void {
   clearDeliveryTimer();
+  unregisterPlatformEdit?.();unregisterPlatformEdit=null;
   _started = false; _schedulerEnabled = false; _fg = true; _online = true; _authed = true; _deliveryFetch = null;
 }
 
@@ -1022,6 +1029,10 @@ export function stopEditDelivery(): void {
 export function startEditDelivery(): void {
   if (_started) return;
   _started = true;
+  unregisterPlatformEdit=delivery.register('mobile-edits',{
+    pending:async()=>!_fg||!_authed?[]:(await loadOps()).filter(o=>o.state==='edit_pending'&&retriesEventually(o)).map(o=>opDeadline(o,Date.now())),
+    flush:async()=>{if(_fg&&_authed)return processEditOperations();},
+  });
   _schedulerEnabled = true;
   onFlushComplete(() => { void deliverAndSchedule(); });
   onConnectivityChange((online) => { setDeliveryOnline(online); });

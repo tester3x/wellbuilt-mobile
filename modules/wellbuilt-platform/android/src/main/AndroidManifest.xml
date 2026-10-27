@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+ <queries>
+  <package android:name="com.wellbuilt.suite" />
+  <package android:name="com.testerxxx.waterticket" />
+  <package android:name="com.wellbuiltmobile.app" />
+  <package android:name="com.syconik801.jsaapp" />
+  <package android:name="com.wellbuilt.equipment" />
+  <package android:name="com.wellbuilt.electronictimecard" />
+  <package android:name="com.michaelburger.tickettime" />
+ </queries>
+ <application><provider android:name="expo.modules.wbplatform.AccountProvider" android:authorities="${applicationId}.wbplatform" android:exported="true" android:grantUriPermissions="false" /></application>
+</manifest>

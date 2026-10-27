@@ -78,3 +78,24 @@ it('exact fish touches send fish away from a wall rather than pinning them again
  expect(fishScatterDirections([{left:0,top:240,opacity:1}],9,249,0)![0]).toEqual({travel:1,depth:-0.18});
  expect(fishScatterDirections([{left:162,top:240,opacity:1}],171,249,0)![0]).toEqual({travel:-1,depth:-0.18});
 });
+
+test('inverted fish face their horizontal travel and scatter keeps its local direction', () => {
+  const { roamingFishFacing } = require('../fluidWildlife');
+  const fish = { freq: 1, phase: 0 };
+  const escape = { travel: 1 };
+  expect(roamingFishFacing(180,280,0.6,false,0,0,fish,escape,0)).toBe(-1);
+  expect(roamingFishFacing(180,280,0.6,true,Math.PI,0,fish,escape,0)).toBe(1);
+  expect(roamingFishFacing(180,280,0.6,false,0,0.5,fish,escape,0)).toBe(1);
+  expect(roamingFishFacing(180,280,0.6,true,Math.PI,0.5,fish,escape,0)).toBe(-1);
+  expect(roamingFishFacing(180,280,0.6,true,Math.PI,0,fish,escape,1)).toBe(-1);
+});
+
+test('facing follows scatter return, inversion, and holds at rest', () => {
+ const { movementFishFacing } = require('../fluidWildlife');
+ const before={left:50,top:60};
+ expect(movementFishFacing(before,{left:60,top:60},0,1)).toBe(-1);
+ expect(movementFishFacing(before,{left:40,top:60},0,-1)).toBe(1);
+ expect(movementFishFacing(before,{left:60,top:60},Math.PI,-1)).toBe(1);
+ expect(movementFishFacing(before,{left:50,top:70},Math.PI/2,1)).toBe(-1);
+ expect(movementFishFacing(before,before,0,1)).toBe(1);
+});

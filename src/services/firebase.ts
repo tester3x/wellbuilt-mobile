@@ -1,3 +1,4 @@
+import {platformDelivery as delivery} from './platformDelivery';
 // src/services/firebase.ts
 // Firebase Realtime Database version - replaces OneDrive/Graph API
 // Much simpler: no OAuth, no access tokens, just HTTP calls to Firebase
@@ -5,6 +6,8 @@
 import { loadWellConfig, getWellConfig, WellConfigMap } from './wellConfig';
 import { packetShowsEditBadge, selectVisibleHistoryPackets } from './editMarkers';
 import { reviewSignalsFromPacket } from '../utils/reviewSignals';
+import { withWellHistoryRead } from './wellHistoryRead';
+import { fetchWellHistoryPackets } from './wellHistoryClient';
 
 // *** FIREBASE PROJECT CONFIG ***
 // WellBuilt Sync - Firebase Realtime Database
@@ -632,7 +635,7 @@ export const uploadEditPacketV3 = async (params: {
     wellDownIsAuthoritative: params.wellDownIsAuthoritative,
   });
   const { submitWbmEditV3 } = await import('./secureOperationalApi');
-  const result = await submitWbmEditV3(packet);
+  const result = await delivery.attempt(()=>submitWbmEditV3(packet));
   return {
     packet,
     wellName: params.wellName,
@@ -777,20 +780,12 @@ export const requestWellHistory = async (
   console.log(`[WellHistory] Fetching history for ${wellName} from Firebase (limit: ${limit})`);
 
   try {
-    // Server-side query: only fetch packets for THIS well (not all wells)
-    const [processedData, wellConfig] = await Promise.all([
-      (async () => {
-        const { getDriverSession } = await import('./driverAuth');
-        const session = await getDriverSession();
-        if (!session?.companyId) return {};
-        const all = await firebaseQuery('packets/processed', 'companyId', session.companyId);
-        if (!all) return {};
-        return Object.fromEntries(
-          Object.entries(all).filter(([, p]) => (p as any)?.wellName === wellName),
-        );
-      })(),
+    return await withWellHistoryRead(async read => {
+    // Authenticated exact-well dataset, with original packet keys and fields.
+    const [processedData, wellConfig] = await read.wait(() => Promise.all([
+      fetchWellHistoryPackets(wellName, read),
       getWellConfig(wellName),
-    ]);
+    ]));
 
     if (!processedData || Object.keys(processedData).length === 0) {
       console.log("[WellHistory] No processed packets found for", wellName);
@@ -1098,6 +1093,7 @@ export const requestWellHistory = async (
       timestamp: new Date().toLocaleString(),
       timestampUTC: new Date().toISOString(),
     };
+    });
   } catch (error) {
     console.error("[WellHistory] Error fetching from Firebase:", error);
     return {

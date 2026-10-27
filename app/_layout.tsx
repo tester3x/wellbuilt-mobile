@@ -1,6 +1,7 @@
 import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as NavigationBar from 'expo-navigation-bar';
+import { refreshAppNavigationBar } from '../src/utils/keypadNavigationBar';
 import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import { AppState, Platform, StatusBar, View, StyleSheet } from 'react-native';
@@ -8,7 +9,6 @@ import { I18nextProvider } from 'react-i18next';
 import i18n from '../src/i18n';
 import { DispatchProvider } from '../src/contexts/DispatchContext';
 import { DispatchButton } from '../src/components/DispatchButton';
-import AppSwitcher from '../src/components/AppSwitcher';
 // REMOVED: FirebaseStatusProvider + SystemOfflineBanner
 // The offline banner was more annoying than useful — triggered 20+ times/day in dead zones.
 // No other app does this. The underlying firebaseStatus service is kept for packetQueue
@@ -18,6 +18,7 @@ import { useWhatsNew } from '../hooks/use-whats-new';
 import { SyncToastHost } from '../src/components/SyncToast';
 import { cleanupStalePendingPulls, clearDeprecatedFlowRateCache } from '../src/services/wellHistory';
 import { startDeliveryReconciler } from '../src/services/deliveryStatus';
+import { startTankInfoDelivery } from '../src/services/tankInfo';
 import { startEditDelivery, setDeliveryForeground } from '../src/services/editDelivery';
 import { startNetworkMonitor, flushQueue } from '../src/services/packetQueue';
 import { resumePullHistoryBackfillOnAuth } from '../src/services/pullHistory';
@@ -39,16 +40,17 @@ const initializeWellAlertsLazy = async () => {
 // Keep splash visible while app loads
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function MobileRootContent() {
+  const platformAccountReady=require("../modules/wellbuilt-platform/AccountGate").useAccountReady() as boolean;
   const [appIsReady, setAppIsReady] = useState(false);
   const { showWhatsNew, changelog, dismissWhatsNew } = useWhatsNew();
 
   useEffect(() => {
+    if(!platformAccountReady)return;
     // Configure Android system navigation — keep visible and non-immersive
     const configureSystemNav = () => {
       if (Platform.OS === 'android') {
-        NavigationBar.setVisibilityAsync('visible');
-        NavigationBar.setBehaviorAsync('inset-touch');
+        void refreshAppNavigationBar();
         NavigationBar.setBackgroundColorAsync('#00000000');
         NavigationBar.setButtonStyleAsync('light');
         StatusBar.setHidden(false);
@@ -114,6 +116,7 @@ export default function RootLayout() {
     // Ordered edit delivery (GS3): dependent edits survive restart and
     // release only after their original pull is confirmed processed.
     startEditDelivery();
+    const stopTankInfoDelivery = startTankInfoDelivery();
 
     // Resume the cross-app history backfill once a Firebase user hydrates on cold
     // start, so a momentary startup "No driverId" never permanently skips queued work.
@@ -122,8 +125,8 @@ export default function RootLayout() {
     // Flush any packets that were queued while app was closed
     flushQueue();
     flushFreshWaterDeliveries().catch(() => undefined);
-    return () => appStateSub.remove();
-  }, []);
+    return () => { appStateSub.remove(); stopTankInfoDelivery(); };
+  }, [platformAccountReady]);
 
   // IMPORTANT: Always render the Stack — even during loading.
   // Returning null here kills Expo Router deep link matching
@@ -161,17 +164,7 @@ export default function RootLayout() {
           </Stack>
           {/* Global dispatch button - appears when there are pending sends */}
           {appIsReady && <DispatchButton />}
-          {/* AppSwitcher — More-menu modal (no floating badge) */}
-          {appIsReady && (
-            <AppSwitcher
-              selfScheme="wellbuilt-mobile"
-              getIdentity={async () => {
-                const driverId = await SecureStore.getItemAsync('driverId');
-                const name = await SecureStore.getItemAsync('driverName');
-                return driverId && name ? { hash: '', name, driverId } : null;
-              }}
-            />
-          )}
+
           {/* What's New modal - shows after app update */}
           {appIsReady && (
             <WhatsNewModal
@@ -192,3 +185,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#05060B',
   },
 });
+
+const DeviceAccountGate=require('../modules/wellbuilt-platform/AccountGate');
+const restoreDeviceAccount=()=>import('../src/services/deviceAccount').then(m=>m.restoreMobileDeviceAccount());
+const clearDeviceAccount=()=>import('../src/services/driverAuth').then(m=>m.clearDriverSession());
+export default function RootLayout(){return <DeviceAccountGate restore={restoreDeviceAccount} returnToHub={()=>{void import('react-native').then(m=>m.Linking.openURL('wellbuilt-suite://home'));}} clearLocal={clearDeviceAccount}><MobileRootContent /></DeviceAccountGate>;}

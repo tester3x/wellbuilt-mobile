@@ -12,6 +12,10 @@ import NetInfo from "@react-native-community/netinfo";
 import { uploadTankPacket, uploadEditPacket, mintPacketId } from "./firebase";
 import { setPullSyncStatus } from "./pullHistory";
 
+import {platformDelivery as delivery} from './platformDelivery';
+let unregisterDelivery:(()=>void)|null=null;
+async function scheduleRetryWake():Promise<void>{await delivery.changed();}
+
 const QUEUE_STORAGE_KEY = "@wellbuilt_packet_queue";
 
 // GS3 durability rules: a queued packet is NEVER silently discarded.
@@ -50,10 +54,10 @@ export interface QueuedPacket {
  * on later loads/retries. Payloads, timestamps, retry metadata, and
  * ordering are preserved; nothing else in AsyncStorage is touched.
  */
-export async function getQueuedPackets(): Promise<QueuedPacket[]> {
-  try {
+async function loadQueuedPackets(): Promise<QueuedPacket[]> {
     const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
     const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(queue)) throw new Error('packet_queue_unreadable');
     let migrated = false;
     for (const p of queue) {
       if (p.type === "pull" && !p.packetId) {
@@ -70,9 +74,17 @@ export async function getQueuedPackets(): Promise<QueuedPacket[]> {
       console.log("[PacketQueue] Migrated legacy queue entries to stable identity");
     }
     return queue;
-  } catch {
-    return [];
-  }
+}
+
+// Serialize every read/modify/write; network requests never hold this lock.
+let queueMutation: Promise<unknown> = Promise.resolve();
+function withQueueMutation<T>(work: () => Promise<T>): Promise<T> {
+  const run = queueMutation.then(work, work);
+  queueMutation = run.catch(() => undefined);
+  return run;
+}
+export function getQueuedPackets(): Promise<QueuedPacket[]> {
+  return withQueueMutation(loadQueuedPackets);
 }
 
 // Save queue to storage
@@ -85,7 +97,8 @@ export async function queuePacket(
   type: "pull" | "edit",
   data: any
 ): Promise<string> {
-  const queue = await getQueuedPackets();
+  return withQueueMutation(async () => {
+  const queue = await loadQueuedPackets();
 
   const id = `queued_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   // Pulls carry their stable identity in the payload; guarantee it here so
@@ -111,19 +124,22 @@ export async function queuePacket(
   });
 
   await saveQueue(queue);
+  void scheduleRetryWake().catch(()=>{});
   console.log(`[PacketQueue] Queued ${type} packet:`, id, packetId ?? "");
 
   return id;
+  });
 }
 
 // Remove a packet from the queue (after CONFIRMED successful send).
 // Re-reads storage so it composes safely with per-packet persistence.
-async function removeFromQueue(id: string): Promise<void> {
-  const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
-  const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
-  const filtered = queue.filter(p => p.id !== id);
-  await saveQueue(filtered);
-  console.log("[PacketQueue] Removed:", id);
+async function removeFromQueue(packet: QueuedPacket): Promise<void> {
+  await withQueueMutation(async () => {
+    const queue = await loadQueuedPackets();
+    const filtered = queue.filter(p => p.id !== packet.id || p.type !== packet.type
+      || JSON.stringify(p.data) !== JSON.stringify(packet.data));
+    await saveQueue(filtered);
+  });
 }
 
 // ── Submitted-payload retention (GS3 recovery) ────────────────────────────
@@ -134,12 +150,12 @@ async function removeFromQueue(id: string): Promise<void> {
 const SUBMITTED_PAYLOAD_KEY = "@wellbuilt_submitted_payloads";
 
 export async function rememberSubmittedPayload(packetId: string, data: any): Promise<void> {
-  try {
+  return withQueueMutation(async () => {
     const stored = await AsyncStorage.getItem(SUBMITTED_PAYLOAD_KEY);
     const map = stored ? JSON.parse(stored) : {};
     map[packetId] = { data, submittedAt: Date.now() };
     await AsyncStorage.setItem(SUBMITTED_PAYLOAD_KEY, JSON.stringify(map));
-  } catch {}
+  });
 }
 
 export async function getSubmittedPayload(packetId: string): Promise<any | null> {
@@ -153,14 +169,14 @@ export async function getSubmittedPayload(packetId: string): Promise<any | null>
 }
 
 export async function forgetSubmittedPayload(packetId: string): Promise<void> {
-  try {
+  return withQueueMutation(async () => {
     const stored = await AsyncStorage.getItem(SUBMITTED_PAYLOAD_KEY);
     const map = stored ? JSON.parse(stored) : {};
     if (packetId in map) {
       delete map[packetId];
       await AsyncStorage.setItem(SUBMITTED_PAYLOAD_KEY, JSON.stringify(map));
     }
-  } catch {}
+  });
 }
 
 /**
@@ -174,6 +190,7 @@ export async function mutateQueuedPullInPlace(
   packetId: string,
   changes: { tankLevelFeet?: number; bblsTaken?: number; wellDown?: boolean; dateTime?: string; dateTimeUTC?: string },
 ): Promise<boolean> {
+  return withQueueMutation(async () => {
   const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
   const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
   const entry = queue.find(p => p.type === "pull" && p.packetId === packetId);
@@ -186,11 +203,13 @@ export async function mutateQueuedPullInPlace(
   await saveQueue(queue);
   console.log("[PacketQueue] Edited queued pull in place:", packetId);
   return true;
+  });
 }
 
 // Persist updated retry metadata for ONE packet immediately (crash-safe:
 // a crash later in the flush loop cannot lose this attempt's bookkeeping).
 async function persistAttemptFailure(id: string, error: string, nowMs: number): Promise<void> {
+  return withQueueMutation(async () => {
   const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
   const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
   const entry = queue.find(p => p.id === id);
@@ -200,6 +219,7 @@ async function persistAttemptFailure(id: string, error: string, nowMs: number): 
   entry.nextAttemptAt = nowMs + computeBackoffMs(entry.retryCount);
   entry.lastError = error;
   await saveQueue(queue);
+  });
 }
 
 // Check if we have network connectivity
@@ -211,6 +231,7 @@ export async function isOnline(): Promise<boolean> {
     const state = await NetInfo.fetch();
     const online = state.isConnected === true && state.isInternetReachable !== false;
     console.log(`[PacketQueue] isOnline: ${online ? 'YES' : 'NO'} (type=${state.type}, connected=${state.isConnected}, reachable=${state.isInternetReachable})`);
+    delivery.setReachable(online);
     return online;
   } catch (err: any) {
     console.log(`[PacketQueue] isOnline: EXCEPTION ${err.message}`);
@@ -224,9 +245,11 @@ export async function isOnline(): Promise<boolean> {
 async function sendQueuedPacket(packet: QueuedPacket): Promise<{ ok: boolean; error?: string; permanentReason?: string }> {
   try {
     if (packet.type === "pull") {
-      await uploadTankPacket(packet.data);
+      await delivery.attempt(()=>uploadTankPacket(packet.data));
     } else if (packet.type === "edit") {
-      await uploadEditPacket(packet.data);
+      await delivery.attempt(()=>uploadEditPacket(packet.data));
+    } else {
+      throw new Error('unsupported_packet_type');
     }
     return { ok: true };
   } catch (error: any) {
@@ -266,12 +289,14 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
     return await flushQueueInner();
   } finally {
     _flushInProgress = false;
+    await scheduleRetryWake().catch(()=>{});
   }
 }
 
 async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
   const online = await isOnline();
-  if (!online) {
+  _currentOnlineState=online;
+  if ((!online || !delivery.canAttempt())) {
     console.log("[PacketQueue] Still offline, skipping flush");
     return { sent: 0, failed: 0 };
   }
@@ -293,6 +318,7 @@ async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
 
   for (const packet of queue) {
     const nowMs = Date.now();
+    if(!delivery.canAttempt())break;
     if (packet.nextAttemptAt && packet.nextAttemptAt > nowMs) {
       deferred++;
       continue; // backing off — not an attempt, not a failure
@@ -305,15 +331,13 @@ async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
       if (packet.data?.wellName) wellNames.push(packet.data.wellName);
       // Persist THIS removal before touching the next packet — a crash
       // here can neither resurrect this packet nor lose the removal.
-      await removeFromQueue(packet.id);
+      if (packet.type === "pull" && packet.packetId) await rememberSubmittedPayload(packet.packetId, packet.data);
+      await removeFromQueue(packet);
       if (packet.type === "pull" && packet.packetId) {
         // TRUTHFUL status: a successful PUT to incoming is only
         // "submitted" — the server may still quarantine it. 'sent' comes
         // from the delivery reconciler once packets/processed confirms.
         try { await setPullSyncStatus(packet.packetId, "submitted", { submittedAt: Date.now() }); } catch {}
-        // Retain the exact payload for safe same-ID recovery if the
-        // packet later vanishes without a server verdict.
-        try { await rememberSubmittedPayload(packet.packetId, packet.data); } catch {}
       }
       console.log("[PacketQueue] Submitted:", packet.id, packet.packetId ?? "");
     } else if (result.permanentReason && packet.type === "pull" && packet.packetId) {
@@ -324,8 +348,8 @@ async function flushQueueInner(): Promise<{ sent: number; failed: number }> {
       // row shows 'rejected' + the server's stable reason, and Sync Status
       // keeps listing it through the governed route.
       failed++;
-      try { await rememberSubmittedPayload(packet.packetId, packet.data); } catch {}
-      await removeFromQueue(packet.id);
+      await rememberSubmittedPayload(packet.packetId, packet.data);
+      await removeFromQueue(packet);
       try {
         await setPullSyncStatus(packet.packetId, "rejected", {
           rejectionReason: `ingest_refused: ${result.permanentReason}`,
@@ -371,20 +395,25 @@ export async function getQueueCount(): Promise<number> {
  * simultaneous auto-flush.
  */
 export async function retryPacketNow(queueId: string): Promise<{ attempted: boolean; sent: number; failed: number }> {
-  const stored = await AsyncStorage.getItem(QUEUE_STORAGE_KEY);
-  const queue: QueuedPacket[] = stored ? JSON.parse(stored) : [];
-  const entry = queue.find(p => p.id === queueId);
-  if (!entry) return { attempted: false, sent: 0, failed: 0 };
-  entry.nextAttemptAt = null; // driver asked — retry immediately
-  await saveQueue(queue);
-  const result = await flushQueue();
-  return { attempted: true, ...result };
+  if (!await isOnline() || !delivery.canAttempt()) return { attempted:false, sent:0, failed:0 };
+  const armed = await withQueueMutation(async () => {
+    const queue = await loadQueuedPackets();
+    const entry = queue.find(p => p.id === queueId);
+    if (!entry) return false;
+    entry.nextAttemptAt = null;
+    await saveQueue(queue);
+    return true;
+  });
+  if (!armed) return { attempted:false, sent:0, failed:0 };
+  return { attempted:true, ...await flushQueue() };
 }
 
 // Clear the queue (for testing/reset)
 export async function clearQueue(): Promise<void> {
-  await AsyncStorage.removeItem(QUEUE_STORAGE_KEY);
-  console.log("[PacketQueue] Queue cleared");
+  await withQueueMutation(async () => {
+    if ((await loadQueuedPackets()).length) throw new Error('pending_delivery_cannot_be_cleared');
+    await AsyncStorage.removeItem(QUEUE_STORAGE_KEY);
+  });
 }
 
 // ── Sync completion + connectivity listeners ──────────────────────────────
@@ -421,6 +450,9 @@ let unsubscribeNetInfo: (() => void) | null = null;
 
 export function startNetworkMonitor(): void {
   if (unsubscribeNetInfo) return; // Already monitoring
+  unregisterDelivery=delivery.register('mobile-packets',{
+    pending:async()=>(await getQueuedPackets()).map(p=>p.nextAttemptAt),flush:flushQueue,
+  });
 
   // Listen for network state changes — flush queue when connection is restored
   unsubscribeNetInfo = NetInfo.addEventListener(async (state) => {
@@ -429,12 +461,14 @@ export function startNetworkMonitor(): void {
 
     if (_currentOnlineState !== nowOnline) {
       _currentOnlineState = nowOnline;
+      delivery.setReachable(nowOnline);
       console.log(`[PacketQueue] Connectivity: ${nowOnline ? 'ONLINE' : 'OFFLINE'}`);
       for (const listener of _connectivityListeners) {
         try { listener(nowOnline); } catch {}
       }
     }
 
+    if(!nowOnline)void scheduleRetryWake().catch(()=>{});
     if (nowOnline && wasOffline) {
       console.log("[PacketQueue] Network restored, flushing queue...");
       await flushQueue();
@@ -444,12 +478,14 @@ export function startNetworkMonitor(): void {
   // Initial state check
   NetInfo.fetch().then((state) => {
     _currentOnlineState = state.isConnected === true && state.isInternetReachable !== false;
+    void flushQueue().catch(()=>{});
   });
 
   console.log("[PacketQueue] Network monitor started");
 }
 
 export function stopNetworkMonitor(): void {
+  unregisterDelivery?.();unregisterDelivery=null;
   if (unsubscribeNetInfo) {
     unsubscribeNetInfo();
     unsubscribeNetInfo = null;
@@ -495,10 +531,10 @@ export async function smartUploadTankPacket(params: {
   const packetTimestamp = packetId.slice(0, 15);
   const online = await isOnline();
 
-  if (online) {
+  if ((online && delivery.canAttempt())) {
     try {
-      const result = await uploadTankPacket(stableParams);
-      // Same recovery contract as flushed packets: keep the payload until
+      const result = await delivery.attempt(()=>uploadTankPacket(stableParams));
+        // Same recovery contract as flushed packets: keep the payload until
       // the reconciler confirms a server verdict.
       try { await rememberSubmittedPayload(packetId, stableParams); } catch {}
       return {
@@ -509,7 +545,7 @@ export async function smartUploadTankPacket(params: {
         wellName: result.wellName,
       };
     } catch (error: any) {
-      // Network error during send - queue it (same identity; the eventual
+        // Network error during send - queue it (same identity; the eventual
       // replay is idempotent even if this PUT actually landed server-side)
       console.log(`[PacketQueue] Upload FAILED for ${params.wellName}: ${error.message} (${error.name})`);
       await queuePacket("pull", stableParams);
@@ -531,7 +567,7 @@ export async function smartUploadTankPacket(params: {
       packetId,
       packetTimestamp,
       wellName: params.wellName,
-      error: "Queued for later (offline)",
+      error: "Saved on device; will send when connected.",
     };
   }
 }
@@ -551,16 +587,16 @@ export async function smartUploadEditPacket(params: {
 }): Promise<UploadResult> {
   const online = await isOnline();
 
-  if (online) {
+  if ((online && delivery.canAttempt())) {
     try {
-      const result = await uploadEditPacket(params);
-      return {
+      const result = await delivery.attempt(()=>uploadEditPacket(params));
+        return {
         success: true,
         queued: false,
         wellName: result.wellName,
       };
     } catch (error: any) {
-      console.log(`[PacketQueue] Edit FAILED for ${params.wellName}: ${error.message} (${error.name})`);
+        console.log(`[PacketQueue] Edit FAILED for ${params.wellName}: ${error.message} (${error.name})`);
       const queueId = await queuePacket("edit", params);
       return {
         success: false,
@@ -573,7 +609,7 @@ export async function smartUploadEditPacket(params: {
     return {
       success: false,
       queued: true,
-      error: "Queued for later (offline)",
+      error: "Saved on device; will send when connected.",
     };
   }
 }

@@ -887,6 +887,7 @@ export async function completeAuthenticatedSession(input: {
         const { notifyAuthenticated } = await import('./deliveryStatus');
         notifyAuthenticated();
       } catch { /* reconcile is not a login blocker */ }
+      void import('./deviceAccount').then(m=>m.publishMobileDeviceAccount(input.authMethod==='manual')).catch(()=>{});
 
       return session;
     } catch (err) {

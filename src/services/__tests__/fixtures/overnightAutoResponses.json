@@ -1,0 +1,90 @@
+[
+  {
+    "stage": "first",
+    "response": {
+      "wellName": "Example",
+      "currentLevel": "7'",
+      "lastPullDateTimeUTC": "2026-10-17T19:00:00Z",
+      "lastPullPacketId": "first",
+      "lastPullBbls": "165",
+      "lastPullTopLevel": "10'",
+      "lastPullBottomLevel": "7'",
+      "flowRate": "1:00:00",
+      "timeTillPull": "",
+      "nextPullTime": "",
+      "bbls24hrs": "1440",
+      "status": "success",
+      "timestamp": "2026-10-17T19:00:00Z",
+      "overnightBblsDay": "160",
+      "overnightEstimatedTime": false,
+      "isEdit": true,
+      "timestampUTC": "2026-10-17T19:00:00Z"
+    }
+  },
+  {
+    "stage": "later",
+    "response": {
+      "wellName": "Example",
+      "currentLevel": "8'",
+      "lastPullDateTimeUTC": "2026-10-17T21:00:00Z",
+      "lastPullPacketId": "later",
+      "lastPullBbls": "165",
+      "lastPullTopLevel": "11'",
+      "lastPullBottomLevel": "8'",
+      "flowRate": "1:00:00",
+      "timeTillPull": "",
+      "nextPullTime": "",
+      "bbls24hrs": "1440",
+      "status": "success",
+      "timestamp": "2026-10-17T21:00:00Z",
+      "overnightBblsDay": "160",
+      "overnightEstimatedTime": false,
+      "isEdit": true,
+      "timestampUTC": "2026-10-17T21:00:00Z"
+    }
+  },
+  {
+    "stage": "next-day",
+    "response": {
+      "wellName": "Example",
+      "currentLevel": "9'",
+      "lastPullDateTimeUTC": "2026-10-18T20:00:00Z",
+      "lastPullPacketId": "next-day",
+      "lastPullBbls": "165",
+      "lastPullTopLevel": "12'",
+      "lastPullBottomLevel": "9'",
+      "flowRate": "1:00:00",
+      "timeTillPull": "",
+      "nextPullTime": "",
+      "bbls24hrs": "1440",
+      "status": "success",
+      "timestamp": "2026-10-18T20:00:00Z",
+      "overnightBblsDay": "250",
+      "overnightEstimatedTime": false,
+      "isEdit": true,
+      "timestampUTC": "2026-10-18T20:00:00Z"
+    }
+  },
+  {
+    "stage": "next-gap",
+    "response": {
+      "wellName": "Example",
+      "currentLevel": "10'",
+      "lastPullDateTimeUTC": "2026-10-21T19:00:00Z",
+      "lastPullPacketId": "next-gap",
+      "lastPullBbls": "165",
+      "lastPullTopLevel": "13'",
+      "lastPullBottomLevel": "10'",
+      "flowRate": "1:00:00",
+      "timeTillPull": "",
+      "nextPullTime": "",
+      "bbls24hrs": "1440",
+      "status": "success",
+      "timestamp": "2026-10-21T19:00:00Z",
+      "overnightBblsDay": "81",
+      "overnightEstimatedTime": false,
+      "isEdit": true,
+      "timestampUTC": "2026-10-21T19:00:00Z"
+    }
+  }
+]

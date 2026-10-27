@@ -209,6 +209,7 @@ export function buildRouteMeDayPlanFromSummary(input: {
     const cfg = input.wellConfig[well] || {};
     const snap = input.snapshots.get(well);
     const lvlInput: SummaryLevelInput = {
+      tankHeight: cfg.tankHeight,
       levelFeet: snap ? startingLevelFromSnapshot(snap) : (cfg.levelFeet || 0),
       flowRateMinutes: snap?.flowRateMinutes || cfg.avgFlowRateMinutes || 0,
       snapshotTimestamp: snap?.timestamp || now,
@@ -258,6 +259,7 @@ export function buildRouteMeDayPlanFromSummary(input: {
     const snap = input.snapshots.get(wellName);
     const cardBuilt = isCardAlreadyBuilt(wellName, dispatches);
     const lvlInput: SummaryLevelInput = {
+      tankHeight: cfg.tankHeight,
       levelFeet: snap ? startingLevelFromSnapshot(snap) : 0,
       flowRateMinutes: snap?.flowRateMinutes || cfg.avgFlowRateMinutes || 0,
       snapshotTimestamp: snap?.timestamp || now,

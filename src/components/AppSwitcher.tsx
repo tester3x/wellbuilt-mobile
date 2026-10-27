@@ -1,3 +1,6 @@
+const {useAppAccess}=require('../../modules/wellbuilt-platform/appAccess');
+import {buildPlatformAppEntryUrl} from '../services/platformRuntime.generated';
+import {getDriverSession} from '../services/driverAuth';
 // AppSwitcher — More-menu modal for switching between WB ecosystem apps.
 // Opened by DeviceEventEmitter 'appSwitcherOpen' (More → Switch Apps).
 // No floating badge. Apps loaded from Firestore app_registry, filtered by
@@ -67,10 +70,11 @@ const FALLBACK_APPS: AppEntry[] = [
 ];
 
 export default function AppSwitcher({ selfScheme, firestoreDb, getIdentity }: Props) {
-  const [apps, setApps] = useState<AppEntry[]>([]);
+  const [apps, setApps] = useState<AppEntry[]>(FALLBACK_APPS);
   const [tier, setTier] = useState<string>(FAIL_CLOSED_TIER);
   const tierSessionRef = useRef(createAppSwitcherTierSession());
   const [isOpen, setIsOpen] = useState(false);
+  const accountPermits=useAppAccess(isOpen);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(OPEN_APP_SWITCHER_EVENT, () => setIsOpen(true));
@@ -138,12 +142,19 @@ export default function AppSwitcher({ selfScheme, firestoreDb, getIdentity }: Pr
     return apps.filter(app =>
       app.enabled !== false &&
       app.deepLinkScheme !== effectiveSelfScheme &&
-      allowed.includes(app.requiredTier),
+      (accountPermits(app) ?? allowed.includes(app.requiredTier)),
     );
-  }, [apps, tier, effectiveSelfScheme]);
+  }, [apps, tier, effectiveSelfScheme,accountPermits]);
 
   const launchApp = useCallback(async (app: AppEntry) => {
     setIsOpen(false);
+    const target={scheme:app.deepLinkScheme,androidPackage:app.androidPackage};
+    const bare=buildPlatformAppEntryUrl(target);
+    if(bare?.endsWith('://')){try{await Linking.openURL(bare);}catch{Alert.alert('Not Installed',`${app.name} is not installed on this device.`);}return;}
+    const session=await getDriverSession();
+    const general=buildPlatformAppEntryUrl(target,session?.driverId&&session.companyId?{driverId:session.driverId,companyId:session.companyId}:undefined);
+    if(general){try{await Linking.openURL(general);}catch{Alert.alert('Not Installed',`${app.name} is not installed on this device.`);}return;}
+
     try {
       let url = `${app.deepLinkScheme}://`;
 

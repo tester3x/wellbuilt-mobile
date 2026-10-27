@@ -28,7 +28,7 @@ describe('WB-T numpad on Record Load measurement fields', () => {
     expect(keypad).toContain('label="1"');
     expect(keypad).toContain('label="DELETE"');
     expect(keypad).toContain('label="SPACE"');
-    expect(keypad).toContain("Row1: 1 2 3 ' Done");
+    expect(keypad).toContain("Row1: 1 2 3 ' Next");
   });
 
   it('digits, backspace, and numeric commit work without duplicate entry', () => {

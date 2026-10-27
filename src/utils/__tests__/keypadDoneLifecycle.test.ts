@@ -1,15 +1,19 @@
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { Keyboard } from 'react-native';
+import { BackHandler, Keyboard } from 'react-native';
 import { MeasurementKeypadProvider, useMeasurementKeypad } from '../../contexts/MeasurementKeypadContext';
 import LevelFieldInput from '../../components/LevelFieldInput';
 
 jest.mock('react-native', () => ({
   Keyboard: { dismiss: jest.fn() },
+  BackHandler: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
   StyleSheet: { create: (x: unknown) => x },
   Platform: { OS: 'ios', select: (values: any) => values.ios },
   NativeModules: {},
   View: 'View', Text: 'Text', TextInput: 'TextInput',
+}));
+jest.mock('../../utils/keypadNavigationBar', () => ({
+  hideNavigationForKeypad: jest.fn(), releaseKeypadNavigation: jest.fn(),
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 jest.mock('../../components/TankLevelKeypad', () => ({ __esModule: true, default: () => null }));
@@ -65,4 +69,65 @@ test('a completion callback can activate another field without Done clearing it 
   } }));
   act(() => keypad.commitDone());
   expect(keypad.isActiveField('bbls')).toBe(true);
+});
+
+test('Close commits only the field, never workflow Done, and releases navigation ownership', () => {
+  const commit = jest.fn(); const done = jest.fn();
+  const nav = jest.requireMock('../../utils/keypadNavigationBar');
+  act(() => keypad.openKeypad({ fieldKey: 'bbls', variant: 'numeric', value: '140',
+    onDismiss: jest.fn(), onDone: done, onCommitValue: commit }));
+  expect(nav.hideNavigationForKeypad).toHaveBeenCalledTimes(1);
+  const owner = nav.hideNavigationForKeypad.mock.calls[0][0];
+  act(() => { keypad.commitAndDismiss(); });
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(commit).toHaveBeenCalledWith('140');
+  expect(done).not.toHaveBeenCalled();
+  expect(keypad.isOpen).toBe(false);
+  expect(nav.releaseKeypadNavigation).toHaveBeenCalledWith(owner);
+});
+
+test('Close remains available with an invalid draft and does not submit it', () => {
+  const done = jest.fn(); const commit = jest.fn();
+  act(() => keypad.openKeypad({ fieldKey: 'level', value: "10'15", variant: 'level',
+    onDismiss: jest.fn(), onDone: done, onCommitValue: commit }));
+  expect(keypad.canCommit).toBe(false);
+  act(() => { keypad.commitAndDismiss(); });
+  expect(done).not.toHaveBeenCalled();
+  expect(commit).not.toHaveBeenCalled();
+  expect(keypad.isOpen).toBe(false);
+});
+
+test('hardware Back closes the keypad rather than leaving the screen', () => {
+  const commit = jest.fn(); const done = jest.fn();
+  act(() => keypad.openKeypad({ fieldKey: 'bbls', value: '140', variant: 'numeric',
+    onDismiss: jest.fn(), onDone: done, onCommitValue: commit }));
+  const register = BackHandler.addEventListener as jest.Mock;
+  const callback = register.mock.calls[register.mock.calls.length - 1][1];
+  let handled = false;
+  act(() => { handled = callback(); });
+  expect(handled).toBe(true);
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(done).not.toHaveBeenCalled();
+  expect(keypad.isOpen).toBe(false);
+});
+
+test('Next field handoff keeps navigation hidden until closing the destination field', () => {
+  const nav = jest.requireMock('../../utils/keypadNavigationBar');
+  const levelCommit = jest.fn(); const bblCommit = jest.fn();
+  const done = jest.fn();
+  act(() => keypad.openKeypad({ fieldKey: 'level', value: '10 4', variant: 'level',
+    onDismiss: jest.fn(), onDone: done, onCommitValue: levelCommit,
+    onNext: value => {
+      levelCommit(value);
+      keypad.openKeypad({ fieldKey: 'bbls', value: '140', variant: 'numeric',
+        onDismiss: jest.fn(), onDone: done, onCommitValue: bblCommit });
+    } }));
+  act(() => keypad.commitNext());
+  expect(keypad.activeFieldKey).toBe('bbls');
+  expect(nav.hideNavigationForKeypad).toHaveBeenCalledTimes(1);
+  expect(nav.releaseKeypadNavigation).not.toHaveBeenCalled();
+  act(() => { keypad.commitAndDismiss(); });
+  expect(bblCommit).toHaveBeenCalledTimes(1);
+  expect(done).not.toHaveBeenCalled();
+  expect(nav.releaseKeypadNavigation).toHaveBeenCalledTimes(1);
 });

@@ -1,3 +1,4 @@
+import { resolveTankHeight } from '../src/utils/tankHeight';
 import { Slider } from '@miblanchard/react-native-slider';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -22,7 +23,9 @@ import {
   getLevelSnapshot,
   loadLevelSnapshots,
 } from "../src/services/wellHistory";
-import { loadWellConfig, WellConfigMap, fetchDriverRouteAssignment, scopedWellsForDisplay } from "../src/services/wellConfig";
+import { scopedWellsForDisplay, type WellConfigMap } from "../src/services/wellConfig";
+import { loadWellPresentation } from "../src/services/wellPresentation";
+import { getSessionGeneration } from "../src/services/wbmSessionFence";
 import { hp, spacing, wp } from "../src/ui/layout";
 import { summaryCurrentLevel as getCurrentLevel, summaryLevelAtTime as getLevelAtTime } from '../src/services/summaryWellLevel';
 import { startingLevelFromSnapshot } from '../src/services/downSnapshot';
@@ -40,7 +43,6 @@ const DEFAULT_PULL_BBLS = 140;
 const DEFAULT_SLIDER_FEET = 10.5; // 10' 6"
 const DEFAULT_SLIDER_HOURS = 6;
 const MIN_SLIDER_FEET = 1.33; // 1' 4" - literal load line
-const MAX_SLIDER_FEET = 18;
 const MIN_SLIDER_HOURS = 0;
 const MAX_SLIDER_HOURS = 24;
 
@@ -51,6 +53,7 @@ const DOUBLE_TAP_DELAY = 300; // Max ms between taps for double-tap
 // Well config interface - imported from wellConfig.ts
 
 interface WellSummaryData {
+  tankHeight: number;
   wellName: string;
   route: string;
   routeColor: string;
@@ -138,6 +141,7 @@ function getReadyLevel(well: WellSummaryData, pullBbls: number): number {
 
 // Calculate datetime when well will hit target level
 function getTimeAtLevel(well: WellSummaryData, targetFeet: number): Date | null {
+  if (targetFeet > resolveTankHeight(well.tankHeight)) return null;
   const currentLevel = getCurrentLevel(well);
   if (currentLevel >= targetFeet) return new Date(); // Already there
   if (well.isDown || well.flowRateMinutes <= 0) return null;
@@ -160,17 +164,8 @@ function getTimeWhenBecameReady(well: WellSummaryData, readyLevel: number): Date
   return new Date(Date.now() - minutesAgo * 60000);
 }
 
-// Fetch well_config from Firebase (via wellConfig service)
-async function fetchWellConfig(): Promise<WellConfigMap | null> {
-  try {
-    return await loadWellConfig();
-  } catch (error) {
-    console.error("[Summary] Error fetching well config:", error);
-    return null;
-  }
-}
-
 export default function SummaryScreen() {
+  const platformAccountReady = require('../modules/wellbuilt-platform/AccountGate').useAccountReady() as boolean;
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -180,6 +175,7 @@ export default function SummaryScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Slider mode: 'feet' or 'time'
+  const maxSliderFeet = Math.max(...routeGroups.flatMap(group => group.wells.map(well => resolveTankHeight(well.tankHeight))), 0) || 20;
   const [sliderMode, setSliderMode] = useState<'feet' | 'time'>('feet');
   const [sliderFeet, setSliderFeet] = useState(DEFAULT_SLIDER_FEET);
   const [sliderHours, setSliderHours] = useState(DEFAULT_SLIDER_HOURS);
@@ -199,6 +195,10 @@ export default function SummaryScreen() {
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapTimeRef = useRef<number>(0); // For double-tap detection on slider
   const wellTapTimeRef = useRef<{ [wellName: string]: number }>({}); // For double-tap on wells
+
+  useEffect(() => {
+    if (routeGroups.length) setSliderFeet(previous => Math.min(previous, maxSliderFeet));
+  }, [maxSliderFeet, sliderFeet, routeGroups.length]);
 
   // Load expanded states from AsyncStorage
   const loadExpandedStates = useCallback(async () => {
@@ -221,7 +221,11 @@ export default function SummaryScreen() {
     }
   }, []);
 
-  const loadSummaryData = useCallback(async () => {
+  const summaryRequest = useRef(0);
+  const loadSummaryData = useCallback(async (forceRefresh = false) => {
+    if (!platformAccountReady) return;
+    const request = ++summaryRequest.current, generation = getSessionGeneration();
+    const active = () => request === summaryRequest.current && generation === getSessionGeneration();
     try {
       // Load expanded states first
       await loadExpandedStates();
@@ -232,6 +236,7 @@ export default function SummaryScreen() {
         ? JSON.parse(savedSelections)
         : [];
 
+      if (!active()) return;
       if (selectedWells.length === 0) {
         setRouteGroups([]);
         setIsLoading(false);
@@ -239,9 +244,14 @@ export default function SummaryScreen() {
       }
 
       // Use the same assignment boundary as Settings and the well pages.
-      const config = await fetchWellConfig();
-      const assignment = await fetchDriverRouteAssignment();
-      const wellConfig = scopedWellsForDisplay(config || {}, assignment);
+      const presentation = await loadWellPresentation(forceRefresh);
+      if (!active()) return;
+      if (!presentation) { setRouteGroups([]); return; }
+      const wellConfig = scopedWellsForDisplay(presentation.envelope.wells as unknown as WellConfigMap, {
+        ...presentation.envelope.eligibility,
+        routes: presentation.envelope.eligibility.routes || [],
+        wells: presentation.envelope.eligibility.wells || [],
+      });
 
       // Load cached data (flow rate is now in level snapshots)
       await loadLevelSnapshots();
@@ -273,6 +283,7 @@ export default function SummaryScreen() {
 
         summaryData.push({
           wellName,
+          tankHeight: resolveTankHeight(config?.tankHeight),
           route,
           routeColor,
           levelFeet,
@@ -340,19 +351,21 @@ export default function SummaryScreen() {
         return a.routeName.localeCompare(b.routeName);
       });
 
+      if (!active() || !presentation.isCurrent()) return;
       setRouteGroups(groups);
       setExpandedStates(expanded);
     } catch (error) {
       console.error("[Summary] Error loading data:", error);
+    } finally {
+      if (active()) { setIsLoading(false); setIsRefreshing(false); }
     }
-    setIsLoading(false);
-    setIsRefreshing(false);
-  }, [loadExpandedStates]);
+  }, [loadExpandedStates, platformAccountReady]);
 
   // Reload on focus - load saved load size, reset sliders to defaults
   // Load saved slider settings on focus
   useFocusEffect(
     useCallback(() => {
+      if (!platformAccountReady) return;
       // Load saved slider positions and mode
       const loadSliderSettings = async () => {
         const [savedFeet, savedHours, savedMode, savedSize] = await Promise.all([
@@ -383,8 +396,9 @@ export default function SummaryScreen() {
       };
 
       loadSliderSettings();
-      loadSummaryData();
-    }, [loadSummaryData])
+      void loadSummaryData();
+      return () => { summaryRequest.current++; };
+    }, [loadSummaryData, platformAccountReady])
   );
 
   // Clean up timers on unmount
@@ -452,7 +466,7 @@ export default function SummaryScreen() {
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    loadSummaryData();
+    void loadSummaryData(true);
   }, [loadSummaryData]);
 
   // Handle well row tap - single tap expands, double tap navigates
@@ -885,7 +899,7 @@ export default function SummaryScreen() {
             }
           </Text>
           <Text style={styles.sliderEndLabelRight}>
-            {sliderMode === 'feet' ? `${MAX_SLIDER_FEET}'` : `+${MAX_SLIDER_HOURS}h`}
+            {sliderMode === 'feet' ? `${maxSliderFeet}'` : `+${MAX_SLIDER_HOURS}h`}
           </Text>
         </View>
         <View style={styles.sliderContainer}>
@@ -902,7 +916,7 @@ export default function SummaryScreen() {
               onSlidingStart={handleSlidingStart}
               onSlidingComplete={handleSlidingComplete}
               minimumValue={sliderMode === 'feet' ? MIN_SLIDER_FEET : MIN_SLIDER_HOURS}
-              maximumValue={sliderMode === 'feet' ? MAX_SLIDER_FEET : MAX_SLIDER_HOURS}
+              maximumValue={sliderMode === 'feet' ? maxSliderFeet : MAX_SLIDER_HOURS}
               step={sliderMode === 'feet' ? 0.25 : 0.25}  // 3" for feet, 15 min for hours
               minimumTrackTintColor={sliderLocked ? "#374151" : "#2563EB"}
               maximumTrackTintColor="#374151"

@@ -1,0 +1,106 @@
+package expo.modules.wbplatform
+import android.content.Context
+import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.Promise
+import java.util.concurrent.ConcurrentHashMap
+import org.json.JSONObject
+class WellbuiltPlatformModule:Module(){
+ private val deliveryHandler=Handler(Looper.getMainLooper())
+ private val deliveryTimers=ConcurrentHashMap<String,Runnable>()
+ private val deliveryPromises=ConcurrentHashMap<String,Promise>()
+ private var accountObserver:ContentObserver?=null
+ private var connectivity:ConnectivityManager?=null
+ private var callback:ConnectivityManager.NetworkCallback?=null
+ private fun reachable():Boolean {val m=connectivity?:context().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager;val caps=m.getNetworkCapabilities(m.activeNetwork);return caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)==true&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)}
+ private fun context()=appContext.reactContext ?: throw IllegalStateException("unavailable")
+ private fun latest(c:Context):String? {
+  val records=mutableListOf<String>();AccountStore.read(c)?.let{records.add(it)}
+  for(pkg in AccountTrust.pins.keys){
+   if(pkg==c.packageName||!AccountTrust.trusted(c,pkg))continue
+   try {
+    val authority=pkg+".wbplatform"
+    if(c.packageManager.resolveContentProvider(authority,0)?.packageName!=pkg)continue
+    c.contentResolver.call(Uri.parse("content://"+authority),"read",null,null)?.getString("record")?.let{records.add(it)}
+   }catch(_:Exception){ }
+  }
+  return records.filter{try{JSONObject(it).getJSONObject("access").getLong("establishedAtMs")>0}catch(_:Exception){false}}
+   .maxWithOrNull(compareBy<String>{JSONObject(it).getJSONObject("access").getLong("establishedAtMs")}
+    .thenBy{JSONObject(it).getJSONObject("access").getString("grantId")}
+    .thenBy{if(JSONObject(it).optBoolean("revoked",false))1 else 0}
+    .thenBy{JSONObject(it).getJSONObject("access").optLong("checkedAtMs",0)})
+ }
+ /** Discover peers outside every local account monitor. Holding A's store
+  * while reading B lets concurrent B->A publication deadlock across Binder. */
+ private fun mutateAccount(c:Context,expectedGrant:String?,mutation:(String?)->String?):Boolean {
+  repeat(3){
+   val before=AccountStore.read(c)
+   val current=latest(c)
+   val id=current?.let{JSONObject(it).getJSONObject("access").getString("grantId")}
+   if(id!=expectedGrant)return false
+   val raw=mutation(current) ?: return false
+   if(current!=null){
+    val previous=JSONObject(current);val candidate=JSONObject(raw)
+    val a=previous.getJSONObject("access");val b=candidate.getJSONObject("access")
+    val previousOwner=a.getJSONObject("owner");val nextOwner=b.getJSONObject("owner")
+    val sameOwner=listOf("uid","driverId","companyId").all{previousOwner.getString(it)==nextOwner.getString(it)}
+    if(!AccountRecordPolicy.mayReplace(a.getString("grantId")==b.getString("grantId"),sameOwner,
+      previous.optBoolean("revoked",false),candidate.optBoolean("revoked",false),
+      a.optLong("checkedAtMs",0),b.optLong("checkedAtMs",0)))return false
+   }
+   if(AccountStore.writeIfUnchanged(c,before,raw)){
+    AccountStore.notifyChanged(c)
+    return true
+   }
+  }
+  return false
+ }
+ override fun definition()=ModuleDefinition {
+  Name("WellbuiltPlatform")
+  Events("connectionChanged","accountChanged")
+  OnCreate {
+   val m=context().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+   connectivity=m
+   val cb=object:ConnectivityManager.NetworkCallback(){
+    private fun changed(){sendEvent("connectionChanged",mapOf("reachable" to reachable()))}
+    override fun onAvailable(network:Network){changed()}
+    override fun onLost(network:Network){changed()}
+    override fun onCapabilitiesChanged(network:Network,caps:NetworkCapabilities){changed()}
+   }
+   callback=cb;m.registerDefaultNetworkCallback(cb)
+   val observer=object:ContentObserver(Handler(Looper.getMainLooper())){override fun onChange(selfChange:Boolean){sendEvent("accountChanged",emptyMap<String,Any>())}}
+   accountObserver=observer
+   for(pkg in AccountTrust.pins.keys){if(pkg==context().packageName||AccountTrust.trusted(context(),pkg))try{context().contentResolver.registerContentObserver(Uri.parse("content://"+pkg+".wbplatform"),false,observer)}catch(_:Exception){}}
+
+  }
+  OnDestroy {for(timer in deliveryTimers.values)deliveryHandler.removeCallbacks(timer);deliveryTimers.clear();deliveryPromises.clear();accountObserver?.let{context().contentResolver.unregisterContentObserver(it)};accountObserver=null;callback?.let{try{connectivity?.unregisterNetworkCallback(it)}catch(_:Exception){}};callback=null;connectivity=null}
+  // Handler deadlines continue independently of display-frame JS timers. They
+  // do not acquire a wake lock or authorize any delivery; the bounded service
+  // and existing queue adapters still own those responsibilities.
+  AsyncFunction("deliveryDelay"){id:String,milliseconds:Int,promise:Promise ->
+   val timer=Runnable {deliveryTimers.remove(id);deliveryPromises.remove(id)?.resolve(null)}
+   deliveryPromises.put(id,promise)?.resolve(null)
+   deliveryTimers.put(id,timer)?.let{deliveryHandler.removeCallbacks(it)}
+   deliveryHandler.postDelayed(timer,milliseconds.coerceIn(0,3600000).toLong())
+  }
+  AsyncFunction("cancelDeliveryDelay"){id:String ->deliveryTimers.remove(id)?.let{deliveryHandler.removeCallbacks(it)};deliveryPromises.remove(id)?.resolve(null);true}
+  AsyncFunction("connectionState"){ ->mapOf("reachable" to reachable())}
+  AsyncFunction("readAccount"){ ->latest(context())}
+  AsyncFunction("publishAccount"){raw:String,expectedGrant:String?->
+   mutateAccount(context(),expectedGrant){raw}
+  }
+  AsyncFunction("revokeAccount"){grantId:String->
+   mutateAccount(context(),grantId){current->
+    if(current==null)null
+    else {val row=JSONObject(current);row.remove("credential");row.put("revoked",true);row.toString()}
+   }
+  }
+ }
+}

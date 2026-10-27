@@ -65,3 +65,18 @@ Version 72 build 60b8093b-61f8-499c-9f2d-34c89e2296cf completed from d26c734 and
 ## S24 installation — 2026-10-06
 
 At user request, installed the same version 72 APK in place on the connected Samsung S24 Ultra (SM-S928U). Confirmed versionCode 72 / versionName 2.1.0 and successful launch. No data clear or uninstall was performed.
+
+## Slower fish and stable tank touch — 2026-10-09
+
+Fetched desktop release checkpoint 1307682 and fast-forwarded the laptop fish branch; desktop operator labels and keyboard-safe driver login are included. Source 45a24bd slows the normal fish swim loop from 9 to 18 seconds while keeping duck speed and scatter timings. Facing projects horizontal/depth velocity onto the rotated glyph axis so upside-down swimming is forward. The tank owns the touch event and matches it against current fish positions using the tank layout offset; wildlife children are decorative and cannot intercept nested press events. Nearby fish touches consume normal tank gestures; distant double taps/long presses retain their actions. Reduced-motion and lifecycle gates remain.
+
+72 focused geometry, fluid and lifecycle tests passed before the touch follow-up; the 49 wildlife tests and Android Hermes export passed after it. Build 74 was canceled when the user reported scatter had never worked. Replacement Android build 75: 229a122e-7544-4161-93fd-0319bed6ad9f, source 45a24bd. Physical touch, inversion and speed acceptance remains pending.
+
+Version 75 build completed and installed in place on Fold RFGL23VJCED. Source 45a24bd; APK SHA256 224E6469943BB9B6BA8046F49054F73C638DD0ECB7FF48FBD3952082B7AEF52D. ADB install returned Success. Physical touch scatter, inverted facing and slower swimming remain user acceptance; no operational records were edited.
+
+## Scatter crash and recovery facing — 2026-10-09
+
+Version 75 contained a stale positions[index] reference in its tank touch handler. Source 04eef99 replaces it with actual tank-relative touch coordinates and consumes successful fish touches. Version 76 build 69653358-37bb-4a15-aead-6c30a1eef994 installed in place on the Fold; tester confirmed scatter works. Thirteen geometry tests (including the later facing case) and Android bundling pass; no changed-file TypeScript errors reported.
+
+Tester then observed backward swimming briefly after scatter. Source a866db4 follows the actual rendered position delta projected onto the fish local axis instead of holding the original escape direction throughout recovery. Stationary fish keep their facing, and rapid orientation changes are excluded from facing measurements. Coverage includes scatter return, inversion, sideways travel, and stationary facing. Version 77 build 71654131-7475-4461-9108-08bd6324c883 is pending installation and physical acceptance.
+Version 77 completed and installed in place on Fold RFGL23VJCED. ADB install returned Success and confirmed versionCode 77, lastUpdateTime 2026-10-09 23:29:13. User confirmed version 76 scatter works; version 77 recovery-facing acceptance remains pending. App data preserved.

@@ -1,0 +1,9 @@
+# Mobile cached startup performance
+
+Returning users with an exact SDK-bound bootstrap and prior sync now see cached wells before cloud synchronization. Removed the initial 8-second sync race and mandatory 300-ms delay for that path. Fresh setup retains its initial-data flow. A generation/unmount fence prevents old refresh callbacks; a fixed-name home-content render span records useful readiness.
+
+Validation: focused platform-entry/bootstrap fencing tests 12/12. Full Jest: 1135 passed, 12 failed across five suites. All same 12 failures reproduced on unchanged HEAD 45eaaa5 in a separate detached baseline checkout (59 focused baseline tests, 47 pass/12 fail). Existing failures concern edit ingestion/retry and SSO logout, not the changed screen. Typecheck has prior manager/type diagnostics; no diagnostics remain in changed screen. Source checks completed; device results below.
+
+Device checkpoint: Mobile 87 (build 29625920-7480-4da3-ba69-56f92d630775; source 3f9399c) verified and installed on ZFold preserving data. Actual Suite Open button: returning cached tank visible by 0.5-second sample online and radio-disabled; prior baseline remained Syncing through 2 seconds, tank visible at 4 seconds. First post-install cold run retained logo overlay at 0.5 seconds, clear tank by 2 seconds. home.content span 101 ms measures mounted-screen readiness, not complete tap-to-ready. Full seven-app sweep completed (99 launch/resume/handoff commands, zero command failures and no captured fatal/ANR markers); work mutations were not tested.
+
+Final actual Suite-button repeat (two passes after reconnect): Equipment, Mobile and saved payroll content all visible by the 0.5-second screenshot sample. Original Wi-Fi/data enabled states restored; active default Wi-Fi validated. Private device evidence retained outside Git. No shifts, jobs, inspections, signatures or photos were created by this acceptance run.

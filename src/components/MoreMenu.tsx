@@ -17,7 +17,7 @@ export interface MoreMenuProps {
   onRouteMe: () => void;
   onFreshWater: () => void;
   onSummary: () => void;
-  onSwitchApps: () => void;
+  onBackToSuite: () => void;
   bottomInset?: number;
 }
 
@@ -32,7 +32,7 @@ export const moreMenuStyles = StyleSheet.create({
 /**
  * Single authoritative WellBuilt More Menu (•••) component.
  * Structurally matches WB-T c2318589 HomeScreen with in-app actions
- * separated from cross-app Switch Apps by a canonical divider.
+ * separated from cross-app Back to WB S by a canonical divider.
  */
 export function MoreMenu({
   visible,
@@ -40,7 +40,7 @@ export function MoreMenu({
   onRouteMe,
   onFreshWater,
   onSummary,
-  onSwitchApps,
+  onBackToSuite,
   bottomInset = 0,
 }: MoreMenuProps) {
   const { t } = useTranslation();
@@ -112,23 +112,23 @@ export function MoreMenu({
           {/* Structural separator between in-app actions and cross-app action */}
           <View style={moreMenuStyles.moreMenuDivider} />
 
-          {/* Cross-app action: Switch Apps */}
+          {/* Cross-app action: Back to WB S */}
           <TouchableOpacity
             style={moreMenuStyles.moreMenuItem}
             onPress={() => {
               onClose();
-              onSwitchApps();
+              onBackToSuite();
             }}
             accessibilityRole="button"
-            accessibilityLabel="Switch Apps"
+            accessibilityLabel="Back to WB S"
           >
             <Ionicons
-              name="apps-outline"
+              name="home-outline"
               size={MORE_MENU_TOKENS.iconSize}
               color="#fff"
             />
             <Text style={moreMenuStyles.moreMenuLabel}>
-              {t('nav.switchApps', { defaultValue: 'Switch Apps' })}
+              {t('nav.backToSuite', { defaultValue: 'Back to WB S' })}
             </Text>
           </TouchableOpacity>
         </View>

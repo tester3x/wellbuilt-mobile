@@ -1,0 +1,74 @@
+[
+  {
+    "stage": 4,
+    "response": {
+      "wellName": "ExampleBank",
+      "currentLevel": "7'7\"",
+      "lastPullDateTimeUTC": "2026-01-03T03:15:00.000Z",
+      "lastPullPacketId": "p3",
+      "lastPullBbls": "165",
+      "lastPullTopLevel": "8'3\"",
+      "lastPullBottomLevel": "7'7\"",
+      "flowRate": "1:07:42",
+      "timeTillPull": "0:00",
+      "nextPullTime": "1/2/26, 9:15 PM",
+      "bbls24hrs": "2859",
+      "status": "success",
+      "timestamp": "2026-01-03T03:15:00.000Z",
+      "timestampUTC": "2026-01-03T03:15:00.000Z",
+      "windowBblsDay": null,
+      "overnightBblsDay": null,
+      "overnightEstimatedTime": false,
+      "nextPullTimeUTC": "2026-01-03T03:15:00.000Z",
+      "isEdit": true
+    }
+  },
+  {
+    "stage": 5,
+    "response": {
+      "wellName": "ExampleBank",
+      "currentLevel": "7'3\"",
+      "lastPullDateTimeUTC": "2026-01-03T04:30:00.000Z",
+      "lastPullPacketId": "p4",
+      "lastPullBbls": "165",
+      "lastPullTopLevel": "7'11\"",
+      "lastPullBottomLevel": "7'3\"",
+      "flowRate": "1:10:48",
+      "timeTillPull": "0:00",
+      "nextPullTime": "1/2/26, 10:30 PM",
+      "bbls24hrs": "2733",
+      "status": "success",
+      "timestamp": "2026-01-03T04:30:00.000Z",
+      "timestampUTC": "2026-01-03T04:30:00.000Z",
+      "windowBblsDay": null,
+      "overnightBblsDay": null,
+      "overnightEstimatedTime": false,
+      "nextPullTimeUTC": "2026-01-03T04:30:00.000Z",
+      "isEdit": true
+    }
+  },
+  {
+    "stage": 6,
+    "response": {
+      "wellName": "ExampleBank",
+      "currentLevel": "7'4\"",
+      "lastPullDateTimeUTC": "2026-01-03T06:00:00.000Z",
+      "lastPullPacketId": "p5",
+      "lastPullBbls": "165",
+      "lastPullTopLevel": "8'0\"",
+      "lastPullBottomLevel": "7'4\"",
+      "flowRate": "1:10:20",
+      "timeTillPull": "0:00",
+      "nextPullTime": "1/3/26, 12:00 AM",
+      "bbls24hrs": "2752",
+      "status": "success",
+      "timestamp": "2026-01-03T06:00:00.000Z",
+      "timestampUTC": "2026-01-03T06:00:00.000Z",
+      "windowBblsDay": null,
+      "overnightBblsDay": null,
+      "overnightEstimatedTime": false,
+      "nextPullTimeUTC": "2026-01-03T06:00:00.000Z",
+      "isEdit": true
+    }
+  }
+]

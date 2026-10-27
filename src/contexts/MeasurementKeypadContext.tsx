@@ -1,3 +1,4 @@
+import { hideNavigationForKeypad, releaseKeypadNavigation } from '../utils/keypadNavigationBar';
 import React, {
   createContext,
   useCallback,
@@ -11,6 +12,8 @@ import React, {
 } from 'react';
 import {
   Animated,
+  BackHandler,
+  Platform,
   Keyboard,
   StyleSheet,
   TextInput,
@@ -812,11 +815,35 @@ export function MeasurementKeypadProvider({ children }: { children: ReactNode })
   // it just committed BEFORE validating. Every action that moves away from the
   // edited field calls this first so the last number is never lost.
   const commitAndDismiss = useCallback((): { fieldKey: string; committed: string } | null => {
-    const flushed = flushActiveDraft();
+    const current = sessionRef.current;
+    const flushed = current && !sessionOwnerMismatch(current) && canCommitKeypadSession(current)
+      ? { fieldKey: current.fieldKey, committed: commitKeypadSession(current) }
+      : null;
+    // closeKeypad commits once through surrenderMeasurementSession. Flushing
+    // first would call the field's dependent calculations a second time.
     closeKeypad();              // surrender the measurement session + Keyboard.dismiss
     blurOrdinaryInputs();       // blur any ordinary/search TextInputs + Keyboard.dismiss
     return flushed;
-  }, [flushActiveDraft, closeKeypad, blurOrdinaryInputs]);
+  }, [sessionOwnerMismatch, closeKeypad, blurOrdinaryInputs]);
+
+  // Register while editing, after the screen's navigation listener. Back puts
+  // this in-app input away first, just as Android does for a system keyboard.
+  const isOpen = !!session;
+  useEffect(() => {
+    if (!isOpen) return;
+    const owner = {};
+    void hideNavigationForKeypad(owner);
+    return () => { void releaseKeypadNavigation(owner); };
+  }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!sessionRef.current) return false;
+      commitAndDismiss();
+      return true;
+    });
+    return () => handler.remove();
+  }, [isOpen, commitAndDismiss]);
 
   const commitNext = useCallback(() => {
     const current = sessionRef.current;
@@ -1013,14 +1040,10 @@ export function MeasurementKeypadSlot({ doneEnabled = true }: { doneEnabled?: bo
   const [showNext, setShowNext] = useState(true);
   const slide = useRef(new Animated.Value(0)).current;
   const keypadWasOpenRef = useRef(false);
-  // The slot is the single geometry owner: base keypad height + effective
-  // bottom clearance (added exactly once) so the bottom key row clears the
-  // navigation / gesture bar. The live safe-area bottom is 0 while WB-M hides
-  // the Android nav bar (immersive overlay-swipe), so we take the larger of the
-  // live inset and the pre-hide initialWindowSafeAreaInsets.bottom. Zero inset
-  // (iOS no-home-indicator, tablets) preserves the base geometry.
+  // Android navigation is hidden while editing, so do not reserve its old
+  // bottom inset. iOS retains its home-indicator clearance exactly once.
   const insets = useSafeAreaInsets();
-  const effectiveBottom = getEffectiveBottomClearance(
+  const effectiveBottom = Platform.OS === 'android' ? 0 : getEffectiveBottomClearance(
     insets.bottom,
     initialWindowSafeAreaInsets?.bottom,
   );

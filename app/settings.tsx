@@ -1,3 +1,4 @@
+import { captureWellSelectionOwner, loadSelectedWells, saveSelectedWells } from "../src/services/wellSelection";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState, useRef } from "react";
@@ -79,7 +80,6 @@ import { hp, spacing, wp } from "../src/ui/layout";
 import ChangePasswordPanel from "../src/components/ChangePasswordPanel";
 
 // Storage key for selected wells
-const STORAGE_KEY_SELECTED_WELLS = "wellbuilt_selected_wells";
 const STORAGE_KEY_SETTINGS_EXPANDED = "wellbuilt_settings_expanded";
 const STORAGE_KEY_DISPATCH_ENABLED = "wellbuilt_dispatch_enabled";
 const STORAGE_KEY_ROUTE_ORDER = "wellbuilt_route_order";
@@ -129,6 +129,7 @@ export default function SettingsScreen() {
 
   // Route state
   const [routeGroups, setRouteGroups] = useState<RouteGroup[]>([]);
+  const selectionOwnerRef = useRef<Awaited<ReturnType<typeof captureWellSelectionOwner>> | null>(null);
   const [selectedWells, setSelectedWells] = useState<Set<string>>(new Set());
   const [downWells, setDownWells] = useState<Set<string>>(new Set());
   const [isLoadingRoutes, setIsLoadingRoutes] = useState(true);
@@ -462,9 +463,7 @@ export default function SettingsScreen() {
   const loadRoutesAndSelections = async () => {
     setIsLoadingRoutes(true);
 
-    // Load saved selections
-    const savedSelections = await AsyncStorage.getItem(STORAGE_KEY_SELECTED_WELLS);
-    const initialSelections = savedSelections ? new Set<string>(JSON.parse(savedSelections)) : new Set<string>();
+    const selectionOwner = await captureWellSelectionOwner();
 
     // Load saved expanded states
     const savedExpanded = await AsyncStorage.getItem(STORAGE_KEY_SETTINGS_EXPANDED);
@@ -548,14 +547,9 @@ export default function SettingsScreen() {
       }
       setDownWells(downSet);
 
-      // If no saved selections, default to selecting all wells
-      if (initialSelections.size === 0) {
-        const allWells = new Set<string>(Object.keys(config));
-        setSelectedWells(allWells);
-        await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify([...allWells]));
-      } else {
-        setSelectedWells(initialSelections);
-      }
+      const selected = await loadSelectedWells(selectionOwner, Object.keys(config));
+      selectionOwnerRef.current = selectionOwner;
+      setSelectedWells(new Set(selected));
     }
 
     setIsLoadingRoutes(false);
@@ -577,7 +571,9 @@ export default function SettingsScreen() {
 
   // Save selections whenever they change
   const saveSelections = async (selections: Set<string>) => {
-    await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify([...selections]));
+    const owner = selectionOwnerRef.current;
+    if (!owner) return;
+    await saveSelectedWells(owner, routeGroups.flatMap(r => r.wells), [...selections]);
   };
 
   // Toggle individual well
@@ -708,6 +704,7 @@ export default function SettingsScreen() {
                     style: 'destructive',
                     onPress: async () => {
                       const { clearDriverSession } = await import('../src/services/driverAuth');
+                      await import('../src/services/deviceAccount').then(m=>m.revokeMobileDeviceAccount()).catch(()=>{});
                       await clearDriverSession();
                       router.replace('/driver-login');
                     },

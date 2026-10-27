@@ -27,10 +27,14 @@ export async function secureIngestPacket(packet: Record<string, unknown>) {
   } catch {
     clientMeta = undefined;
   }
-  return authorizedCallable<{ ok: boolean; key?: string; packetId?: string; duplicate?: boolean }>(
+  const result = await authorizedCallable<{ ok: boolean; key?: string; packetId?: string; duplicate?: boolean }>(
     'ingestWbmPull',
     clientMeta ? { packet, clientMeta } : { packet },
   );
+  if (typeof packet.packetId !== 'string' || !packet.packetId || result?.ok !== true || result.packetId !== packet.packetId || result.key !== packet.packetId) {
+    throw new Error('pull_delivery_unconfirmed');
+  }
+  return result;
 }
 
 export async function secureIngestEdit(packet: Record<string, unknown>) {
@@ -38,7 +42,7 @@ export async function secureIngestEdit(packet: Record<string, unknown>) {
   if (requestType !== 'edit') {
     unsupportedFieldCommand(requestType || 'unknown');
   }
-  return authorizedCallable<{
+  const result = await authorizedCallable<{
     ok: boolean;
     key?: string;
     packetId?: string;
@@ -47,6 +51,13 @@ export async function secureIngestEdit(packet: Record<string, unknown>) {
     queued?: boolean;
     committed?: boolean;
   }>('ingestWbmEdit', { packet });
+  if (result?.ok !== true || result.packetId !== packet.originalPacketId
+      || typeof result.key !== 'string' || !result.key
+      || (typeof packet.idempotencyKey === 'string' && result.key !== packet.idempotencyKey)
+      || !(result.queued === true || result.committed === true || result.duplicate === true)) {
+    throw new Error('edit_delivery_unconfirmed');
+  }
+  return result;
 }
 
 /**

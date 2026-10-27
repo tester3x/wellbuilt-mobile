@@ -1,4 +1,5 @@
-import { Slider } from '@miblanchard/react-native-slider';
+import { resolveTankHeight, tankFillFraction } from '../../src/utils/tankHeight';
+import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -18,6 +19,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
@@ -39,9 +41,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTankFlip } from '../../src/hooks/useTankFlip';
 import { TankFlipWater } from '../../src/components/TankFlipWater';
-import { roamingFishPosition, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
+import { roamingFishPosition, movementFishFacing, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
+import { TankInfoModal } from '../../src/components/TankInfoModal';
+import type { TankConfig } from '../../src/services/tankInfo';
 import { TankPelican } from '../../src/components/TankPelican';
-import { OPEN_APP_SWITCHER_EVENT } from '../../src/components/AppSwitcher';
+import { backToSuite } from '../../src/services/hubNavigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MoreMenu, moreMenuStyles } from '../../src/components/MoreMenu';
 import { MORE_MENU_TOKENS } from '../../src/constants/moreMenuTokens';
@@ -62,6 +66,8 @@ import {
 } from '../../src/ui/tankWildlife';
 import { manualRefresh, onSyncStatusChange, startBackgroundSync, stopBackgroundSync, syncFromProcessedFolder, syncOnForeground } from '../../src/services/backgroundSync';
 import { startingLevelFromSnapshot, estimatedSnapshotLevel } from '../../src/services/downSnapshot';
+import {hasEstablishedWbmEntry} from '../../src/services/platformEntry';
+import {getSessionGeneration} from '../../src/services/wbmSessionFence';
 import { downNumberTopPx } from '../../src/ui/downNumberLayout';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
@@ -79,6 +85,7 @@ import {
 import { getTankDimensions, hp, isTablet, spacing, wp } from '../../src/ui/layout';
 import { useAppAlert } from '../../components/AppAlert';
 import { debugLog, autoFlushIfNeeded } from '../../src/services/debugLog';
+import { captureWellSelectionOwner, loadSelectedWells, saveSelectedWells } from '../../src/services/wellSelection';
 import { isCurrentUserViewer } from '../../src/services/driverAuth';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -94,7 +101,7 @@ interface WellConfigMap {
 }
 
 // Fetch well_config from Firebase (via wellConfig service)
-// Uses cached version by default - only fetches from Firebase if cache is stale (3+ days)
+// Server-first assigned catalogue with owner-bound offline fallback.
 async function fetchWellConfigMap(forceRefresh: boolean = false): Promise<WellConfigMap | null> {
   try {
     const config = await loadWellConfig(forceRefresh);
@@ -113,7 +120,6 @@ const STORAGE_KEY_SELECTED_WELLS = 'wellbuilt_selected_wells';
 const STORAGE_KEY_ROUTE_ORDER = 'wellbuilt_route_order';
 const STORAGE_KEY_LOAD_SIZE = 'wellbuilt_load_size';
 const STORAGE_KEY_LAST_GOOD_WELLS = '@wellbuilt_last_good_wells';
-const FULL_TANK_FEET = 20;
 const DROP_ANIMATION_MS = 2000;  // 2 seconds drain animation (Firebase responds in 1-3s)
 // REMOVED: const POLL_INTERVAL_MS = 3000; // No more polling! Using Firebase listeners now
 const LIVE_UPDATE_MS = 30000;    // Update level estimate every 30 seconds
@@ -304,10 +310,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
   const [wellConfig, setWellConfig] = useState<WellConfig | null>(null);
+  const tankHeightFeet = resolveTankHeight(wellConfig?.tankHeight);
+  useEffect(() => { setSliderFeet(previous => Math.min(previous, tankHeightFeet)); }, [tankHeightFeet]);
+  const [showTankInfo, setShowTankInfo] = useState(false);
   const [pullRecord, setPullRecord] = useState<WellPullRecord | null>(null);
   // Flow rate now stored in levelSnapshot (not separately cached) to prevent stale values
   const [levelSnapshot, setLevelSnapshot] = useState<LevelSnapshot | null>(null);
   const [lastPullInfo, setLastPullInfo] = useState<{dateTime: string, dateTimeUTC?: string, bbls: number, topLevel?: string, bottomLevel?: string} | null>(null);
+  const lastPullWellRef = useRef(wellName);
   const [targetFraction, setTargetFraction] = useState<number | null>(null);
   const [drainCompleteSignal, setDrainCompleteSignal] = useState(0); // Triggers live update effect after drain finishes
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
@@ -439,7 +449,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       sceneActive && !reducedMotion && (aliveEgg.kind === 'fish' || aliveEgg.kind === 'duck');
     if (!needsSwim) { cancelAnimation(swim); return; }
     swim.value = 0;
-    swim.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
+    swim.value = withRepeat(withTiming(1, { duration: aliveEgg.kind === 'fish' ? 18000 : 9000, easing: Easing.linear }), -1, false);
     return () => cancelAnimation(swim);
   }, [sceneActive, aliveEgg.kind, reducedMotion, swim]);
 
@@ -456,9 +466,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       // Calculate current level with flow estimate
       // Formula: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
       const flowMins = levelSnapshot.flowRateMinutes ?? wellConfig?.avgFlowRateMinutes ?? 0;
-      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins);
+      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins, Date.now(), tankHeightFeet);
 
-      const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
+      const fraction = tankFillFraction(currentLevel, tankHeightFeet);
       const prevLevel = getPreviousLevel();
 
       // Start at previous well's level, animate to this well's level
@@ -495,7 +505,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Removed: cancelWaitForResponse cleanup - no longer waiting for responses
 
   const updateDisplayFeet = (fraction: number) => {
-    setDisplayFeet(fraction * FULL_TANK_FEET);
+    setDisplayFeet(fraction * tankHeightFeet);
     // Always report level to parent (so we can track all well levels for animation)
     if (onLevelChange) {
       onLevelChange(fraction);
@@ -505,7 +515,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   useAnimatedReaction(
     () => waterFraction.value,
     (currentFraction) => runOnJS(updateDisplayFeet)(currentFraction),
-    [waterFraction]
+    [waterFraction, tankHeightFeet]
   );
 
   // Response processing handled entirely by backgroundSync
@@ -516,14 +526,20 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     let isMounted = true;
     const loadData = async () => {
       try {
-        // Clear stale data from previous well immediately to prevent showing wrong well's info
-        setLastPullInfo(null);
+        // Keep the same well's accepted details visible during a refresh.
+        // Clearing them on every sync collapses this row and flashes the layout.
+        // A different well must never inherit the previous well's details.
+        if (lastPullWellRef.current !== wellName) {
+          lastPullWellRef.current = wellName;
+          setLastPullInfo(null);
+        }
         // Don't clear levelSnapshot here - it causes flickering. Instead rely on proper loading.
 
         // Load well config - MUST await since it's async
         const config = await getWellConfig(wellName);
         if (!isMounted) return;
         setWellConfig(config);
+        const tankHeightFeet = resolveTankHeight(config?.tankHeight);
 
         // Load level snapshot (flow rate is now stored with snapshot, not separately)
         const snapshot = await getLevelSnapshot(wellName);
@@ -541,6 +557,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
         setLevelSnapshot(snapshot);
         if (snapshot?.unavailable) {
+          setLastPullInfo(null);
           setIsLoadingInitial(false);
           return;
         }
@@ -600,12 +617,15 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             topLevel: lastPullTopLevel,
             bottomLevel: lastPullBottomLevel,
           });
+        } else {
+          // Clear only after an accepted read actually has no last pull.
+          setLastPullInfo(null);
         }
 
         // Load persisted slider position (keeps driver's last setting)
         const savedSliderPos = await getSliderPosition(wellName);
         if (!isMounted) return;
-        setSliderFeet(savedSliderPos);
+        setSliderFeet(Math.min(savedSliderPos, tankHeightFeet));
 
         // Use pending pull from pre-check above (already fetched before setLevelSnapshot)
         if (pending) {
@@ -632,16 +652,16 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             // Zero-BBL check pull: animate FROM current displayed level TO new read level
             // Don't reset waterFraction — keep old level as starting point
             waterFraction.value = withTiming(
-              clampFraction(topLevel / FULL_TANK_FEET),
+              clampFraction(topLevel / tankHeightFeet),
               { duration: remainingMs, easing: Easing.linear }
             );
           } else {
             // Normal pull: animate drain from top level down to estimated bottom
             const animationProgress = Math.min(elapsedMs / DROP_ANIMATION_MS, 1);
             const currentAnimatedLevel = topLevel - (animationProgress * (topLevel - targetLevel));
-            waterFraction.value = clampFraction(currentAnimatedLevel / FULL_TANK_FEET);
+            waterFraction.value = clampFraction(currentAnimatedLevel / tankHeightFeet);
             waterFraction.value = withTiming(
-              clampFraction(targetLevel / FULL_TANK_FEET),
+              clampFraction(targetLevel / tankHeightFeet),
               { duration: remainingMs, easing: Easing.linear }
             );
           }
@@ -664,8 +684,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           // Update targetFraction so live update knows the correct level when it starts
           if (snapshot) {
             const flowMins = snapshot.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
-            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins);
-            setTargetFraction(clampFraction(currentLevel / FULL_TANK_FEET));
+            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins, Date.now(), tankHeightFeet);
+            setTargetFraction(tankFillFraction(currentLevel, tankHeightFeet));
           }
           setIsLoadingInitial(false);
         } else {
@@ -674,9 +694,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
 
           if (snapshot && (startingLevelFromSnapshot(snapshot) > 0 || snapshot.isDown)) {
-            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins);
+            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins, Date.now(), tankHeightFeet);
 
-            const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
+            const fraction = tankFillFraction(currentLevel, tankHeightFeet);
 
             // Always apply the accepted snapshot — including after a foreground
             // sync on an already-mounted well. Do not wait for a later swipe.
@@ -730,7 +750,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // - timestamp = time of last pull (from lastPullDateTimeUTC)
   // - flowRateMinutes = minutes per foot of rise (AFR)
   useEffect(() => {
-    if (!levelSnapshot || wellDown || levelSnapshot.unavailable) {
+    if (!levelSnapshot || levelSnapshot.unavailable) {
       return;
     }
 
@@ -738,15 +758,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     if (drainAnimationActive.current) return;
 
     const flowMins = levelSnapshot.flowRateMinutes ?? 0;
-    if (flowMins <= 0) return;
 
     // Calculate current estimated level
     // Use lastPullBottomLevelFeet if available (more precise), fallback to levelFeet
     const updateEstimate = () => {
       // Skip if drain animation started since this effect was set up
       if (drainAnimationActive.current) return;
-      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins);
-      const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
+      const currentLevel = estimatedSnapshotLevel({ ...levelSnapshot, isDown: wellDown }, flowMins, Date.now(), tankHeightFeet);
+      const fraction = tankFillFraction(currentLevel, tankHeightFeet);
 
       // Smoothly update display
       waterFraction.value = withTiming(fraction, {
@@ -758,6 +777,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     // Initial update
     updateEstimate();
 
+    // A frozen/no-flow tank still needs its graphic rescaled after a height edit.
+    if (wellDown || flowMins <= 0) return;
+
     // Periodic updates
     liveUpdateRef.current = setInterval(updateEstimate, LIVE_UPDATE_MS);
 
@@ -767,7 +789,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         liveUpdateRef.current = null;
       }
     };
-  }, [levelSnapshot, wellDown, waterFraction, drainCompleteSignal]);
+  }, [levelSnapshot, wellDown, waterFraction, drainCompleteSignal, tankHeightFeet]);
 
   // Reset slider lock timer - call after any slider interaction
   const resetSliderLockTimer = useCallback(() => {
@@ -852,7 +874,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;
 
     // Use current displayed level as reference (auto-updates as tank fills)
-    const reference = Math.max(sliderMin, Math.min(18, displayFeet));
+    const reference = Math.max(sliderMin, Math.min(tankHeightFeet, displayFeet));
     let snappedValue: number;
 
     if (value >= reference) {
@@ -866,13 +888,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
 
     // Clamp to slider range
-    snappedValue = Math.max(sliderMin, Math.min(18, snappedValue));
+    snappedValue = Math.max(sliderMin, Math.min(tankHeightFeet, snappedValue));
 
     setSliderFeet(snappedValue);
 
     // Save slider position to storage (persists across app restarts)
     saveSliderPosition(wellName, snappedValue);
-  }, [displayFeet, wellName, wellConfig]);
+  }, [displayFeet, wellName, wellConfig, tankHeightFeet]);
 
   // Handle slider drag start - activate UI, cancel lock timer, and notify parent
   const handleSliderStart = useCallback(() => {
@@ -966,7 +988,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     // Calculate what level the tank will be at after hoursForward
     // Starting from slider level (post-pull), adding flow over time
     const feetGained = (hoursForward * 60) / flowMins;
-    const levelAtTime = Math.min(sliderFeet + feetGained, FULL_TANK_FEET);
+    const levelAtTime = Math.min(sliderFeet + feetGained, tankHeightFeet);
     const futureTime = new Date(Date.now() + hoursForward * 60 * 60 * 1000);
 
     // Display: "→ 12' 3" @ 7:00 AM"
@@ -1047,11 +1069,29 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[2], fishEscape.value[2], fishScatter.value, reducedMotion);
     return { ...p, left: p.left - 17, top: p.top - 17 };
   });
-  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[0].travel : Math.cos(swim.value * TWO_PI * fa.freq + fa.phase)) >= 0 ? -1 : 1 }] }));
-  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[1].travel : Math.cos(swim.value * TWO_PI * fb.freq + fb.phase)) >= 0 ? -1 : 1 }] }));
-  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: (fishScatter.value > 0.1 ? fishEscape.value[2].travel : Math.cos(swim.value * TWO_PI * fc.freq + fc.phase)) >= 0 ? -1 : 1 }] }));
+  const fishFacing = useSharedValue([-1, -1, -1]);
+  useAnimatedReaction(
+    () => ({
+      angle: fluidOrientation.value,
+      positions: [fa, fb, fc].map((fish, i) => roamingFishPosition(
+        INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value,
+        fluidInverted.value, fluidOrientation.value, swim.value, fish,
+        fishEscape.value[i], fishScatter.value, reducedMotion,
+      )),
+    }),
+    (current, previous) => {
+      if (!previous || Math.abs(current.angle - previous.angle) > 0.02) return;
+      fishFacing.value = current.positions.map((position, i) =>
+        position.opacity && previous.positions[i].opacity
+          ? movementFishFacing(previous.positions[i], position, current.angle, fishFacing.value[i])
+          : fishFacing.value[i]);
+    },
+  );
+  const fishFaceA = useAnimatedStyle(() => ({ transform: [{ scaleX: fishFacing.value[0] }] }));
+  const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: fishFacing.value[1] }] }));
+  const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: fishFacing.value[2] }] }));
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
-  const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
+  const aliveWaterPct = clampFraction(displayFeet / tankHeightFeet);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
   const showFloat = aliveEgg.kind === 'duck' && aliveWaterPct > 0.12;
 
@@ -1183,17 +1223,18 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
   }, [onTankLongPress]);
 
-  const handleFishTouch = (index: number) => {
+  const fishTouchedRef = useRef(false);
+  const tankTouchOffset = useRef({ x: INTERIOR_LEFT, y: INTERIOR_TOP });
+  const handleFishTouch = (x: number, y: number) => {
     if (!showFish || reducedMotion || !fishSceneActiveRef.current) return;
     const angle = fluidOrientation.value;
     const positions = aliveEgg.fish.slice(0, aliveEgg.fishCount).map((f, i) => roamingFishPosition(
       INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, angle,
       swim.value, f, fishEscape.value[i], fishScatter.value,
     ));
-    const touched = positions[index];
-    if (!touched || touched.opacity === 0) return;
-    const directions = fishScatterDirections(positions, touched.left + 9, touched.top + 9, angle, 28, INTERIOR_WIDTH, INTERIOR_HEIGHT);
+    const directions = fishScatterDirections(positions, x - tankTouchOffset.current.x, y - tankTouchOffset.current.y, angle, 42, INTERIOR_WIDTH, INTERIOR_HEIGHT);
     if (!directions) return;
+    fishTouchedRef.current = true;
     lastTankTapTimeRef.current = 0;
     cancelAnimation(fishScatter);
     fishEscape.value = [...directions, ...fishEscape.value.slice(directions.length)];
@@ -1210,8 +1251,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       <View style={styles.topSection}>
         {/* Tank - double-tap for Performance, long-press to hide well */}
         <View style={styles.tankSection}>
-        <Pressable onPress={handleNormalTankTap} onLongPress={handleTankLongPress} delayLongPress={500}>
-        <View style={styles.tankOuter}>
+        <Pressable onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
+          onPress={() => { if (!fishTouchedRef.current) handleNormalTankTap(); }}
+          onLongPress={() => { if (!fishTouchedRef.current) handleTankLongPress(); }} delayLongPress={500}>
+        <View pointerEvents="none" style={styles.tankOuter} onLayout={event => { const { x, y } = event.nativeEvent.layout; tankTouchOffset.current = { x: x + INTERIOR_LEFT, y: y + INTERIOR_TOP }; }}>
           {/* Tank count badge - at BOTTOM right */}
           <View style={styles.tankBadge}>
             <Text style={styles.tankBadgeText}>{numTanks}</Text>
@@ -1222,32 +1265,26 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             </View>
 
             {/* Fish use the current fluid geometry to remain submerged under tilt. */}
-            <Animated.View pointerEvents="box-none" style={[styles.aliveLayer, aliveLayerStyle]}>
+            <Animated.View pointerEvents="none" style={[styles.aliveLayer, aliveLayerStyle]}>
               {showFish && (
                 <>
                   <Animated.View style={[styles.aliveFishWrap, fishMoveA]}>
-                    <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
-                      onPressIn={event => { event.stopPropagation(); handleFishTouch(0); }}
-                      onPress={event => event.stopPropagation()}>
+                    <View style={styles.fishTouchTarget}>
                       <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceA]}>🐟</Animated.Text>
-                    </Pressable>
+                    </View>
                   </Animated.View>
                   {aliveEgg.fishCount > 1 && (
                     <Animated.View style={[styles.aliveFishWrap, fishMoveB]}>
-                      <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
-                      onPressIn={event => { event.stopPropagation(); handleFishTouch(1); }}
-                      onPress={event => event.stopPropagation()}>
+                      <View style={styles.fishTouchTarget}>
                       <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceB]}>🐟</Animated.Text>
-                    </Pressable>
+                    </View>
                     </Animated.View>
                   )}
                   {aliveEgg.fishCount > 2 && (
                     <Animated.View style={[styles.aliveFishWrap, fishMoveC]}>
-                      <Pressable accessible={false} focusable={false} style={styles.fishTouchTarget}
-                      onPressIn={event => { event.stopPropagation(); handleFishTouch(2); }}
-                      onPress={event => event.stopPropagation()}>
+                      <View style={styles.fishTouchTarget}>
                       <Animated.Text pointerEvents="none" style={[styles.aliveFishGlyph, fishFaceC]}>🐟</Animated.Text>
-                    </Pressable>
+                    </View>
                     </Animated.View>
                   )}
                 </>
@@ -1325,6 +1362,20 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           </View>
         </View>
         </Pressable>
+        {/* Sibling of the tank Pressable: never bubbles into its double/long press. */}
+        <Pressable testID="tank-info-button" accessibilityRole="button" accessibilityLabel={t('tankInfo.open')}
+          style={styles.tankInfoTouchTarget}
+          onPressIn={() => { lastTankTapTimeRef.current = 0; }}
+          onPress={() => { lastTankTapTimeRef.current = 0; setShowTankInfo(true); }}>
+          <View style={styles.tankInfoBadge}><Text style={styles.tankInfoBadgeText}>i</Text></View>
+        </Pressable>
+        {showTankInfo && isActive && <TankInfoModal wellName={wellName}
+          fallback={(wellConfig || {}) as unknown as TankConfig}
+          onClose={() => { lastTankTapTimeRef.current = 0; setShowTankInfo(false); }}
+          onSaved={() => { void (async () => {
+            try { await loadWellConfig(true); setWellConfig(await getWellConfig(wellName)); }
+            catch { /* Confirmed info stays cached; normal catalogue refresh retries. */ }
+          })(); }} />}
       </View>
 
       {/* Quick stats */}
@@ -1375,7 +1426,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           <View style={styles.statsRow}>
             <Text style={styles.statLeft}>{displayBblsPerHour} {t('units.bbl')}{t('units.perHour')}</Text>
             <Text style={styles.statDivider}>•</Text>
-            <Text style={styles.statRight}>{displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? ' ON' : ''}</Text>
+            <Text style={styles.statRight}>{displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? (levelSnapshot?.overnightEstimatedTime ? ' ON ≈' : ' ON') : ''}</Text>
           </View>
         </Pressable>
 
@@ -1407,7 +1458,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
         // Calculate position of allowedBottom marker as percentage of slider range
         // Account for the slider track width (excluding Pull/Fill labels which are 50px each)
-        const sliderRange = 18 - sliderMin;
+        const sliderRange = tankHeightFeet - sliderMin;
         const allowedBottomPercent = ((allowedBottom - sliderMin) / sliderRange) * 100;
 
         // Color coding for ready time text (not level - keep level white for consistency):
@@ -1485,7 +1536,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                     </>
                   )}
                 </View>
-                <Text style={styles.sliderMarkerRight}>18'</Text>
+                <Text style={styles.sliderMarkerRight}>{formatFeetInches(tankHeightFeet)}</Text>
                 <Text style={styles.sliderMarkerArrowRight}>→</Text>
               </View>
 
@@ -1496,7 +1547,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                   <Slider
                     containerStyle={styles.slider}
                     minimumValue={sliderMin}
-                    maximumValue={18}
+                    maximumValue={tankHeightFeet}
                     step={0.01}
                     value={sliderFeet}
                     onValueChange={(val) => handleSliderChange(Array.isArray(val) ? val[0] : val)}
@@ -1550,12 +1601,19 @@ export default function MainScreen() {
   const previousIndex = useRef(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
+  const selectionCatalogueRef = useRef<{
+    owner: Awaited<ReturnType<typeof captureWellSelectionOwner>>;
+    eligible: string[];
+  } | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [showMore, setShowMore] = useState(false); // WB-M "More" sheet (Route Me / Summary / Switch Apps)
   const [tempSelectedIndex, setTempSelectedIndex] = useState(0);
+  const [wellSearch, setWellSearch] = useState('');
+  const wellSearchQuery = wellSearch.trim().toLocaleLowerCase();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [isInitialSyncing, setIsInitialSyncing] = useState(true); // Start true
+
   const [isFreshInstall, setIsFreshInstall] = useState(false); // Determines which loading UI to show
   const [syncStatus, setSyncStatus] = useState<'auth' | 'sync' | 'refresh'>('auth');
   const [setupSteps, setSetupSteps] = useState({
@@ -1567,12 +1625,22 @@ export default function MainScreen() {
   const [pickerScrolling, setPickerScrolling] = useState(false);
   const [sliderActive, setSliderActive] = useState(false);
   const [wells, setWells] = useState<string[]>([]);
+  const visibleWellRef = useRef({ well: wells[currentIndex], index: currentIndex });
+  visibleWellRef.current = { well: wells[currentIndex], index: currentIndex };
+  const homeStartedAt=useRef(Date.now());
+  const reportedHome=useRef(false);
+  useEffect(()=>{
+    if(!isInitialSyncing && wells.length>0 && !reportedHome.current){
+      reportedHome.current=true;
+      console.info('WBPERF_SPAN '+JSON.stringify({app:'mobile',category:'render',name:'home.content',durationMs:Math.max(0,Date.now()-homeStartedAt.current)}));
+    }
+  },[isInitialSyncing,wells.length]);
   const [wellConfigMap, setWellConfigMap] = useState<WellConfigMap | null>(null); // For route info
   const [loadBbls, setLoadBbls] = useState(140); // Load size from Summary screen
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false); // Sync indicator
   const [currentWellHasDraft, setCurrentWellHasDraft] = useState(false); // Draft indicator for Pull button
   const [isViewer, setIsViewer] = useState(false); // Viewer-only mode (can't submit pulls)
-  const [appForegroundCount, setAppForegroundCount] = useState(0); // Bumps when app returns to foreground
+  const [appForegroundCount, setAppForegroundCount] = useState(0); // Foreground and visible-screen catalogue refresh generation
   const [showOvernightBbls, setShowOvernightBbls] = useState(false); // Global overnight vs segment bbls/day toggle
   const lastTickIndex = useRef(0);
   const wellRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1632,8 +1700,9 @@ export default function MainScreen() {
     }
   }, [currentIndex, isReady]);
 
-  // Background sync - Firebase version (no auth needed)
+  // Restore owner-bound cached content before background synchronization.
   useEffect(() => {
+    let cancelled = false;
     const initSync = async () => {
       console.log('[Main] ====== SETUP FLOW STARTED ======');
       console.log('[Main] Platform:', Platform.OS);
@@ -1643,39 +1712,21 @@ export default function MainScreen() {
       setSetupSteps(s => ({ ...s, auth: 'done' }));
 
       // Check if first install or returning user (cold/warm start)
-      const hasData = await AsyncStorage.getItem('@wellbuilt_has_synced');
-      console.log('[Main] Has previous sync data:', !!hasData);
-
+      // The old global has-synced flag is not account evidence. This read
+      // installs only the current SDK owner's fenced durable bootstrap.
+      const generation = getSessionGeneration();
+      const hasData = await hasEstablishedWbmEntry()
+        && await AsyncStorage.getItem('@wellbuilt_has_synced') === 'true';
+      if (cancelled || generation !== getSessionGeneration()) return;
       if (hasData) {
-        // COLD/WARM START - show splash and sync before showing UI
-        console.log('[Main] Cold/warm start detected - showing splash while syncing');
         setIsFreshInstall(false);
-
-        // Run sync and wait for it (with timeout)
-        const syncPromise = syncFromProcessedFolder();
-        const timeoutPromise = new Promise<number>((resolve) =>
-          setTimeout(() => resolve(-1), 8000) // 8 second timeout for cold start
-        );
-
-        const count = await Promise.race([syncPromise, timeoutPromise]);
-
-        if (count === -1) {
-          console.log('[Main] Cold start sync timed out, using cached data');
-        } else {
-          console.log('[Main] Cold start sync complete, updated', count, 'wells');
-        }
-
-        // Brief delay so splash doesn't flash too fast (min 800ms total)
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        console.log('[Main] ====== COLD START COMPLETE ======');
         setIsInitialSyncing(false);
-
-        // Trigger UI refresh
         setRefreshTrigger(prev => prev + 1);
-
-        // Start the regular polling timer
         startBackgroundSync();
+        // Cached content is already usable; cloud sync must not gate it.
+        void syncFromProcessedFolder().then(() => {
+          if (!cancelled && generation === getSessionGeneration()) setRefreshTrigger(prev => prev + 1);
+        }).catch(() => { console.info('[Main] Background refresh deferred; cached data retained'); });
         return;
       }
 
@@ -1766,6 +1817,7 @@ export default function MainScreen() {
       }
     });
     return () => {
+      cancelled = true;
       subscription.remove();
       stopBackgroundSync();
     };
@@ -1784,7 +1836,7 @@ export default function MainScreen() {
   }, []);
 
   // Trigger refresh when screen comes into focus (returning from record.tsx, summary, or settings)
-  // This only runs when navigating TO this screen, not on swipes
+  // Also refresh on foreground and the visible-screen catalogue cadence, not on swipes.
   useFocusEffect(
     useCallback(() => {
       // Skip if we're still doing initial sync - wells will load when sync finishes
@@ -1805,6 +1857,10 @@ export default function MainScreen() {
       // Bump refresh trigger to make WellView reload and check for pending
       setRefreshTrigger(prev => prev + 1);
 
+      let cancelled = false;
+      const generation = getSessionGeneration();
+      const isCurrentLoad = () => !cancelled && generation === getSessionGeneration();
+
       // Load wells from config and filter by selections
       // This handles: returning from Settings (well selection changed),
       // returning from Summary (jump to well), fresh install
@@ -1814,6 +1870,7 @@ export default function MainScreen() {
         let usedCache = false;
         try {
           const cachedWells = await AsyncStorage.getItem(STORAGE_KEY_LAST_GOOD_WELLS);
+          if (!isCurrentLoad()) return;
           if (cachedWells) {
             const parsed = JSON.parse(cachedWells) as string[];
             if (parsed.length > 0 && wells.length === 0) {
@@ -1831,11 +1888,13 @@ export default function MainScreen() {
         // STEP 2: Full load — fetch config, apply filters, sort by route.
         // If this succeeds, it silently replaces the cached list.
         // If it fails, the cached list stays visible.
+        let catalogueResolved = false;
         let config: WellConfigMap | null = null;
         let allWellNames: string[] = [];
         let filteredWells: string[] = [];
 
         try {
+          const selectionOwner = await captureWellSelectionOwner();
           // Check if user is viewer-only (uses SecureStore — can throw on some devices)
           try {
             const viewerStatus = await isCurrentUserViewer();
@@ -1858,8 +1917,9 @@ export default function MainScreen() {
             console.log('[Main] Error loading load size:', e);
           }
 
-          // Fetch well config - uses cache (no Firebase call unless cache is stale)
+          // Fetch the latest assigned catalogue, with durable offline fallback.
           config = await fetchWellConfigMap();
+          if (!isCurrentLoad()) return;
           setWellConfigMap(config); // Save for route info display
           allWellNames = config ? Object.keys(config) : [];
 
@@ -1869,53 +1929,18 @@ export default function MainScreen() {
             config = await fetchWellConfigMap(true);
             setWellConfigMap(config);
             allWellNames = config ? Object.keys(config) : [];
-            if (allWellNames.length > 0) {
-              // Reset selected wells filtered by assignment (not all wells)
-              const assignment = await fetchDriverRouteAssignment();
-              const filteredConfig = scopedWellsForDisplay(config!, assignment);
-              const assignedWellNames = Object.keys(filteredConfig);
-              console.log('[Main] Recovery: selecting', assignedWellNames.length, 'assigned wells (from', allWellNames.length, 'total)');
-              await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
-            }
           }
 
           // Filter wells by driver's route assignment FIRST, then by user selections
           const assignment = await fetchDriverRouteAssignment();
           const assignedConfig = scopedWellsForDisplay(config!, assignment);
-          let assignedWellNames = Object.keys(assignedConfig);
+          const assignedWellNames = Object.keys(assignedConfig);
           console.log('[Main] Route assignment filter:', assignedWellNames.length, 'of', allWellNames.length, 'wells', assignment.status);
 
-          // Load user's selected wells from Settings, intersected with assigned wells
-          filteredWells = assignedWellNames;
-          try {
-            const savedSelections = await AsyncStorage.getItem(STORAGE_KEY_SELECTED_WELLS);
-            if (savedSelections) {
-              const selected = JSON.parse(savedSelections) as string[];
-              if (selected.length > 0) {
-                const assignedSet = new Set(assignedWellNames);
-                const selectedSet = new Set(selected);
-                // Only show wells that are BOTH selected AND assigned
-                filteredWells = assignedWellNames.filter(w => selectedSet.has(w));
-                // If saved selections had stale wells, clean them up
-                const cleanedSelections = selected.filter(w => assignedSet.has(w));
-                if (cleanedSelections.length !== selected.length) {
-                  console.log('[Main] Cleaned', selected.length - cleanedSelections.length, 'stale wells from selections');
-                  await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(cleanedSelections));
-                }
-              }
-            }
-          } catch (e) {
-            console.log('[Main] Corrupted selectedWells JSON, resetting to assigned wells:', e);
-            filteredWells = assignedWellNames;
-            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
-          }
-
-          // RECOVERY: If filtering resulted in 0 wells, reset to all assigned wells
-          if (filteredWells.length === 0 && assignedWellNames.length > 0) {
-            console.log('[Main] No wells after filtering — resetting to assigned wells');
-            filteredWells = assignedWellNames;
-            await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify(assignedWellNames));
-          }
+          filteredWells = await loadSelectedWells(selectionOwner, assignedWellNames);
+          catalogueResolved = true;
+          if (!isCurrentLoad()) return;
+          selectionCatalogueRef.current = { owner: selectionOwner, eligible: assignedWellNames };
 
           // Load saved route order and sort wells accordingly
           let routeOrder: string[] = [];
@@ -1959,6 +1984,7 @@ export default function MainScreen() {
         } catch (e) {
           // CRITICAL CATCH: Something unexpected blew up above.
           // Ensure we still load SOMETHING — try to get wells from config as last resort.
+          if (!isCurrentLoad() || (e instanceof Error && e.message === 'selection_session_changed')) return;
           console.error('[Main] CRITICAL: loadSelectedWellsAndJump crashed, attempting recovery:', e);
           debugLog(`Well load CRASHED: ${e}. Attempting recovery...`, 'error');
           try {
@@ -1967,7 +1993,10 @@ export default function MainScreen() {
               setWellConfigMap(config);
             }
             if (config) {
-              filteredWells = Object.keys(config).sort();
+              const owner = await captureWellSelectionOwner();
+              const assignment = await fetchDriverRouteAssignment();
+              filteredWells = await loadSelectedWells(owner, Object.keys(scopedWellsForDisplay(config, assignment)));
+              catalogueResolved = true;
               console.log('[Main] Recovery: loaded', filteredWells.length, 'wells from config fallback');
               debugLog(`Well recovery: loaded ${filteredWells.length} wells from config fallback`, 'warn');
             }
@@ -1977,26 +2006,8 @@ export default function MainScreen() {
           }
         }
 
-        // FALLBACK: If we STILL have 0 wells, try reading config straight from AsyncStorage
-        if (filteredWells.length === 0) {
-          try {
-            const rawConfig = await AsyncStorage.getItem('@wellbuilt_well_config');
-            if (rawConfig) {
-              const parsed = JSON.parse(rawConfig);
-              const keys = Object.keys(parsed);
-              if (keys.length > 0) {
-                filteredWells = keys.sort();
-                console.log('[Main] FALLBACK: loaded', filteredWells.length, 'wells directly from AsyncStorage config');
-                debugLog(`Well recovery: loaded ${filteredWells.length} wells from AsyncStorage config`, 'warn');
-              }
-            }
-          } catch (lastResortError) {
-            console.error('[Main] AsyncStorage config read also failed:', lastResortError);
-          }
-        }
-
         // LAST RESORT: Load the last known good well list from previous session
-        if (filteredWells.length === 0) {
+        if (!catalogueResolved && filteredWells.length === 0) {
           try {
             const lastGood = await AsyncStorage.getItem(STORAGE_KEY_LAST_GOOD_WELLS);
             if (lastGood) {
@@ -2012,11 +2023,27 @@ export default function MainScreen() {
           }
         }
 
+        if (!isCurrentLoad()) return;
+        if (catalogueResolved && filteredWells.length === 0) {
+          setWells([]);
+          setCurrentIndex(0);
+          await AsyncStorage.setItem(STORAGE_KEY_LAST_GOOD_WELLS, '[]');
+          return;
+        }
+
         // Set wells — if we got results, update the list (replaces instant cache if it was used)
         if (filteredWells.length > 0) {
           console.log('[Main] Loaded', filteredWells.length, 'wells');
-          setWells(filteredWells);
-          setCurrentIndex(prev => Math.min(prev, Math.max(0, filteredWells.length - 1)));
+          const previousVisible = visibleWellRef.current;
+          const retained = filteredWells.indexOf(previousVisible.well || '');
+          setWells(previous => previous.length === filteredWells.length
+            && previous.every((well, i) => well === filteredWells[i]) ? previous : filteredWells);
+          setCurrentIndex(prev => retained >= 0 ? retained : Math.min(prev, filteredWells.length - 1));
+          if (retained >= 0 && retained !== previousVisible.index) {
+            setTimeout(() => {
+              if (isCurrentLoad()) flatListRef.current?.scrollToIndex({ index: retained, animated: false });
+            }, 100);
+          }
 
           // Save as last known good for next time
           try {
@@ -2075,8 +2102,15 @@ export default function MainScreen() {
       };
       loadSelectedWellsAndJump();
 
+      // Refresh the assigned catalogue while this screen remains visible too.
+      const catalogueTimer = setInterval(() => {
+        if (AppState.currentState === 'active') setAppForegroundCount(n => n + 1);
+      }, 60_000);
+
       // Cleanup: cancel retry timer when focus changes
       return () => {
+        cancelled = true;
+        clearInterval(catalogueTimer);
         if (wellRetryTimer.current) {
           clearTimeout(wellRetryTimer.current);
           wellRetryTimer.current = null;
@@ -2170,8 +2204,11 @@ export default function MainScreen() {
     }
   }, [currentIndex]);
 
+  const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
+
   // Open picker for well selection
   const openPicker = () => {
+    setWellSearch('');
     setTempSelectedIndex(currentIndex);
     lastTickIndex.current = currentIndex;
     setPickerScrolling(false);
@@ -2238,28 +2275,24 @@ export default function MainScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Load current selections
-              const savedSelections = await AsyncStorage.getItem(STORAGE_KEY_SELECTED_WELLS);
-              if (savedSelections) {
-                const selections = new Set<string>(JSON.parse(savedSelections));
-                selections.delete(currentWell);
-                await AsyncStorage.setItem(STORAGE_KEY_SELECTED_WELLS, JSON.stringify([...selections]));
+              const catalogue = selectionCatalogueRef.current;
+              if (!catalogue) return;
+              const selected = await loadSelectedWells(catalogue.owner, catalogue.eligible);
+              const newWells = selected.filter(w => w !== currentWell);
+              await saveSelectedWells(catalogue.owner, catalogue.eligible, newWells);
+              // Update local wells list - remove the current well
+              setWells(newWells);
 
-                // Update local wells list - remove the current well
-                const newWells = wells.filter(w => w !== currentWell);
-                setWells(newWells);
+              // Update last-good-wells cache
+              if (newWells.length > 0) {
+                await AsyncStorage.setItem(STORAGE_KEY_LAST_GOOD_WELLS, JSON.stringify(newWells));
+              }
 
-                // Update last-good-wells cache
-                if (newWells.length > 0) {
-                  await AsyncStorage.setItem(STORAGE_KEY_LAST_GOOD_WELLS, JSON.stringify(newWells));
-                }
-
-                // Adjust current index if needed
-                if (currentIndex >= newWells.length) {
-                  const newIndex = Math.max(0, newWells.length - 1);
-                  setCurrentIndex(newIndex);
-                  await AsyncStorage.setItem(STORAGE_KEY_LAST_WELL, String(newIndex));
-                }
+              // Adjust current index if needed
+              if (currentIndex >= newWells.length) {
+                const newIndex = Math.max(0, newWells.length - 1);
+                setCurrentIndex(newIndex);
+                await AsyncStorage.setItem(STORAGE_KEY_LAST_WELL, String(newIndex));
               }
             } catch (error) {
               console.error('[Main] Error hiding well:', error);
@@ -2424,7 +2457,7 @@ export default function MainScreen() {
           onRouteMe={() => router.push('/route-me')}
           onFreshWater={() => router.push('/fresh-water')}
           onSummary={handleSummaryPress}
-          onSwitchApps={() => DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT)}
+          onBackToSuite={() => { void backToSuite(); }}
           bottomInset={insets.bottom}
         />
       </GestureHandlerRootView>
@@ -2441,14 +2474,14 @@ export default function MainScreen() {
         {/* Center - route name and well name */}
         <View style={styles.headerCenter}>
           {/* Route name - smaller, in route color */}
-          {wellConfigMap && wells[currentIndex] && wellConfigMap[wells[currentIndex]]?.route && (
-            <Text style={[
-              styles.routeName,
-              { color: getRouteColor(wellConfigMap[wells[currentIndex]]?.route || '') }
-            ]}>
-              {wellConfigMap[wells[currentIndex]]?.route}
-            </Text>
-          )}
+          {/* Reserve both metadata rows while the catalogue loads. Adding
+              them later resizes the tank area immediately after the spinner. */}
+          <Text style={[
+            styles.routeName,
+            { color: getRouteColor(wellConfigMap?.[wells[currentIndex]]?.route || '') }
+          ]} numberOfLines={1}>
+            {wellConfigMap?.[wells[currentIndex]]?.route || '\u00a0'}
+          </Text>
           <TouchableOpacity onPress={openPicker} style={styles.wellNameButton}>
             <Text style={styles.wellName}>{wells[currentIndex]}</Text>
             <Text style={styles.wellNameArrow}>▼</Text>
@@ -2456,11 +2489,9 @@ export default function MainScreen() {
               <ActivityIndicator size="small" color="#60A5FA" style={styles.syncIndicator} />
             )}
           </TouchableOpacity>
-          {wellConfigMap?.[wells[currentIndex]]?.operator ? (
-            <Text style={styles.operatorName} numberOfLines={1}>
-              {wellConfigMap[wells[currentIndex]].operator}
-            </Text>
-          ) : null}
+          <Text style={styles.operatorName} numberOfLines={1}>
+            {wellConfigMap?.[wells[currentIndex]]?.operator || '\u00a0'}
+          </Text>
           <Text style={styles.positionIndicator}>{currentIndex + 1} {t('homeExtra.of')} {wells.length}</Text>
         </View>
 
@@ -2546,12 +2577,12 @@ export default function MainScreen() {
         onRouteMe={() => router.push('/route-me')}
         onFreshWater={() => router.push('/fresh-water')}
         onSummary={handleSummaryPress}
-        onSwitchApps={() => DeviceEventEmitter.emit(OPEN_APP_SWITCHER_EVENT)}
+        onBackToSuite={() => { void backToSuite(); }}
         bottomInset={insets.bottom}
       />
 
       {/* Well picker modal - works for both platforms */}
-      <Modal visible={showPicker} transparent animationType="fade">
+      <Modal visible={showPicker} transparent animationType="fade" onRequestClose={cancelPicker}>
         <TouchableWithoutFeedback onPress={cancelPicker}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
@@ -2563,6 +2594,46 @@ export default function MainScreen() {
               <Text style={styles.modalTitle}>{t('homeExtra.selectWell')}</Text>
               <View style={{ width: 50 }} />
             </View>
+              <View style={styles.wellSearchContainer}>
+                <Ionicons name="search" size={20} color="#9CA3AF" />
+                <TextInput
+                  style={styles.wellSearchInput}
+                  value={wellSearch}
+                  onChangeText={setWellSearch}
+                  placeholder={t('historyExtra.searchWells')}
+                  accessibilityLabel={t('historyExtra.searchWells')}
+                  placeholderTextColor="#9CA3AF"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                />
+                {wellSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setWellSearch('')} accessibilityLabel={t('homeExtra.cancel')}>
+                    <Ionicons name="close-circle" size={22} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {wellSearchQuery ? (
+                <FlatList
+                  data={matchingPickerWells}
+                  keyExtractor={item => item}
+                  style={styles.androidWheelList}
+                  keyboardShouldPersistTaps="handled"
+                  ListEmptyComponent={<Text style={styles.wellSearchEmpty}>{t('historyExtra.noWellsFound')}</Text>}
+                  renderItem={({item}) => (
+                    <Pressable style={styles.androidWheelRow} onPress={() => {
+                      const originalIndex = wells.indexOf(item);
+                      if (originalIndex < 0) return;
+                      previousIndex.current = currentIndex;
+                      setCurrentIndex(originalIndex);
+                      flatListRef.current?.scrollToIndex({index: originalIndex, animated: true});
+                      setShowPicker(false);
+                    }}>
+                      <Text style={[styles.androidWheelText, item === wells[currentIndex] && styles.androidWheelTextSelected]}>{item}</Text>
+                    </Pressable>
+                  )}
+                />
+              ) : (
               <View style={styles.androidWheelContainer}>
                 {/* Fixed highlight bar in center (visual only) */}
                 <View style={styles.androidWheelHighlight} pointerEvents="none" />
@@ -2640,6 +2711,7 @@ export default function MainScreen() {
                   }}
                 />
               </View>
+              )}
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -2893,6 +2965,15 @@ const styles = StyleSheet.create({
     // its FEET stay on the number's top edge and only the body shrinks.
     transformOrigin: 'center bottom',
   },
+  tankInfoTouchTarget: {
+    position: 'absolute', top: INTERIOR_TOP - 18, right: INTERIOR_RIGHT - 19,
+    width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 20,
+  },
+  tankInfoBadge: {
+    width: 18, height: 18, borderRadius: 9, backgroundColor: '#2563EB',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tankInfoBadgeText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   tankBadge: {
     position: 'absolute',
     bottom: INTERIOR_BOTTOM + 10,  // FIXED: was top, should be bottom
@@ -3293,6 +3374,12 @@ const styles = StyleSheet.create({
     maxHeight: hp('50%'),
     overflow: 'hidden',
   },
+  wellSearchContainer: {
+    flexDirection: 'row', alignItems: 'center', marginHorizontal: 12,
+    marginVertical: 10, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#111827',
+  },
+  wellSearchInput: {flex: 1, color: 'white', minHeight: 44, paddingHorizontal: 8, fontSize: 16},
+  wellSearchEmpty: {color: '#9CA3AF', textAlign: 'center', padding: 24},
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

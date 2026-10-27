@@ -41,7 +41,7 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
       expect((keypad.match(/label="Next"/g) ?? []).length).toBe(1);
     });
 
-    it('Done is rendered unconditionally in its existing gold position', () => {
+    it('Done remains form-gated at bottom right', () => {
       expect(keypad).toMatch(/<ActionButton label="Done" onPress=\{keypad\.commitDone\} variant="done" blocked=\{doneBlocked\} \/>/);
       expect((keypad.match(/label="Done"/g) ?? []).length).toBe(1);
     });
@@ -292,7 +292,7 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
         expect(keypad).toContain(`label="${label}"`);
       }
       expect(keypad).toContain('label=\'"\''); // inches key uses single-quoted JSX
-      expect(keypad).toContain("Row1: 1 2 3 ' Done");
+      expect(keypad).toContain("Row1: 1 2 3 ' Next");
       expect(bblsBlock).toMatch(/variant="numeric"/);
     });
   });

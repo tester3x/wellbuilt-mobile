@@ -39,7 +39,9 @@ import {
   PullHistoryEntry,
   refreshFromServer,
 } from "../src/services/pullHistory";
-import { getBblPerFootSync, getAllWellNames, loadWellConfig } from "../src/services/wellConfig";
+import { getBblPerFootSync } from "../src/services/wellConfig";
+import { loadWellPresentation } from "../src/services/wellPresentation";
+import { getSessionGeneration } from "../src/services/wbmSessionFence";
 import { deriveBottomInches } from "../src/domain/wbmEditForm";
 import { isCurrentUserViewer } from "../src/services/driverAuth";
 import { hp, spacing, wp } from "../src/ui/layout";
@@ -370,6 +372,7 @@ function HistoryEntryCard({ entry, onEdit, isExpanded, onToggleExpand, t }: Hist
 }
 
 export default function HistoryScreen() {
+  const platformAccountReady = require('../modules/wellbuilt-platform/AccountGate').useAccountReady() as boolean;
   const router = useRouter();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -398,61 +401,79 @@ export default function HistoryScreen() {
   const [wellSearchText, setWellSearchText] = useState('');
   const [isViewer, setIsViewer] = useState(false);
 
-  const loadHistory = useCallback(async () => {
-    await loadWellConfig();
+  const historyRequest = useRef(0);
+  const loadHistory = useCallback(async (forceRefresh = false) => {
+    if (!platformAccountReady) return;
+    const request = ++historyRequest.current, generation = getSessionGeneration();
+    const presentation = await loadWellPresentation(forceRefresh);
+    const active = () => request === historyRequest.current && generation === getSessionGeneration() && !!presentation?.isCurrent();
+    if (!active()) {
+      if (request === historyRequest.current && generation === getSessionGeneration()) { setHistoryByDay([]); setAllConfigWells([]); }
+      return;
+    }
 
     // Load filtered history
     const grouped = await getFilteredHistoryByDay(dateFilter, wellFilter === 'all' ? undefined : wellFilter);
+    if (!active()) return;
     setHistoryByDay(grouped);
 
     // Load stats for all 4 time periods
     const today = await getTodayStats();
+    if (!active()) return;
     setTodayStats(today);
 
     const week = await getThisWeekStats();
+    if (!active()) return;
     setWeekStats(week);
 
     const month = await getThisMonthStats();
+    if (!active()) return;
     setMonthStats(month);
 
     const allTime = await getAllTimeStats();
+    if (!active()) return;
     setAllTimeStats(allTime);
 
     // Load all top wells (not limited to 5) for pagination
     const top = await getTopWells(100, 'pulls');
+    if (!active()) return;
     setTopWells(top);
 
     const wells = await getUniqueWells();
+    if (!active()) return;
     setUniqueWells(wells);
 
     // Load all well names from config (for "View Any Well" feature)
-    const configWells = await getAllWellNames();
+    const configWells = Object.keys(presentation!.envelope.wells).sort();
+    if (!active()) return;
     setAllConfigWells(configWells);
 
     // Load well-specific stats if filtered
     if (wellFilter !== 'all') {
       const wellStats = await getWellStats(wellFilter);
+      if (!active()) return;
       setSelectedWellStats(wellStats);
     } else {
       setSelectedWellStats(null);
     }
-  }, [dateFilter, wellFilter]);
+  }, [dateFilter, wellFilter, platformAccountReady]);
 
   useFocusEffect(
     useCallback(() => {
+      if (!platformAccountReady) return;
       loadHistory();
       setExpandedId(null);
       isCurrentUserViewer().then(setIsViewer);
       const unsub = onEditDeliveryResult(() => { loadHistory(); });
-      return () => { unsub(); };
-    }, [loadHistory])
+      return () => { historyRequest.current++; unsub(); };
+    }, [loadHistory, platformAccountReady])
   );
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
       await refreshFromServer();
-      await loadHistory();
+      await loadHistory(true);
     } finally {
       setIsRefreshing(false);
     }

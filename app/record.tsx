@@ -1,4 +1,4 @@
-import { resultingLevel } from '@tester3x/water-hauling';
+import { resultingLevel, rules } from '@tester3x/water-hauling';
 import { queueFreshWaterDelivery, flushFreshWaterDeliveries } from '../src/services/freshWaterSupply';
 import { resolveTankHeight, clampTankLevel } from '../src/utils/tankHeight';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -443,6 +443,9 @@ function RecordScreenInner() {
         setFlowRate(config.avgFlowRate);
       }
 
+      if (config?.routeType === 'freshwater' && snapshot?.unavailable) {
+        baseTimestampRef.current=0; baseLevelFeetRef.current=0; setEstLevel(''); setEstBbls(0); return;
+      }
       // Store base data for time-adjusted level estimation
       const loadLine = config?.loadLine ?? 0;
       loadLineRef.current = loadLine;
@@ -462,7 +465,7 @@ function RecordScreenInner() {
       // Calculate initial estimated level (for current time = now)
       if (baseTs > 0 && flowMins > 0 && !snapshot?.isDown) {
         const minutesElapsed = (dateTime.getTime() - baseTs) / (1000 * 60);
-        let estimatedLevel = baseLvl + (minutesElapsed / flowMins);
+        let estimatedLevel = baseLvl + rules(config?.routeType).projectionSign * (minutesElapsed / flowMins);
         estimatedLevel = clampTankLevel(estimatedLevel, tankHeightFeet);
         setEstLevel(formatFeetInches(estimatedLevel));
         setEstLevelFeet(estimatedLevel);
@@ -498,14 +501,14 @@ function RecordScreenInner() {
     if (baseTs === 0 || flowRateMinutes === 0 || wellIsDownRef.current) return;
 
     const minutesElapsed = (dateTime.getTime() - baseTs) / (1000 * 60);
-    let estimatedLevel = baseLvl + (minutesElapsed / flowRateMinutes);
+    let estimatedLevel = baseLvl + rules(routeType).projectionSign * (minutesElapsed / flowRateMinutes);
     estimatedLevel = clampTankLevel(estimatedLevel, tankHeightFeet);
     setEstLevel(formatFeetInches(estimatedLevel));
     setEstLevelFeet(estimatedLevel);
 
     const bbls = Math.max(Math.round((estimatedLevel - loadLineRef.current) * bblPerFoot), 0);
     setEstBbls(bbls);
-  }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode, tankHeightFeet]);
+  }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode, tankHeightFeet, routeType]);
 
   const formatTimeLabel = (d: Date) => {
     const hours = d.getHours();
@@ -593,7 +596,7 @@ function RecordScreenInner() {
       if (submitInFlightRef.current) return;
       submitInFlightRef.current=true;
       try {
-        await queueFreshWaterDelivery({groupId:config.inventoryGroupId,deliveredBbl:quantity,measuredBeforeFeet:current});
+        await queueFreshWaterDelivery({groupId:config.inventoryGroupId,deliveredBbl:quantity,measuredBeforeFeet:current,deliveredAtUTC:dateTime.toISOString()});
         await flushFreshWaterDeliveries();
         router.back();
       } catch(error) { alert.show('Delivery saved status',String(error)); }

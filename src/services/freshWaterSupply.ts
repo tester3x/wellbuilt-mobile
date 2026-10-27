@@ -60,14 +60,14 @@ export async function pendingFreshWaterDeliveries(): Promise<FreshWaterDeliveryD
 }
 
 export async function queueFreshWaterDelivery(input: {
-  groupId: string; deliveredBbl: number; measuredBeforeFeet?: number;
+  groupId: string; deliveredBbl: number; measuredBeforeFeet?: number; deliveredAtUTC?: string;
 }): Promise<FreshWaterDeliveryDraft> {
   const session = await getDriverSession();
   if (!session?.driverId || !session.companyId || session.isViewer) throw new Error('Driver session required');
   const entry: FreshWaterDeliveryDraft = {
     deliveryId: `fw_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`,
     groupId: input.groupId,
-    deliveredAtUTC: new Date().toISOString(),
+    deliveredAtUTC: input.deliveredAtUTC ?? new Date().toISOString(),
     deliveredBbl: input.deliveredBbl,
     ...(input.measuredBeforeFeet === undefined ? {} : { measuredBeforeFeet: input.measuredBeforeFeet }),
     driverId: session.driverId,

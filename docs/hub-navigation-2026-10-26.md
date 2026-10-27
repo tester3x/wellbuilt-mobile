@@ -28,3 +28,8 @@ Actual UI checks: Mobile tank More → Suite; JSA More → Suite; Tickets home M
 | hub-e94 | 3b1e06f1-7bb8-4ab8-8337-a485b76610d3 | 9a23e7c2421812eb7193d259eb1fbf84dbab32c8 | 077CC96D8875B87C6477F2894A0E92556132F7587BDF363027A064E9B2468911 |
 
 ZFold installation remains explicitly deferred. Do not install superseded T269/E93 there. Private screenshots and UI evidence remain outside Git under C:/dev/tmp/hub-*. The user subsequently reported one Equipment screen with a partially overlapping bottom button; exact screen/device is awaiting clarification. Home tabs are verified fixed in E94; separate screen footers are being audited without changing DVIR workflow or submitting records.
+
+
+## ZFold installation completed
+
+At the user's request, replacement-installed the exact S24-tested APKs on ZFold: Tickets270, Mobile112, JSA99, Equipment95 and Suite99. Each APK's download checksum, package/version metadata and expected signing certificate was verified before installation. All five installs returned Success; package-manager readback confirms all five versions. No app data was cleared. TicketTime137 and ETC121 were already current and were retained. No shift, job, load, signature or logout action was taken. Suite was launched; further on-device inspection stopped when Chrome became foreground, to leave the user's phone use uninterrupted. S24 acceptance remains the functional release gate already recorded above; this ZFold check establishes installation/version, not a fresh full workflow test.

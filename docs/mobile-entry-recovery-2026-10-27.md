@@ -23,6 +23,14 @@ The app-open/SSO entry implementation had a concrete recovery weakness: a mount-
 
 24 focused tests passed: actual entry screen lifecycle, delayed navigator/account readiness, changed owner, focus return, invalid parameters, cancelled/late results, hung reads, delayed handoff recovery, no duplicate PKCE, session fences and tank heights.
 
-TypeScript still reports existing project errors; none identify changed entry files. Device acceptance and exact build identity will be recorded after the S24 update test. ZFold installation is held until that test passes.
+TypeScript still reports existing project errors; none identify changed entry files. Additional session/eligibility/security checks: 78 passed, with one previously recorded baseline source-scanner failure in `ssoLogout.test.ts`; the full project suite is not claimed green.
 
 Desktop fresh-water work exists separately on `origin/release/wbm-vc60-zombie-recovery-20260926`; this change does not replace or merge that branch.
+
+## Build and S24 acceptance
+
+EAS build `24a8d652-b89c-468f-b3b8-34ea66c1d378` finished successfully from exact source `c4d2bae2d0d95b4aa1a2d749c5e6bab3007e71bf`. The shared remote counter assigned versionCode **116**, rather than the initially anticipated 114. Package `com.wellbuiltmobile.app`, ARM64, matching established signing certificate. APK SHA-256: `3690a6c3f167414db2245ac1b35b61a395e83a1e94d6c479acb828c483edd583`.
+
+The S24 was verified on 113 with a Suite-created app-open task before installation. Data-preserving replacement installation succeeded, and package-manager readback confirms 116. No force-stop, process kill, data clear or restart was performed after the update. Android automatically restored the activity; a normal launcher intent was delivered to that already running activity. Fixed-label entry logs show checking -> ready in approximately 170 ms. The well screen was visibly rendered in the first capture at 2.43 seconds, remained usable in the 8/20-second captures and retained the authenticated 21-well catalogue. Two subsequent Suite -> Mobile roundtrips returned to that well screen in the same process, without an entry failure.
+
+The old intermittent stall was not reproduced before the change, so this proves successful first-launch/update and recovery regression coverage, not definitive retrospective proof of the original awaited operation. No load, tank edit, shift or authentication bypass was submitted. Private captures/logs and the APK remain outside Git. **ZFold is not installed**; this tested checkpoint is ready for later deliberate integration/installation, preserving the separate desktop fresh-water lane.

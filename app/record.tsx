@@ -1,5 +1,5 @@
 import { resultingLevel, rules } from '@tester3x/water-hauling';
-import { queueFreshWaterDelivery, flushFreshWaterDeliveries } from '../src/services/freshWaterSupply';
+import { getFreshWaterSupply, queueFreshWaterDelivery, flushFreshWaterDeliveries } from '../src/services/freshWaterSupply';
 import { resolveTankHeight, clampTankLevel } from '../src/utils/tankHeight';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -495,7 +495,7 @@ function RecordScreenInner() {
   // Recalculate estimated level when driver changes date/time picker (backward flow rate)
   // Uses stored base data + flow rate to estimate tank level at any selected time
   useEffect(() => {
-    if (isEditMode) return;
+    if (isEditMode || routeType === 'freshwater') return;
     const baseTs = baseTimestampRef.current;
     const baseLvl = baseLevelFeetRef.current;
     if (baseTs === 0 || flowRateMinutes === 0 || wellIsDownRef.current) return;
@@ -509,6 +509,23 @@ function RecordScreenInner() {
     const bbls = Math.max(Math.round((rules(routeType).operationSign > 0 ? tankHeightFeet - estimatedLevel : estimatedLevel - loadLineRef.current) * bblPerFoot), 0);
     setEstBbls(bbls);
   }, [dateTime, flowRateMinutes, bblPerFoot, isEditMode, tankHeightFeet, routeType]);
+
+  // The server replays history at the observation time, including deliveries and down periods.
+  useEffect(() => {
+    if (isEditMode || routeType !== 'freshwater') return;
+    let cancelled=false;
+    void (async()=>{
+      const cfg=await getWellConfig(wellName);
+      if (!cfg?.inventoryGroupId) return;
+      const supply=await getFreshWaterSupply(cfg.inventoryGroupId,dateTime.toISOString());
+      if (cancelled) return;
+      const feet=supply.status?.projectedFeet;
+      if (feet == null) {setEstLevel('');setEstBbls(0);return;}
+      setEstLevel(formatFeetInches(feet));setEstLevelFeet(feet);
+      setEstBbls(Math.max(0,Math.round((tankHeightFeet-feet)*bblPerFoot)));
+    })().catch(()=>{if(!cancelled){setEstLevel('');setEstBbls(0);}});
+    return ()=>{cancelled=true;};
+  },[dateTime,routeType,wellName,isEditMode,tankHeightFeet,bblPerFoot]);
 
   const formatTimeLabel = (d: Date) => {
     const hours = d.getHours();
@@ -589,14 +606,16 @@ function RecordScreenInner() {
       if (!config) return;
       if (isEditMode) { alert.show('Delivery history', 'Delivery corrections require office review.'); return; }
       const current=parseLevel(levelValue), quantity=Number(barrelsValue);
-      if (quantity > 500 || !Number.isFinite(quantity) || !config.inventoryGroupId || config.equalization === 'unverified' || current == null
-        || resultingLevel('freshwater',current,quantity,config.bblPerFoot || 0,config.tankHeight || 0) == null) {
+      const downCommand = wellDownTouchedRef.current ? wellDownRef.current : undefined;
+      if (quantity > 500 || !Number.isFinite(quantity) || !config.inventoryGroupId || config.equalization === 'unverified' || (current == null && (quantity > 0 || downCommand === undefined))
+        || quantity < 0 || (quantity === 0 && downCommand === undefined && current == null)
+        || (quantity > 0 && resultingLevel('freshwater',current!,quantity,config.bblPerFoot || 0,config.tankHeight || 0) == null)) {
         alert.show('Check delivery', 'Enter a current level and delivery within the tank capacity. Equalization must be verified.'); return;
       }
       if (submitInFlightRef.current) return;
       submitInFlightRef.current=true;
       try {
-        await queueFreshWaterDelivery({groupId:config.inventoryGroupId,deliveredBbl:quantity,measuredBeforeFeet:current,deliveredAtUTC:dateTime.toISOString()});
+        await queueFreshWaterDelivery({groupId:config.inventoryGroupId,deliveredBbl:quantity,measuredBeforeFeet:current ?? undefined,deliveredAtUTC:dateTime.toISOString(),wellDown:downCommand});
         await flushFreshWaterDeliveries();
         router.back();
       } catch(error) { alert.show('Delivery saved status',String(error)); }
@@ -1073,7 +1092,7 @@ function RecordScreenInner() {
   // the explicit edit-submit control), so it stays draft-gated only.
   const keypadDoneEnabled = isEditMode
     ? true
-    : isRecordLoadSubmitReady({ wellName, level: liveLevel, barrels: liveBarrels, wellDown });
+    : routeType === 'freshwater' ? (Number.isFinite(Number(liveBarrels)) && Number(liveBarrels)>=0 && (deliveryCurrent != null || wellDownTouchedRef.current)) : isRecordLoadSubmitReady({ wellName, level: liveLevel, barrels: liveBarrels, wellDown });
 
   // Title and button text based on mode
   const screenTitle = isEditMode ? t('recordExtra.editPull') : t('record.title');

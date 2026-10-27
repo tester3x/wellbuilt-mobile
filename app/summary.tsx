@@ -1,3 +1,4 @@
+import { thresholdTime } from '@tester3x/water-hauling';
 import { resolveTankHeight } from '../src/utils/tankHeight';
 import { Slider } from '@miblanchard/react-native-slider';
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -284,7 +285,7 @@ export default function SummaryScreen() {
         const flowRateMinutes = snapshot?.flowRateMinutes || config?.avgFlowRateMinutes || 0;
         const numTanks = config?.numTanks || 1;
         const loadLine = config?.loadLine ?? 1.33;
-        const allowedBottom = config?.allowedBottom ?? 1.33;
+        const allowedBottom = config?.allowedBottom ?? (config?.routeType === 'freshwater' ? NaN : 1.33);
 
         summaryData.push({
           wellName,
@@ -545,13 +546,14 @@ export default function SummaryScreen() {
   // Render well row with calculated values
   const renderWellRow = (well: WellSummaryData) => {
     if (well.routeType === 'freshwater') {
-      const level=well.unavailable ? '--' : formatFeetInches(estimatedSnapshotLevel({routeType:well.routeType,levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight));
+      const at=well.unavailable ? null : thresholdTime('freshwater',estimatedSnapshotLevel({routeType:well.routeType,levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,isDown:well.isDown,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight),new Date().toISOString(),well.dailyBbl,well.bblPerFoot || 0,well.allowedBottom,well.isDown);
+      const level=well.unavailable ? '--' : formatFeetInches(estimatedSnapshotLevel({routeType:well.routeType,levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,isDown:well.isDown,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight));
       return <TouchableOpacity key={well.wellName} style={styles.wellRow} onPress={()=>handleWellPress(well.wellName)}>
         <View style={styles.wellRowMain}>
           <Text style={[styles.wellText,styles.colWell]} numberOfLines={1}>{well.displayName || well.wellName}</Text>
           <Text style={[styles.wellText,styles.colLevel]}>{level}</Text>
           <Text style={[styles.wellText,styles.colAt]}>{well.dailyBbl == null ? '--' : well.dailyBbl.toFixed(1)+' BBL/day'}</Text>
-          <Text style={[styles.wellText,styles.colReady]}>--</Text>
+          <Text style={[styles.wellText,styles.colReady]}>{well.isDown ? 'Paused' : at ? new Date(at).toLocaleString(undefined,{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) : '--'}</Text>
         </View>
       </TouchableOpacity>;
     }
@@ -744,7 +746,7 @@ export default function SummaryScreen() {
     return [...wells].sort((a, b) => {
       if (a.routeType === 'freshwater' && b.routeType === 'freshwater') {
         const estimate=(well:WellSummaryData)=>well.unavailable ? Infinity : estimatedSnapshotLevel({routeType:well.routeType,
-          levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight);
+          levelFeet:well.levelFeet,timestamp:well.snapshotTimestamp,isDown:well.isDown,dailyBbl:well.dailyBbl,bblPerFoot:well.bblPerFoot},0,Date.now(),well.tankHeight);
         return estimate(a)-estimate(b) || a.wellName.localeCompare(b.wellName);
       }
       // Down wells go to bottom

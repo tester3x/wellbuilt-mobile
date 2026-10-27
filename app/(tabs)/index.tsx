@@ -1,3 +1,6 @@
+import { thresholdTime } from '@tester3x/water-hauling';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { getFreshWaterSupply } from '../../src/services/freshWaterSupply';
 import { resolveTankHeight, tankFillFraction } from '../../src/utils/tankHeight';
 import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
@@ -309,6 +312,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const { t } = useTranslation();
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
+  const [deliveryAt,setDeliveryAt]=useState<Date | null>(null);
+  const [deliveryPicker,setDeliveryPicker]=useState<'date'|'time'|null>(null);
+  const [deliveryBase,setDeliveryBase]=useState<{feet:number|null;rate:number|null;isDown:boolean}|null>(null);
   const [wellConfig, setWellConfig] = useState<WellConfig | null>(null);
   const tankHeightFeet = resolveTankHeight(wellConfig?.tankHeight);
   useEffect(() => { setSliderFeet(previous => Math.min(previous, tankHeightFeet)); }, [tankHeightFeet]);
@@ -864,13 +870,29 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
   }, [wellDown, sliderLocked, activateSliderUI, resetSliderLockTimer, sliderOpacity]);
 
+  useEffect(()=>{
+    if (wellConfig?.routeType !== 'freshwater' || !wellConfig.inventoryGroupId || !deliveryAt) {setDeliveryBase(null);return;}
+    let cancelled=false; setDeliveryBase({feet:null,rate:null,isDown:false});
+    getFreshWaterSupply(wellConfig.inventoryGroupId,deliveryAt.toISOString()).then(supply=>{
+      if(!cancelled) setDeliveryBase({feet:supply.status?.projectedFeet ?? null,rate:supply.status?.dailyUseBbl ?? null,isDown:supply.status?.isDown === true});
+    }).catch(()=>{if(!cancelled)setDeliveryBase({feet:null,rate:null,isDown:false});});
+    return ()=>{cancelled=true;};
+  },[deliveryAt,wellConfig]);
+  const planningFeet = deliveryAt ? deliveryBase?.feet ?? null : levelSnapshot?.unavailable ? null : displayFeet;
+  const planningRate = deliveryAt ? deliveryBase?.rate ?? null : levelSnapshot?.dailyBbl ?? null;
+  const planningDown = deliveryAt ? deliveryBase?.isDown === true : wellDown;
+  const planningTime = deliveryAt ?? new Date();
   // Handle slider changes with custom snapping
   // Above current: standard 3" grid (10'0", 10'3", 10'6"...)
   // Below current: 3" grid based on current level (auto-adjusts as tank fills)
   const handleSliderChange = useCallback((value: number) => {
+    if (wellConfig?.routeType === 'freshwater') {
+      const feet=Math.max(0,Math.min(tankHeightFeet-(planningFeet ?? tankHeightFeet),Math.round(value*60)/60));
+      setSliderFeet(feet); return;
+    }
     // Calculate dynamic slider minimum
-    const literalLoadLine = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.loadLine ?? 1.33;
-    const allowedBottom = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.allowedBottom ?? 3;
+    const literalLoadLine = wellConfig?.loadLine ?? 1.33;
+    const allowedBottom = wellConfig?.allowedBottom ?? 3;
     const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;
 
     // Use current displayed level as reference (auto-updates as tank fills)
@@ -894,7 +916,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
     // Save slider position to storage (persists across app restarts)
     saveSliderPosition(wellName, snappedValue);
-  }, [displayFeet, wellName, wellConfig, tankHeightFeet]);
+  }, [displayFeet, wellName, wellConfig, tankHeightFeet, planningFeet]);
 
   // Handle slider drag start - activate UI, cancel lock timer, and notify parent
   const handleSliderStart = useCallback(() => {
@@ -963,7 +985,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   if (wellDown) {
     readyAtText = t('common.offline');
   } else if (wellConfig?.routeType === 'freshwater') {
-    readyAtText = 'Unknown';
+    const after=planningFeet == null ? null : planningFeet+Math.min(sliderFeet,tankHeightFeet-planningFeet);
+    const minimum=wellConfig.allowedBottom;
+    const at=after == null || minimum == null ? null : thresholdTime('freshwater',after,planningTime.toISOString(),planningRate,bblsPerFoot,minimum,planningDown);
+    readyAtText=planningDown ? 'Consumption paused' : at ? 'To '+formatFeetInches(minimum!)+' @ '+formatDateTimeSuffix(new Date(at),t('well.today'),t('well.tomorrow')) : 'Forecast unavailable';
   } else if (flowMins <= 0) {
     readyAtText = 'N/A';
   } else if (displayFeet < sliderFeet) {
@@ -1000,13 +1025,17 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Calculate "Next Pull Ready" - when well reaches ready level, and how many loads available
   // Uses same logic as summary screen: readyLevel = allowedBottom + (loadBbls / bblsPerFoot)
   const calculateNextPullReady = (): { text: string; isReady: boolean; loads: number } => {
-    if (wellConfig?.routeType === 'freshwater') return {text:'Delivery threshold unknown',isReady:false,loads:0};
+    if (wellConfig?.routeType === 'freshwater') {
+      const minimum=wellConfig.allowedBottom;
+      const at=planningFeet == null || minimum == null ? null : thresholdTime('freshwater',planningFeet,planningTime.toISOString(),planningRate,bblsPerFoot,minimum,planningDown);
+      return {text:planningDown ? 'Consumption paused' : at ? formatDateTime(new Date(at),t('well.today'),t('well.tomorrow')) : 'Forecast unavailable',isReady:planningFeet != null && minimum != null && planningFeet<=minimum,loads:0};
+    }
     if (wellDown) {
       return { text: t('well.wellIsDown', 'Well is down'), isReady: false, loads: 0 };
     }
 
     const currentLevel = displayFeet;
-    const allowedBottom = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.allowedBottom ?? 3;
+    const allowedBottom = wellConfig?.allowedBottom ?? 3;
     const bblFt = bblsPerFoot;
 
     // Calculate feet needed for one load
@@ -1449,11 +1478,19 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       </View>
       </View>
 
+      {wellConfig?.routeType === 'freshwater' && <View>
+        <TouchableOpacity onPress={()=>setDeliveryPicker('date')}><Text style={styles.nextPullLabel}>Delivery time: {deliveryAt ? formatDateTime(deliveryAt) : 'Now'} (change)</Text></TouchableOpacity>
+        {deliveryAt && <TouchableOpacity onPress={()=>setDeliveryAt(null)}><Text style={styles.nextPullLabel}>Use now</Text></TouchableOpacity>}
+        {deliveryPicker && <DateTimePicker value={deliveryAt ?? new Date()} mode={deliveryPicker} onChange={(event,date)=>{
+          const mode=deliveryPicker;setDeliveryPicker(null);
+          if(event.type==='set' && date){setDeliveryAt(date);if(mode==='date')setDeliveryPicker('time');}
+        }}/>}
+      </View>}
       {/* Slider - tap to peek values, long press to unlock */}
       {(() => {
         // Calculate slider minimum: use loadLine (1.33') or allowedBottom if lower
         const literalLoadLine = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.loadLine ?? 1.33;
-        const allowedBottom = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.allowedBottom ?? 3;
+        const allowedBottom = wellConfig?.allowedBottom ?? 3;
         // If allowedBottom < literal load line, use allowedBottom only
         // Otherwise use literal load line as minimum, with allowedBottom marker if higher
         const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;
@@ -1502,7 +1539,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                 // Slider level and ready-at text - fades in/out
                 <Animated.View style={[styles.sliderInfoInner, sliderInfoStyle]}>
                   <View style={styles.sliderValueRow}>
-                    <Text style={[styles.sliderValue, wellDown && styles.textDisabled]}>{formatFeetInches(sliderFeet)}</Text>
+                    <Text style={[styles.sliderValue, wellDown && styles.textDisabled]}>{wellConfig?.routeType === 'freshwater' ? planningFeet == null ? 'Unknown' : formatFeetInches(planningFeet+Math.min(sliderFeet,tankHeightFeet-planningFeet)) : formatFeetInches(sliderFeet)}</Text>
+                    {wellConfig?.routeType === 'freshwater' && <Text style={styles.sliderBbls}> +{Math.round(Math.min(sliderFeet,tankHeightFeet-(planningFeet ?? tankHeightFeet))*bblsPerFoot)} BBL</Text>}
                     {isPlanningPull && bblsToPull > 0 && (
                       <Text style={styles.sliderBbls}>  −{bblsToPull} {t('units.bbl')}</Text>
                     )}
@@ -1545,14 +1583,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
               <View style={styles.sliderRow}>
                 <Text style={[styles.sliderArrowLeft, wellDown && styles.textDisabled]}>←</Text>
-                <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{t('well.pull')}</Text>
+                <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{wellConfig?.routeType === 'freshwater' ? 'Less' : t('well.pull')}</Text>
                 <View style={styles.sliderWrapper} pointerEvents={sliderLocked ? "none" : "auto"}>
                   <Slider
                     containerStyle={styles.slider}
-                    minimumValue={sliderMin}
-                    maximumValue={tankHeightFeet}
+                    minimumValue={wellConfig?.routeType === 'freshwater' ? 0 : sliderMin}
+                    maximumValue={wellConfig?.routeType === 'freshwater' ? Math.max(0.001,tankHeightFeet-(planningFeet ?? tankHeightFeet)) : tankHeightFeet}
                     step={0.01}
-                    value={sliderFeet}
+                    value={wellConfig?.routeType === 'freshwater' ? Math.min(sliderFeet,tankHeightFeet-(planningFeet ?? tankHeightFeet)) : sliderFeet}
                     onValueChange={(val) => handleSliderChange(Array.isArray(val) ? val[0] : val)}
                     onSlidingStart={handleSliderStart}
                     onSlidingComplete={handleSliderEnd}
@@ -1569,7 +1607,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                     )}
                   />
                 </View>
-                <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{t('well.fill')}</Text>
+                <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{wellConfig?.routeType === 'freshwater' ? 'Deliver' : t('well.fill')}</Text>
                 <Text style={[styles.sliderArrowRight, wellDown && styles.textDisabled]}>→</Text>
                 {/* Overlay to capture taps when locked - covers full slider row */}
                 {sliderLocked && (

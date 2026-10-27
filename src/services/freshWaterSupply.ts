@@ -10,7 +10,7 @@ export type FreshWaterDeliveryDraft = {
   wellName?: string; // Older queued entries are retained for review, never silently reassigned.
   deliveredAtUTC: string;
   deliveredBbl: number;
-  measuredBeforeFeet?: number;
+  measuredBeforeFeet?: number; wellDown?: boolean;
   driverId: string;
   companyId: string;
   error?: string;
@@ -23,7 +23,7 @@ export type FreshWaterSupply = {
   wellNames: string[];
   config: { enabled: true; tankCount: number; tankHeightFeet: number; bblPerFootPerTank: number;
     equalization: 'single-tank' | 'verified-equalized' | 'unverified'; dailyUseBbl: number | null };
-  status: null | { levelFeet: number; projectedFeet: number | null; asOfUTC: string; dailyUseBbl: number | null;
+  status: null | { isDown?: boolean; levelFeet: number; projectedFeet: number | null; asOfUTC: string; dailyUseBbl: number | null;
     lastMeasuredFeet: number | null; lastMeasuredAtUTC: string | null };
 };
 export type FreshWaterTankGroup = { groupId: string; routeName: string; name: string; wellNames: string[];
@@ -49,8 +49,8 @@ async function writeQueue(queue: FreshWaterDeliveryDraft[]) {
 export async function listFreshWaterTankGroups() {
   return authorizedCallable<{ ok: true; groups: FreshWaterTankGroup[] }>('getWbmFreshWaterTankGroups', {});
 }
-export async function getFreshWaterSupply(groupId: string) {
-  return authorizedCallable<FreshWaterSupply>('getWbmFreshWaterTankGroups', { groupId });
+export async function getFreshWaterSupply(groupId: string, atUTC?: string) {
+  return authorizedCallable<FreshWaterSupply>('getWbmFreshWaterTankGroups', { groupId, ...(atUTC ? {atUTC} : {}) });
 }
 
 export async function pendingFreshWaterDeliveries(): Promise<FreshWaterDeliveryDraft[]> {
@@ -60,7 +60,7 @@ export async function pendingFreshWaterDeliveries(): Promise<FreshWaterDeliveryD
 }
 
 export async function queueFreshWaterDelivery(input: {
-  groupId: string; deliveredBbl: number; measuredBeforeFeet?: number; deliveredAtUTC?: string;
+  groupId: string; deliveredBbl: number; measuredBeforeFeet?: number; wellDown?: boolean; deliveredAtUTC?: string;
 }): Promise<FreshWaterDeliveryDraft> {
   const session = await getDriverSession();
   if (!session?.driverId || !session.companyId || session.isViewer) throw new Error('Driver session required');
@@ -69,6 +69,7 @@ export async function queueFreshWaterDelivery(input: {
     groupId: input.groupId,
     deliveredAtUTC: input.deliveredAtUTC ?? new Date().toISOString(),
     deliveredBbl: input.deliveredBbl,
+    ...(input.wellDown === undefined ? {} : { wellDown: input.wellDown }),
     ...(input.measuredBeforeFeet === undefined ? {} : { measuredBeforeFeet: input.measuredBeforeFeet }),
     driverId: session.driverId,
     companyId: session.companyId,
@@ -104,6 +105,7 @@ export async function flushFreshWaterDeliveries(): Promise<{ sent: number; pendi
           deliveryId: entry.deliveryId,
           deliveredAtUTC: entry.deliveredAtUTC,
           deliveredBbl: entry.deliveredBbl,
+          ...(entry.wellDown === undefined ? {} : { wellDown: entry.wellDown }),
           ...(entry.measuredBeforeFeet === undefined ? {} : { measuredBeforeFeet: entry.measuredBeforeFeet }),
         });
         if (!ok) throw new Error('Delivery not confirmed');

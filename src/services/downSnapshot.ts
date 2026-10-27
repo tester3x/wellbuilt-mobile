@@ -151,7 +151,7 @@ export function estimatedSnapshotLevel(
 ): number {
   const height = resolveTankHeight(tankHeight);
   if (snapshot.routeType === 'freshwater') return projectedLevel('freshwater',snapshot.levelFeet ?? 0,
-    new Date(snapshot.timestamp).toISOString(),new Date(now).toISOString(),snapshot.dailyBbl,
+    new Date(snapshot.timestamp).toISOString(),new Date(now).toISOString(),snapshot.isDown ? 0 : snapshot.dailyBbl,
     snapshot.bblPerFoot || 0,height) ?? 0;
   const base = Math.max(0, Math.min(startingLevelFromSnapshot(snapshot), height));
   const rate = snapshot.flowRateMinutes ?? fallbackFlowMinutes;

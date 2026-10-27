@@ -397,7 +397,7 @@ export async function getLevelSnapshot(wellName: string, config?: {
     const { getFreshWaterSupply }=await import('./freshWaterSupply');
     const supply=await getFreshWaterSupply(config.inventoryGroupId);
     const status=supply.status;
-    return {routeType:'freshwater',levelFeet:status?.levelFeet ?? 0,timestamp:status ? Date.parse(status.asOfUTC) : 0,
+    return {routeType:'freshwater',isDown:status?.isDown === true,levelFeet:status?.levelFeet ?? 0,timestamp:status ? Date.parse(status.asOfUTC) : 0,
       responseTimestamp:status?.asOfUTC || '', unavailable:!status || (status.projectedFeet == null),
       dailyBbl:status?.dailyUseBbl ?? null,bblPerFoot:config.bblPerFoot,
       flowRateMinutes:status?.dailyUseBbl ? 1440*(config.bblPerFoot || 0)/status.dailyUseBbl : 0};

@@ -66,6 +66,7 @@ const CACHE_BINDER_KEY = "@wellbuilt_well_config_binder";
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
 
 export interface WellConfig {
+  tankHeight?: number;
   allowedBottom: number;
   numTanks: number;
   loadLine: number;

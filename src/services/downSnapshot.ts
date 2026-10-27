@@ -1,3 +1,4 @@
+import { resolveTankHeight } from '../utils/tankHeight';
 /**
  * Atomic per-well render snapshot: level, DOWN, flow, pull metadata.
  * DOWN packets must never store 0' when a valid lastPullBottomLevel exists.
@@ -142,13 +143,15 @@ export function estimatedSnapshotLevel(
   },
   fallbackFlowMinutes = 0,
   now = Date.now(),
+  tankHeight?: number,
 ): number {
-  const base = Math.max(0, Math.min(startingLevelFromSnapshot(snapshot), 20));
+  const height = resolveTankHeight(tankHeight);
+  const base = Math.max(0, Math.min(startingLevelFromSnapshot(snapshot), height));
   const rate = snapshot.flowRateMinutes ?? fallbackFlowMinutes;
   if (snapshot.isDown || !Number.isFinite(rate) || rate <= 0
     || !Number.isFinite(snapshot.timestamp)
     || snapshot.timestamp < Date.UTC(2020, 0, 1) || snapshot.timestamp > now) {
     return base;
   }
-  return Math.min(base + (now - snapshot.timestamp) / 60000 / rate, 20);
+  return Math.min(base + (now - snapshot.timestamp) / 60000 / rate, height);
 }

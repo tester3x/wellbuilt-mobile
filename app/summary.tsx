@@ -1,3 +1,4 @@
+import { resolveTankHeight } from '../src/utils/tankHeight';
 import { Slider } from '@miblanchard/react-native-slider';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -42,7 +43,6 @@ const DEFAULT_PULL_BBLS = 140;
 const DEFAULT_SLIDER_FEET = 10.5; // 10' 6"
 const DEFAULT_SLIDER_HOURS = 6;
 const MIN_SLIDER_FEET = 1.33; // 1' 4" - literal load line
-const MAX_SLIDER_FEET = 18;
 const MIN_SLIDER_HOURS = 0;
 const MAX_SLIDER_HOURS = 24;
 
@@ -53,6 +53,7 @@ const DOUBLE_TAP_DELAY = 300; // Max ms between taps for double-tap
 // Well config interface - imported from wellConfig.ts
 
 interface WellSummaryData {
+  tankHeight: number;
   wellName: string;
   route: string;
   routeColor: string;
@@ -140,6 +141,7 @@ function getReadyLevel(well: WellSummaryData, pullBbls: number): number {
 
 // Calculate datetime when well will hit target level
 function getTimeAtLevel(well: WellSummaryData, targetFeet: number): Date | null {
+  if (targetFeet > resolveTankHeight(well.tankHeight)) return null;
   const currentLevel = getCurrentLevel(well);
   if (currentLevel >= targetFeet) return new Date(); // Already there
   if (well.isDown || well.flowRateMinutes <= 0) return null;
@@ -173,6 +175,7 @@ export default function SummaryScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Slider mode: 'feet' or 'time'
+  const maxSliderFeet = Math.max(...routeGroups.flatMap(group => group.wells.map(well => resolveTankHeight(well.tankHeight))), 0) || 20;
   const [sliderMode, setSliderMode] = useState<'feet' | 'time'>('feet');
   const [sliderFeet, setSliderFeet] = useState(DEFAULT_SLIDER_FEET);
   const [sliderHours, setSliderHours] = useState(DEFAULT_SLIDER_HOURS);
@@ -192,6 +195,10 @@ export default function SummaryScreen() {
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapTimeRef = useRef<number>(0); // For double-tap detection on slider
   const wellTapTimeRef = useRef<{ [wellName: string]: number }>({}); // For double-tap on wells
+
+  useEffect(() => {
+    if (routeGroups.length) setSliderFeet(previous => Math.min(previous, maxSliderFeet));
+  }, [maxSliderFeet, sliderFeet, routeGroups.length]);
 
   // Load expanded states from AsyncStorage
   const loadExpandedStates = useCallback(async () => {
@@ -276,6 +283,7 @@ export default function SummaryScreen() {
 
         summaryData.push({
           wellName,
+          tankHeight: resolveTankHeight(config?.tankHeight),
           route,
           routeColor,
           levelFeet,
@@ -891,7 +899,7 @@ export default function SummaryScreen() {
             }
           </Text>
           <Text style={styles.sliderEndLabelRight}>
-            {sliderMode === 'feet' ? `${MAX_SLIDER_FEET}'` : `+${MAX_SLIDER_HOURS}h`}
+            {sliderMode === 'feet' ? `${maxSliderFeet}'` : `+${MAX_SLIDER_HOURS}h`}
           </Text>
         </View>
         <View style={styles.sliderContainer}>
@@ -908,7 +916,7 @@ export default function SummaryScreen() {
               onSlidingStart={handleSlidingStart}
               onSlidingComplete={handleSlidingComplete}
               minimumValue={sliderMode === 'feet' ? MIN_SLIDER_FEET : MIN_SLIDER_HOURS}
-              maximumValue={sliderMode === 'feet' ? MAX_SLIDER_FEET : MAX_SLIDER_HOURS}
+              maximumValue={sliderMode === 'feet' ? maxSliderFeet : MAX_SLIDER_HOURS}
               step={sliderMode === 'feet' ? 0.25 : 0.25}  // 3" for feet, 15 min for hours
               minimumTrackTintColor={sliderLocked ? "#374151" : "#2563EB"}
               maximumTrackTintColor="#374151"

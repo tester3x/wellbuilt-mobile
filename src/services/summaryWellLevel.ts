@@ -1,5 +1,7 @@
+import { resolveTankHeight } from '../utils/tankHeight';
 /** Display-only summary projection. DOWN freezes the water already in the tanks. */
 export interface SummaryLevelInput {
+  tankHeight?: number;
   levelFeet: number;
   flowRateMinutes: number;
   snapshotTimestamp: number;
@@ -7,17 +9,17 @@ export interface SummaryLevelInput {
 }
 
 export function summaryCurrentLevel(well: SummaryLevelInput, now = Date.now()): number {
-  const base = Math.max(0, Math.min(well.levelFeet, 20));
+  const base = Math.max(0, Math.min(well.levelFeet, resolveTankHeight(well.tankHeight)));
   if (well.isDown || well.flowRateMinutes <= 0) return base;
   if (well.snapshotTimestamp < Date.UTC(2024, 0, 1) || well.snapshotTimestamp > now) return base;
   const minutes = (now - well.snapshotTimestamp) / 60000;
-  return Math.min(base + minutes / well.flowRateMinutes, 20);
+  return Math.min(base + minutes / well.flowRateMinutes, resolveTankHeight(well.tankHeight));
 }
 
 export function summaryLevelAtTime(well: SummaryLevelInput, hours: number, now = Date.now()): number {
   const current = summaryCurrentLevel(well, now);
   if (well.isDown || well.flowRateMinutes <= 0) return current;
-  return Math.min(current + Math.max(0, hours) * 60 / well.flowRateMinutes, 20);
+  return Math.min(current + Math.max(0, hours) * 60 / well.flowRateMinutes, resolveTankHeight(well.tankHeight));
 }
 
 export function summaryReadyLevel(
@@ -46,6 +48,7 @@ export function summaryTimeAtLevel(
   targetFeet: number,
   now = Date.now(),
 ): Date | null {
+  if (targetFeet > resolveTankHeight(well.tankHeight)) return null;
   const current = summaryCurrentLevel(well, now);
   if (current >= targetFeet) return new Date(now);
   if (well.isDown || well.flowRateMinutes <= 0) return null;

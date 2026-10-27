@@ -1,3 +1,4 @@
+import { resolveTankHeight } from '../tankHeight';
 import React from 'react';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -28,6 +29,7 @@ function harness(snapshot: unknown = null, previousWell = 'Olson') {
   let shown: unknown = old;
   const setLastPullInfo = jest.fn(value => { shown = value; });
   const scope = {
+    resolveTankHeight,
     wellName: 'Olson', lastPullWellRef: { current: previousWell },
     getWellConfig: jest.fn(() => config), setWellConfig: jest.fn(),
     getLevelSnapshot: jest.fn(async () => snapshot), setLevelSnapshot: jest.fn(),

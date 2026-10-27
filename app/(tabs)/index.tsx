@@ -1,3 +1,4 @@
+import { resolveTankHeight, tankFillFraction } from '../../src/utils/tankHeight';
 import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -119,7 +120,6 @@ const STORAGE_KEY_SELECTED_WELLS = 'wellbuilt_selected_wells';
 const STORAGE_KEY_ROUTE_ORDER = 'wellbuilt_route_order';
 const STORAGE_KEY_LOAD_SIZE = 'wellbuilt_load_size';
 const STORAGE_KEY_LAST_GOOD_WELLS = '@wellbuilt_last_good_wells';
-const FULL_TANK_FEET = 20;
 const DROP_ANIMATION_MS = 2000;  // 2 seconds drain animation (Firebase responds in 1-3s)
 // REMOVED: const POLL_INTERVAL_MS = 3000; // No more polling! Using Firebase listeners now
 const LIVE_UPDATE_MS = 30000;    // Update level estimate every 30 seconds
@@ -310,6 +310,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
   const [wellConfig, setWellConfig] = useState<WellConfig | null>(null);
+  const tankHeightFeet = resolveTankHeight(wellConfig?.tankHeight);
+  useEffect(() => { setSliderFeet(previous => Math.min(previous, tankHeightFeet)); }, [tankHeightFeet]);
   const [showTankInfo, setShowTankInfo] = useState(false);
   const [pullRecord, setPullRecord] = useState<WellPullRecord | null>(null);
   // Flow rate now stored in levelSnapshot (not separately cached) to prevent stale values
@@ -464,9 +466,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
       // Calculate current level with flow estimate
       // Formula: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
       const flowMins = levelSnapshot.flowRateMinutes ?? wellConfig?.avgFlowRateMinutes ?? 0;
-      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins);
+      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins, Date.now(), tankHeightFeet);
 
-      const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
+      const fraction = tankFillFraction(currentLevel, tankHeightFeet);
       const prevLevel = getPreviousLevel();
 
       // Start at previous well's level, animate to this well's level
@@ -503,7 +505,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Removed: cancelWaitForResponse cleanup - no longer waiting for responses
 
   const updateDisplayFeet = (fraction: number) => {
-    setDisplayFeet(fraction * FULL_TANK_FEET);
+    setDisplayFeet(fraction * tankHeightFeet);
     // Always report level to parent (so we can track all well levels for animation)
     if (onLevelChange) {
       onLevelChange(fraction);
@@ -513,7 +515,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   useAnimatedReaction(
     () => waterFraction.value,
     (currentFraction) => runOnJS(updateDisplayFeet)(currentFraction),
-    [waterFraction]
+    [waterFraction, tankHeightFeet]
   );
 
   // Response processing handled entirely by backgroundSync
@@ -537,6 +539,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         const config = await getWellConfig(wellName);
         if (!isMounted) return;
         setWellConfig(config);
+        const tankHeightFeet = resolveTankHeight(config?.tankHeight);
 
         // Load level snapshot (flow rate is now stored with snapshot, not separately)
         const snapshot = await getLevelSnapshot(wellName);
@@ -622,7 +625,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         // Load persisted slider position (keeps driver's last setting)
         const savedSliderPos = await getSliderPosition(wellName);
         if (!isMounted) return;
-        setSliderFeet(savedSliderPos);
+        setSliderFeet(Math.min(savedSliderPos, tankHeightFeet));
 
         // Use pending pull from pre-check above (already fetched before setLevelSnapshot)
         if (pending) {
@@ -649,16 +652,16 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
             // Zero-BBL check pull: animate FROM current displayed level TO new read level
             // Don't reset waterFraction — keep old level as starting point
             waterFraction.value = withTiming(
-              clampFraction(topLevel / FULL_TANK_FEET),
+              clampFraction(topLevel / tankHeightFeet),
               { duration: remainingMs, easing: Easing.linear }
             );
           } else {
             // Normal pull: animate drain from top level down to estimated bottom
             const animationProgress = Math.min(elapsedMs / DROP_ANIMATION_MS, 1);
             const currentAnimatedLevel = topLevel - (animationProgress * (topLevel - targetLevel));
-            waterFraction.value = clampFraction(currentAnimatedLevel / FULL_TANK_FEET);
+            waterFraction.value = clampFraction(currentAnimatedLevel / tankHeightFeet);
             waterFraction.value = withTiming(
-              clampFraction(targetLevel / FULL_TANK_FEET),
+              clampFraction(targetLevel / tankHeightFeet),
               { duration: remainingMs, easing: Easing.linear }
             );
           }
@@ -681,8 +684,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           // Update targetFraction so live update knows the correct level when it starts
           if (snapshot) {
             const flowMins = snapshot.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
-            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins);
-            setTargetFraction(clampFraction(currentLevel / FULL_TANK_FEET));
+            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins, Date.now(), tankHeightFeet);
+            setTargetFraction(tankFillFraction(currentLevel, tankHeightFeet));
           }
           setIsLoadingInitial(false);
         } else {
@@ -691,9 +694,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
 
           if (snapshot && (startingLevelFromSnapshot(snapshot) > 0 || snapshot.isDown)) {
-            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins);
+            const currentLevel = estimatedSnapshotLevel(snapshot, flowMins, Date.now(), tankHeightFeet);
 
-            const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
+            const fraction = tankFillFraction(currentLevel, tankHeightFeet);
 
             // Always apply the accepted snapshot — including after a foreground
             // sync on an already-mounted well. Do not wait for a later swipe.
@@ -747,7 +750,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // - timestamp = time of last pull (from lastPullDateTimeUTC)
   // - flowRateMinutes = minutes per foot of rise (AFR)
   useEffect(() => {
-    if (!levelSnapshot || wellDown || levelSnapshot.unavailable) {
+    if (!levelSnapshot || levelSnapshot.unavailable) {
       return;
     }
 
@@ -755,15 +758,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     if (drainAnimationActive.current) return;
 
     const flowMins = levelSnapshot.flowRateMinutes ?? 0;
-    if (flowMins <= 0) return;
 
     // Calculate current estimated level
     // Use lastPullBottomLevelFeet if available (more precise), fallback to levelFeet
     const updateEstimate = () => {
       // Skip if drain animation started since this effect was set up
       if (drainAnimationActive.current) return;
-      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins);
-      const fraction = clampFraction(currentLevel / FULL_TANK_FEET);
+      const currentLevel = estimatedSnapshotLevel({ ...levelSnapshot, isDown: wellDown }, flowMins, Date.now(), tankHeightFeet);
+      const fraction = tankFillFraction(currentLevel, tankHeightFeet);
 
       // Smoothly update display
       waterFraction.value = withTiming(fraction, {
@@ -775,6 +777,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     // Initial update
     updateEstimate();
 
+    // A frozen/no-flow tank still needs its graphic rescaled after a height edit.
+    if (wellDown || flowMins <= 0) return;
+
     // Periodic updates
     liveUpdateRef.current = setInterval(updateEstimate, LIVE_UPDATE_MS);
 
@@ -784,7 +789,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         liveUpdateRef.current = null;
       }
     };
-  }, [levelSnapshot, wellDown, waterFraction, drainCompleteSignal]);
+  }, [levelSnapshot, wellDown, waterFraction, drainCompleteSignal, tankHeightFeet]);
 
   // Reset slider lock timer - call after any slider interaction
   const resetSliderLockTimer = useCallback(() => {
@@ -869,7 +874,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;
 
     // Use current displayed level as reference (auto-updates as tank fills)
-    const reference = Math.max(sliderMin, Math.min(18, displayFeet));
+    const reference = Math.max(sliderMin, Math.min(tankHeightFeet, displayFeet));
     let snappedValue: number;
 
     if (value >= reference) {
@@ -883,13 +888,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     }
 
     // Clamp to slider range
-    snappedValue = Math.max(sliderMin, Math.min(18, snappedValue));
+    snappedValue = Math.max(sliderMin, Math.min(tankHeightFeet, snappedValue));
 
     setSliderFeet(snappedValue);
 
     // Save slider position to storage (persists across app restarts)
     saveSliderPosition(wellName, snappedValue);
-  }, [displayFeet, wellName, wellConfig]);
+  }, [displayFeet, wellName, wellConfig, tankHeightFeet]);
 
   // Handle slider drag start - activate UI, cancel lock timer, and notify parent
   const handleSliderStart = useCallback(() => {
@@ -983,7 +988,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
     // Calculate what level the tank will be at after hoursForward
     // Starting from slider level (post-pull), adding flow over time
     const feetGained = (hoursForward * 60) / flowMins;
-    const levelAtTime = Math.min(sliderFeet + feetGained, FULL_TANK_FEET);
+    const levelAtTime = Math.min(sliderFeet + feetGained, tankHeightFeet);
     const futureTime = new Date(Date.now() + hoursForward * 60 * 60 * 1000);
 
     // Display: "→ 12' 3" @ 7:00 AM"
@@ -1086,7 +1091,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   const fishFaceB = useAnimatedStyle(() => ({ transform: [{ scaleX: fishFacing.value[1] }] }));
   const fishFaceC = useAnimatedStyle(() => ({ transform: [{ scaleX: fishFacing.value[2] }] }));
   // Water-level gate — no critter in an empty/near-empty tank; fish need depth.
-  const aliveWaterPct = clampFraction(displayFeet / FULL_TANK_FEET);
+  const aliveWaterPct = clampFraction(displayFeet / tankHeightFeet);
   const showFish = aliveEgg.kind === 'fish' && aliveWaterPct > 0.2;
   const showFloat = aliveEgg.kind === 'duck' && aliveWaterPct > 0.12;
 
@@ -1453,7 +1458,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
         // Calculate position of allowedBottom marker as percentage of slider range
         // Account for the slider track width (excluding Pull/Fill labels which are 50px each)
-        const sliderRange = 18 - sliderMin;
+        const sliderRange = tankHeightFeet - sliderMin;
         const allowedBottomPercent = ((allowedBottom - sliderMin) / sliderRange) * 100;
 
         // Color coding for ready time text (not level - keep level white for consistency):
@@ -1531,7 +1536,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                     </>
                   )}
                 </View>
-                <Text style={styles.sliderMarkerRight}>18'</Text>
+                <Text style={styles.sliderMarkerRight}>{formatFeetInches(tankHeightFeet)}</Text>
                 <Text style={styles.sliderMarkerArrowRight}>→</Text>
               </View>
 
@@ -1542,7 +1547,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
                   <Slider
                     containerStyle={styles.slider}
                     minimumValue={sliderMin}
-                    maximumValue={18}
+                    maximumValue={tankHeightFeet}
                     step={0.01}
                     value={sliderFeet}
                     onValueChange={(val) => handleSliderChange(Array.isArray(val) ? val[0] : val)}

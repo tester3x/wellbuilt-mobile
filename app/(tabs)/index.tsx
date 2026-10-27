@@ -962,6 +962,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
 
   if (wellDown) {
     readyAtText = t('common.offline');
+  } else if (wellConfig?.routeType === 'freshwater') {
+    readyAtText = 'Unknown';
   } else if (flowMins <= 0) {
     readyAtText = 'N/A';
   } else if (displayFeet < sliderFeet) {
@@ -998,6 +1000,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
   // Calculate "Next Pull Ready" - when well reaches ready level, and how many loads available
   // Uses same logic as summary screen: readyLevel = allowedBottom + (loadBbls / bblsPerFoot)
   const calculateNextPullReady = (): { text: string; isReady: boolean; loads: number } => {
+    if (wellConfig?.routeType === 'freshwater') return {text:'Delivery threshold unknown',isReady:false,loads:0};
     if (wellDown) {
       return { text: t('well.wellIsDown', 'Well is down'), isReady: false, loads: 0 };
     }
@@ -1358,7 +1361,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           
           {/* BBLs available */}
           <View style={styles.bblsAvailableContainer}>
-            <Text style={styles.bblsAvailableText}>{bblsAvailable} {t('units.bbl')}</Text>
+            <Text style={styles.bblsAvailableText}>{levelSnapshot?.unavailable ? '--' : bblsAvailable} {t('units.bbl')}</Text>
           </View>
         </View>
         </Pressable>
@@ -1424,9 +1427,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
           }}
         >
           <View style={styles.statsRow}>
-            <Text style={styles.statLeft}>{displayBblsPerHour} {t('units.bbl')}{t('units.perHour')}</Text>
+            <Text style={styles.statLeft}>{wellConfig?.routeType === 'freshwater' ? (levelSnapshot?.dailyBbl == null ? '--' : (levelSnapshot.dailyBbl/24).toFixed(1)) : displayBblsPerHour} {t('units.bbl')}{t('units.perHour')}</Text>
             <Text style={styles.statDivider}>•</Text>
-            <Text style={styles.statRight}>{displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? (levelSnapshot?.overnightEstimatedTime ? ' ON ≈' : ' ON') : ''}</Text>
+            <Text style={styles.statRight}>{wellConfig?.routeType === 'freshwater' ? (levelSnapshot?.dailyBbl ?? '--') : displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? (levelSnapshot?.overnightEstimatedTime ? ' ON ≈' : ' ON') : ''}</Text>
           </View>
         </Pressable>
 

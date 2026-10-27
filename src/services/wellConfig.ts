@@ -66,6 +66,11 @@ const CACHE_BINDER_KEY = "@wellbuilt_well_config_binder";
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
 
 export interface WellConfig {
+  routeType?: 'produced-water' | 'freshwater';
+  inventoryGroupId?: string;
+  bblPerFoot?: number;
+  suppliesWells?: string[];
+  equalization?: string;
   tankHeight?: number;
   allowedBottom: number;
   numTanks: number;
@@ -227,7 +232,7 @@ export async function loadWellConfig(
 
 async function fetchBootstrapFromServer(): Promise<WbmBootstrapSnapshot> {
   const { authorizedCallable } = await import("./firebaseAuthSession");
-  const res = await authorizedCallable<WbmBootstrapSnapshot>("bootstrapWbmSession", {});
+  const res = await authorizedCallable<WbmBootstrapSnapshot>("bootstrapWbmSession", { routeContractVersion: 1 });
   if (!res || res.ok !== true || typeof res.driverId !== 'string' || typeof res.assignmentDigest !== 'string') {
     throw new WellConfigUnavailableError('malformed_response');
   }

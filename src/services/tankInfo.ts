@@ -70,6 +70,12 @@ export async function readTankInfo(well: string): Promise<TankInfo | null> {
   return info && validInfo(info, well) ? info : null;
 }
 export async function refreshTankInfo(well: string): Promise<TankInfo> {
+  const { getWellConfig }=await import('./wellConfig');
+  const canonical=await getWellConfig(well);
+  if (canonical?.routeType === 'freshwater') {
+    const config: TankConfig={numTanks:canonical.numTanks,tankHeight:canonical.tankHeight,bblPerFoot:canonical.bblPerFoot};
+    return {ok:true,wellName:well,config,canEdit:false,canAssignPrimary:false,primaryDrivers:[]};
+  }
   const s = await scope();
   const info = await call<TankInfo>(s, 'getWbmTankInfo', { wellName: well });
   if (!validInfo(info, well)) throw Error('tank_info_invalid_response');

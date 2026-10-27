@@ -1,3 +1,4 @@
+import { pendingFreshWaterDeliveries, flushFreshWaterDeliveries, type FreshWaterDeliveryDraft } from '../src/services/freshWaterSupply';
 // app/sync-status.tsx
 // Sync Status screen (GS3): truthful per-packet delivery visibility.
 // Lists every locally queued packet and every submitted/rejected pull with
@@ -50,6 +51,7 @@ export default function SyncStatusScreen() {
   const params = useLocalSearchParams<{ filter?: string }>();
   const filter: DeliveryFilter =
     params.filter === 'attention' || params.filter === 'pending' ? params.filter : 'all';
+  const [deliveries,setDeliveries]=useState<FreshWaterDeliveryDraft[]>([]);
   const [items, setItems] = useState<DeliveryItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -67,6 +69,7 @@ export default function SyncStatusScreen() {
     }
     try {
       setItems(await getDeliveryItems());
+      setDeliveries(await pendingFreshWaterDeliveries());
     } catch {
       // storage hiccup — keep the last known list rather than flash empty
     }
@@ -147,6 +150,11 @@ export default function SyncStatusScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 20 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
       >
+        {deliveries.map(delivery=><View key={delivery.deliveryId} style={{padding:12,borderBottomWidth:1,borderColor:'#334155'}}>
+          <Text style={{color:'#fff'}}>{delivery.groupId || delivery.wellName} · {delivery.deliveredBbl} BBL</Text>
+          <Text style={{color:delivery.error ? '#f87171' : '#94a3b8'}}>{delivery.error || 'Delivery saved — waiting to send'}</Text>
+          {!delivery.error && <TouchableOpacity onPress={async()=>{await flushFreshWaterDeliveries();await load(false);}}><Text style={{color:'#38bdf8'}}>Retry delivery</Text></TouchableOpacity>}
+        </View>)}
         {(() => {
           const visible = selectDeliveryItems(items, filter);
           if (visible.length === 0) {

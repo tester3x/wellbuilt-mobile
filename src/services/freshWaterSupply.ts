@@ -18,12 +18,15 @@ export type FreshWaterDeliveryDraft = {
 export type FreshWaterSupply = {
   ok: true;
   groupId: string;
+  routeName: string;
   name: string;
   wellNames: string[];
-  config: { enabled: true; tankCount: number; tankHeightFeet: number; bblPerFootPerTank: number; dailyUseBbl: number };
-  status: null | { levelFeet: number; projectedFeet: number | null; asOfUTC: string; dailyUseBbl: number; lastMeasuredFeet: number | null; lastMeasuredAtUTC: string | null };
+  config: { enabled: true; tankCount: number; tankHeightFeet: number; bblPerFootPerTank: number;
+    equalization: 'single-tank' | 'verified-equalized' | 'unverified'; dailyUseBbl: number | null };
+  status: null | { levelFeet: number; projectedFeet: number | null; asOfUTC: string; dailyUseBbl: number | null;
+    lastMeasuredFeet: number | null; lastMeasuredAtUTC: string | null };
 };
-export type FreshWaterTankGroup = { groupId: string; name: string; wellNames: string[];
+export type FreshWaterTankGroup = { groupId: string; routeName: string; name: string; wellNames: string[];
   config: FreshWaterSupply['config'] };
 
 let queueOperation: Promise<unknown> = Promise.resolve();

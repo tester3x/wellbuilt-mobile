@@ -53,8 +53,12 @@ export default function FreshWaterScreen() {
       Alert.alert('Check the numbers', 'Enter one load of 1–500 BBL and a valid before level.');
       return;
     }
-    if (!supply.status && measuredBeforeFeet === undefined) {
-      Alert.alert('Starting level needed', 'Measure the tanks before the first delivery.');
+    if (supply.config.equalization === 'unverified') {
+      Alert.alert('Equalization must be verified', 'This multi-tank group cannot use one shared gauge or accept a delivery until tank equalization is verified.');
+      return;
+    }
+    if ((!supply.status || supply.status.projectedFeet === null) && measuredBeforeFeet === undefined) {
+      Alert.alert('Current level needed', 'Measure the tank level before this delivery because the starting level or usage rate is unknown.');
       return;
     }
     const projected = measuredBeforeFeet ?? supply.status?.projectedFeet;
@@ -88,6 +92,7 @@ export default function FreshWaterScreen() {
       {groups.length === 0 && <Text style={styles.muted}>No fresh-water tank groups are configured on your assigned routes yet.</Text>}
       {groups.map(group => <Pressable key={group.groupId} style={[styles.pad, selected === group.groupId && styles.selected]} onPress={() => select(group.groupId)}>
         <View style={styles.groupLine}><Text style={styles.padText}>{group.name}</Text><Text style={styles.tankBadge}>{group.config.tankCount} tank{group.config.tankCount === 1 ? '' : 's'}</Text></View>
+        <Text style={styles.route}>{group.routeName}</Text>
         <Text style={styles.muted}>Supplies: {group.wellNames.join(', ')}</Text>
       </Pressable>)}
       {busy && <ActivityIndicator color="#38bdf8" />}
@@ -95,8 +100,9 @@ export default function FreshWaterScreen() {
         <Text style={styles.title}>{supply.name}</Text>
         <Text style={styles.muted}>Supplies: {supply.wellNames.join(', ')}</Text>
         <Text style={styles.label}>Current estimated level</Text>
-        <Text style={styles.level}>{supply.status?.projectedFeet?.toFixed(1) ?? 'Needs first reading'} ft</Text>
-        <Text style={styles.muted}>{supply.config.tankCount} tank(s) · {supply.config.tankHeightFeet} ft high · {supply.config.bblPerFootPerTank} BBL/ft each · {supply.status?.dailyUseBbl ?? supply.config.dailyUseBbl} BBL/day use</Text>
+        <Text style={styles.level}>{supply.status?.projectedFeet?.toFixed(1) ?? 'Unknown'}{supply.status?.projectedFeet == null ? '' : ' ft'}</Text>
+        <Text style={styles.muted}>{supply.config.tankCount} tank(s) · {supply.config.tankHeightFeet} ft high · {supply.config.bblPerFootPerTank} BBL/ft each · {(supply.status?.dailyUseBbl ?? supply.config.dailyUseBbl) == null ? 'Use unknown' : `${supply.status?.dailyUseBbl ?? supply.config.dailyUseBbl} BBL/day use`}</Text>
+        {supply.config.equalization === 'unverified' && <Text style={styles.warning}>Tank equalization is not verified. No shared level is assumed and delivery entry is disabled.</Text>}
         <Text style={styles.label}>Delivered barrels (one load)</Text>
         <TextInput style={styles.input} value={barrels} onChangeText={setBarrels} keyboardType="decimal-pad" placeholder="e.g. 120" placeholderTextColor="#64748b" />
         <Text style={styles.label}>Measured level before unloading (ft, optional after first reading)</Text>
@@ -124,6 +130,7 @@ const styles = StyleSheet.create({
   pad: { padding: 14, borderRadius: 10, backgroundColor: '#172033', borderWidth: 1, borderColor: '#253348' },
   selected: { borderColor: '#38bdf8' },
   padText: { color: '#f8fafc', fontWeight: '600' },
+  route: { color: '#38bdf8', fontSize: 12, fontWeight: '700', marginTop: 4 },
   groupLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   tankBadge: { color: '#05060b', backgroundColor: '#38bdf8', overflow: 'hidden', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3, fontWeight: '700' },
   card: { backgroundColor: '#111b2d', borderRadius: 12, padding: 16, gap: 10, marginTop: 12 },
@@ -133,4 +140,5 @@ const styles = StyleSheet.create({
   button: { backgroundColor: '#0891b2', padding: 14, alignItems: 'center', borderRadius: 8, marginTop: 8 },
   buttonText: { color: '#fff', fontWeight: '700' },
   message: { color: '#fbbf24', lineHeight: 21 },
+  warning: { color: '#fbbf24', lineHeight: 20 },
 });

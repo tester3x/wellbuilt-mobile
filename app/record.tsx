@@ -404,7 +404,7 @@ function RecordScreenInner() {
       const tankHeightFeet = resolveTankHeight(config?.tankHeight);
       setTankHeightFeet(tankHeightFeet);
       setRouteType(config?.routeType || 'produced-water');
-      const snapshot = await getLevelSnapshot(wellName);
+      const snapshot = await getLevelSnapshot(wellName, config);
 
       // Effective bbl/ft — consume the Dashboard-saved well_config.bblPerFoot
       // (override if set, else derived from capacity/height/activeTanks) via the

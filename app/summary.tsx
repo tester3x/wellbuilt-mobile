@@ -261,7 +261,7 @@ export default function SummaryScreen() {
       // Load cached data (flow rate is now in level snapshots)
       await loadLevelSnapshots();
       const snapshots = new Map(await Promise.all(Object.keys(wellConfig).map(async name =>
-        [name, await getLevelSnapshot(name)] as const,
+        [name, await getLevelSnapshot(name, wellConfig[name])] as const,
       )));
       const downWells = new Set(Object.keys(wellConfig).filter(name =>
         snapshots.get(name)?.isDown ?? wellConfig[name]?.isDown ?? false,

@@ -390,9 +390,9 @@ export async function saveLevelSnapshot(
   }
 }
 
-export async function getLevelSnapshot(wellName: string): Promise<LevelSnapshot | null> {
-  const { getWellConfig } = await import('./wellConfig');
-  const config=await getWellConfig(wellName);
+export async function getLevelSnapshot(wellName: string, config?: {
+  routeType?: 'produced-water' | 'freshwater'; inventoryGroupId?: string; bblPerFoot?: number;
+}): Promise<LevelSnapshot | null> {
   if (config?.routeType === 'freshwater' && config.inventoryGroupId) {
     const { getFreshWaterSupply }=await import('./freshWaterSupply');
     const supply=await getFreshWaterSupply(config.inventoryGroupId);

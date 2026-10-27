@@ -1,3 +1,4 @@
+import { rules } from '@tester3x/water-hauling';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { runInNewContext } from 'vm';
@@ -57,7 +58,7 @@ test.each([20, 25])('actual Record Load time-picker estimate respects %s-foot he
   const effect = find(n => ts.isCallExpression(n) && n.expression.getText(ast) === 'useEffect' && n.arguments[0].getText(ast).includes('const baseTs = baseTimestampRef.current;')) as ts.CallExpression;
   const shown = jest.fn();
   execute(effect.arguments[0].getText(ast), { isEditMode: false, baseTimestampRef: { current: now - 3 * 3600000 }, baseLevelFeetRef: { current: 19 },
-    flowRateMinutes: 60, wellIsDownRef: { current: false }, dateTime: new Date(now), tankHeightFeet: height, clampTankLevel, formatFeetInches,
+    rules, routeType: 'produced-water', flowRateMinutes: 60, wellIsDownRef: { current: false }, dateTime: new Date(now), tankHeightFeet: height, clampTankLevel, formatFeetInches,
     setEstLevel: jest.fn(), setEstLevelFeet: shown, setEstBbls: jest.fn(), loadLineRef: { current: 1.33 }, bblPerFoot: 20 })();
   expect(shown).toHaveBeenCalledWith(Math.min(22, height));
 });

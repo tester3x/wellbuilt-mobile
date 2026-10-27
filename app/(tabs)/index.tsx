@@ -542,7 +542,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, getPreviousL
         const tankHeightFeet = resolveTankHeight(config?.tankHeight);
 
         // Load level snapshot (flow rate is now stored with snapshot, not separately)
-        const snapshot = await getLevelSnapshot(wellName);
+        const snapshot = await getLevelSnapshot(wellName, config);
         if (!isMounted) return;
 
         // Pre-check for pending pull BEFORE setting levelSnapshot.

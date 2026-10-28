@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 122,
-  "observedAt": "2026-10-28T03:04:03.284164+00:00",
+  "versionCodeFloor": 125,
+  "observedAt": "2026-10-28T04:07:48.289024+00:00",
   "installedReports": [
     {
       "app": "WB-T",
@@ -99,8 +99,74 @@
         "C:/dev/tmp/wbm122-tablet-landscape-private.png",
         "C:/dev/tmp/wbm122-tablet-after-rotate-private.png"
       ]
+    },
+    {
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "Local Android SDK/Gradle arm64-v8a, account-device-test profile equivalent, JDK17/SDK36, existing production signer; registered home, no cloud build",
+      "sourceCommit": "e60eacf04a9f8e2a43d52abcbbdd178457340fc3",
+      "versionCode": 124,
+      "sha256": "92156ab4ab2cb5e32d176034b257611d29ee86e3acd0868e1abd85fdfbb83ce0",
+      "artifact": "C:/dev/tmp/WB-M124-e60eacf.apk",
+      "buildTimeUTC": "2026-10-28T03:53:12.950200+00:00",
+      "reservation": "android-release-v124",
+      "checks": [
+        "128 Jest suites/1334 tests",
+        "TypeScript noEmit",
+        "15 release gate regressions",
+        "Android Hermes export and strict native release build gate"
+      ],
+      "crossComputerReconciliation": "All GitHub heads surveyed and prior excluded tips unchanged; both active lanes fast-forwarded together. Other-machine unpushed work cannot be discovered.",
+      "verificationState": "Built and independently verified; not installed. Superseded during current task by user instruction to keep ordinary phones portrait-only.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm124-gradle-private.log",
+        "C:/dev/tmp/wbm124-release-private.json"
+      ]
+    },
+    {
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "Local Android SDK/Gradle arm64-v8a, account-device-test profile equivalent, JDK17/SDK36, existing production signer; registered home, no cloud build",
+      "sourceCommit": "1b545b3a60883ee6b521b68cbb0bf34814395889",
+      "versionCode": 125,
+      "sha256": "d734c3bbaa6580ba56ea164869d15476c1886c80c05e2e32db3587ac9ed08bb1",
+      "artifact": "C:/dev/tmp/WB-M125-1b545b3.apk",
+      "buildTimeUTC": "2026-10-28T03:56:57.955665+00:00",
+      "reservation": "android-release-v125",
+      "checks": [
+        "129 Jest suites/1337 tests",
+        "TypeScript noEmit",
+        "15 release gate regressions",
+        "Strict all-head reconciliation/reservation/forced bundle/postbuild gate",
+        "aapt package/version and apksigner matching approved certificate",
+        "Native S24/tablet/open-Fold checks"
+      ],
+      "crossComputerReconciliation": "All GitHub heads surveyed and prior excluded tips unchanged; both active lanes fast-forwarded together. Other-machine unpushed work cannot be discovered.",
+      "verificationState": "Installed via adb install-r on S24, tablet SM-X828U and ZFold; version125 independently read on all three. S24 original portrait/slider and attempted landscape lock pass. Tablet portrait shows one well, landscape two complete cards; both sliders unlock on one tap and drag; selected left/right cards open matching Dagger1/Dagger2 Record Load forms without submission; both info badges open matching details. Headers/statistics/sliders pixels identical before/after vertical swipe. Tablet return to portrait pass. ZFold open portrait and landscape screenshots reviewed; both landscape sliders moved and active shared action label followed the touched card. Physical cover-screen verification passed after user closed the Fold: existing task brought forward without restart, original single-well layout at1080x2520; attempted landscape remains portrait. System auto-rotate/user_rotation restored to original1/0 on every device after its checks, including tablet before unplugging and ZFold after cover check. No real load or tank-info change submitted.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm125-gradle-private.log",
+        "C:/dev/tmp/wbm125-release-private.json",
+        "C:/dev/tmp/wbm125-s24-first-private.png",
+        "C:/dev/tmp/wbm125-s24-landscape-attempt-private.png",
+        "C:/dev/tmp/wbm125-tablet-portrait-private.png",
+        "C:/dev/tmp/wbm125-tablet-right-slider-private.png",
+        "C:/dev/tmp/wbm125-tablet-after-vertical-private.png",
+        "C:/dev/tmp/wbm125-zfold-landscape-private.png",
+        "C:/dev/tmp/wbm125-zfold-cover-app-private.png"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M122 APK source8745f0f remains immutable. Tablet122 installation and layout defects recorded. Separate portrait/landscape source corrections remain unbuilt; no EAS cloud build or new APK was started."
+  "notes": "M125 immutable APK source1b545b3 installed after native S24/tablet checks; actual open and physically closed ZFold verified. M123 failed and M124 uninstalled reservations retained. Later Load terminology changes are queued source, not part of M125; no cosmetic-only rebuild or cloud build started.",
+  "failedReservations": [
+    {
+      "versionCode": 123,
+      "sourceCommit": "cdfb7cbd6c8c1705ad93aa9ce058603010312952",
+      "reservation": "android-release-v123",
+      "reason": "Android bundle rejected declare props field; corrected in124. No APK produced or installed. Reservation retained.",
+      "evidence": "C:/dev/tmp/wbm123-gradle-private.log"
+    }
+  ]
 }

@@ -1656,7 +1656,7 @@ export default function MainScreen() {
   const previousPagerViewport=useRef(pagerViewport);
   const pagerResizing=useRef(false);
   const viewportChanged=previousPagerViewport.current!==pagerViewport;
-  const pagerContentOffset=useMemo(()=>({x:pagerViewport.offset,y:0}),[pagerViewport]);
+  const pagerContentOffset=useMemo(()=>previousPagerViewport.current===pagerViewport ? undefined : ({x:pagerViewport.offset,y:0}),[pagerViewport]);
   useLayoutEffect(()=>{
     if(previousPagerViewport.current!==pagerViewport)pagerResizing.current=true;
     previousPagerViewport.current=pagerViewport;

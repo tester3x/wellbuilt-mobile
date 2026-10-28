@@ -28,6 +28,6 @@ test('swipe captures the drawn departing level, independent of destination prelo
   expect(captured).toBe(0.63);
   levels.Previous = 0.4; levels.Destination = 0.2;
   expect(captured).toBe(0.63); // The seed cannot follow a later card's updates.
-  expect(source).toContain('onScrollBeginDrag={captureTransitionStart}');
+  expect(source).toContain('onScrollBeginDrag={handlePagerDrag}');
   expect(source).toContain('entryFraction={entryFraction}');
 });

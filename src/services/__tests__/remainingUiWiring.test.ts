@@ -124,3 +124,12 @@ test('intermediate resize viewability cannot change the anchored well or replay 
  callback('onViewableItemsChanged',{...scope,viewportChanged:true})({viewableItems:[{index:5}]});expect(setCurrentIndex).not.toHaveBeenCalled();
  callback('handlePagerDrag',scope)();expect(pagerResizing.current).toBe(false);expect(captureTransitionStart).toHaveBeenCalledTimes(1);
 });
+
+
+test('native resize offset is committed with new widths without overriding initial saved-index restoration',()=>{
+ const {node,ast}=variable('(tabs)/index.tsx','pagerContentOffset');
+ const fn=(node.initializer as ts.CallExpression).arguments[0].getText(ast);
+ const viewport={width:700,columns:2,offset:6300};
+ expect(execute(fn,{pagerViewport:viewport,previousPagerViewport:{current:viewport}})()).toBeUndefined();
+ expect(execute(fn,{pagerViewport:viewport,previousPagerViewport:{current:{width:876}}})()).toEqual({x:6300,y:0});
+});

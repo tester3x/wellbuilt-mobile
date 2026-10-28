@@ -302,10 +302,11 @@ interface WellViewProps {
   isActive: boolean;
   cardWidth?: number;
   viewportHeight?: number;
+  wideLayout?: boolean;
   entryFraction: number; // Captured visible fraction of the departing well (0-1)
   onLevelChange?: (level: number) => void; // Report current level to parent
   refreshTrigger?: number; // Triggers data reload after sync
-  onSliderActiveChange?: (active: boolean) => void; // Block FlatList scroll during slider use
+  onSliderActiveChange?: (active: boolean, wellName: string) => void; // Block FlatList scroll during slider use
   loadBbls?: number; // Load size in bbls for "next load ready" calculation
   onTankDoubleTap?: () => void; // Navigate to performance screen on tank double-tap
   onTankLongPress?: () => void; // Long press to hide well from My Wells
@@ -313,7 +314,7 @@ interface WellViewProps {
   onToggleOvernightBbls?: () => void; // Toggle handler (persists to AsyncStorage)
 }
 
-const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, entryFraction, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
+const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, wideLayout = false, entryFraction, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
@@ -338,7 +339,18 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   const [showTankMath, setShowTankMath] = useState(false); // Tap first metrics row → peek bbl/in • bbl/ft (~4s, all wells)
   // showOvernightBbls is now a prop from MainScreen (global toggle)
   const [tankSlotHeight, setTankSlotHeight] = useState(0);
-  const tankScale=tankSceneScale(cardWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT);
+  const portraitTankHeight=cardWidth>=600 ? viewportHeight*0.42 : cardWidth*0.70*1.2;
+  const tankScale=wideLayout ? tankSceneScale(cardWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : portraitTankHeight/TANK_HEIGHT;
+  const sceneScale=Math.max(0.01,tankScale);
+  const styles=wideLayout ? {
+    ...wideWellStyles,
+    tankNumber:{...wideWellStyles.tankNumber,fontSize:24/sceneScale},
+    tankUnavailableLabel:{...wideWellStyles.tankUnavailableLabel,fontSize:15/sceneScale},
+    bblsAvailableText:{...wideWellStyles.bblsAvailableText,fontSize:14/sceneScale},
+    tankInfoTouchTarget:{...wideWellStyles.tankInfoTouchTarget,top:INTERIOR_TOP-18/sceneScale,right:INTERIOR_RIGHT-19/sceneScale+TANK_WIDTH*0.08,width:44/sceneScale,height:44/sceneScale},
+    tankInfoBadge:{...wideWellStyles.tankInfoBadge,width:18/sceneScale,height:18/sceneScale,borderRadius:9/sceneScale},
+    tankInfoBadgeText:{...wideWellStyles.tankInfoBadgeText,fontSize:15/sceneScale},
+  } : portraitStyles(cardWidth,viewportHeight);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
@@ -357,6 +369,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   // Pending pull / waiting state
   const [pendingPull, setPendingPull] = useState<PendingPull | null>(null);
   const wellDown = !!(pendingPull?.wellDown || levelSnapshot?.isDown);
+  // Claim the pager before the first drag, rather than after it steals the gesture.
+  useEffect(() => {
+    if (!wideLayout) return;
+    onSliderActiveChange?.(isActive && !sliderLocked && !wellDown, wellName);
+    return () => onSliderActiveChange?.(false, wellName);
+  }, [wideLayout, isActive, sliderLocked, wellDown, wellName, onSliderActiveChange]);
   // Removed: const [isWaiting, setIsWaiting] = useState(false);
   // "Waiting for WellBuilt..." spinner removed - Cloud Functions handle everything now
   const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -786,6 +804,15 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
     }
   }, [sliderUIActive, sliderOpacity]);
 
+  const unlockSlider = useCallback(() => {
+    if (wellDown) return;
+    setSliderLocked(false);
+    setSliderPeeking(false);
+    activateSliderUI();
+    resetSliderLockTimer();
+    lastTapTimeRef.current = 0;
+  }, [wellDown, activateSliderUI, resetSliderLockTimer]);
+
   // Handle tap on slider track - single tap to peek, double tap to unlock
   const handleSliderTrackTap = useCallback(() => {
     if (wellDown) return;
@@ -887,14 +914,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
       sliderLockTimerRef.current = null;
     }
     activateSliderUI();
-    onSliderActiveChange?.(true);
-  }, [activateSliderUI, onSliderActiveChange]);
+    if (!wideLayout) onSliderActiveChange?.(true, wellName);
+  }, [activateSliderUI, onSliderActiveChange, wideLayout, wellName]);
 
   // Handle slider drag end - start lock timer and notify parent
   const handleSliderEnd = useCallback(() => {
     resetSliderLockTimer();
-    onSliderActiveChange?.(false);
-  }, [resetSliderLockTimer, onSliderActiveChange]);
+    if (!wideLayout) onSliderActiveChange?.(false, wellName);
+  }, [resetSliderLockTimer, onSliderActiveChange, wideLayout, wellName]);
 
   // Animated style for slider level/datetime fade
   const sliderInfoStyle = useAnimatedStyle(() => ({
@@ -1243,13 +1270,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
       {/* Top section - tank and stats */}
       <View style={styles.topSection}>
         {/* Tank - double-tap for Performance, long-press to hide well */}
-        <View style={styles.tankSection} onLayout={event => {
+        <View style={[styles.tankSection,!wideLayout && {height:portraitTankHeight}]} onLayout={event => {
           const height = event.nativeEvent.layout.height;
           setTankSlotHeight(previous => Math.abs(previous-height)>0.5 ? height : previous);
         }}>
-        <View style={{position:'absolute',width:TANK_WIDTH,height:TANK_HEIGHT,
-          left:'50%',top:'50%',marginLeft:-TANK_WIDTH/2,marginTop:-TANK_HEIGHT/2,
-          opacity:tankSlotHeight>0 ? 1 : 0,transform:[{scale:tankScale}]}}>
+        <View style={{position:'absolute',width:wideLayout?TANK_WIDTH:TANK_WIDTH*0.92,height:TANK_HEIGHT,
+          left:'50%',top:'50%',marginLeft:-(wideLayout?TANK_WIDTH:TANK_WIDTH*0.92)/2,marginTop:-TANK_HEIGHT/2,
+          opacity:!wideLayout || tankSlotHeight>0 ? 1 : 0,transform:[{scale:tankScale}]}}>
         <Pressable onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
           onPress={() => { if (!fishTouchedRef.current) handleNormalTankTap(); }}
           onLongPress={() => { if (!fishTouchedRef.current) handleTankLongPress(); }} delayLongPress={500}>
@@ -1260,7 +1287,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
           </View>
           <View style={styles.tankInterior}>
             <View style={styles.waterWrapper}>
-              <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} />
+              <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} renderScale={tankScale} />
             </View>
 
             {/* Fish use the current fluid geometry to remain submerged under tilt. */}
@@ -1555,13 +1582,16 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
                 <View style={styles.sliderWrapper} pointerEvents={sliderLocked ? "none" : "auto"}>
                   <Slider
                     containerStyle={styles.slider}
+                    dragGain={wideLayout ? 1 : undefined}
+                    trackClickable={!wideLayout}
+                    thumbTouchSize={wideLayout ? {width:44,height:54} : undefined}
                     minimumValue={wellConfig?.routeType === 'freshwater' ? 0 : sliderMin}
                     maximumValue={wellConfig?.routeType === 'freshwater' ? Math.max(0.001,tankHeightFeet-(planningFeet ?? tankHeightFeet)) : tankHeightFeet}
                     step={0.01}
                     value={wellConfig?.routeType === 'freshwater' ? Math.min(sliderFeet,tankHeightFeet-(planningFeet ?? tankHeightFeet)) : sliderFeet}
                     onValueChange={(val) => handleSliderChange(Array.isArray(val) ? val[0] : val)}
                     onSlidingStart={handleSliderStart}
-                    onSlidingComplete={handleSliderEnd}
+                    onSlidingComplete={val => { handleSliderChange(Array.isArray(val) ? val[0] : val); handleSliderEnd(); }}
                     minimumTrackTintColor={wellDown ? '#374151' : (!sliderLocked ? '#2563EB' : '#374151')}
                     maximumTrackTintColor="#374151"
                     thumbTintColor={wellDown ? '#6B7280' : (!sliderLocked ? '#60A5FA' : '#4B5563')}
@@ -1580,7 +1610,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
                 {/* Overlay to capture taps when locked - covers full slider row */}
                 {sliderLocked && (
                   <Pressable
-                    onPress={handleSliderTrackTap}
+                    onPress={wideLayout ? unlockSlider : handleSliderTrackTap}
+                    accessibilityRole="button"
+                    accessibilityLabel={wideLayout ? 'Unlock slider for '+wellName : t('slider.unlockHint', 'Tap to peek  •  Double tap to unlock')}
                     style={styles.sliderOverlay}
                   />
                 )}
@@ -1588,7 +1620,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
             </View>
             {/* Unlock hint - always visible when locked to prevent layout jumping */}
             <Text style={[styles.unlockHint, !sliderLocked && styles.unlockHintHidden]}>
-              {t('slider.unlockHint', 'Tap to peek  •  Double tap to unlock')}
+              {wideLayout ? 'Tap the lock or track to unlock' : t('slider.unlockHint', 'Tap to peek  •  Double tap to unlock')}
             </Text>
           </View>
         );
@@ -1605,6 +1637,7 @@ export default function MainScreen() {
   const flatListRef = useRef<FlatList>(null);
   const windowSize=useWindowDimensions();
   const {columns,cardWidth,viewportHeight}=tankViewport(windowSize.width,windowSize.height);
+  const styles=columns===1 ? portraitStyles(windowSize.width,windowSize.height) : landscapeScreenStyles;
   const [visibleWellIndices,setVisibleWellIndices]=useState<number[]>([]);
   const [focusedIndex,setFocusedIndex]=useState<number|null>(null);
   const pickerListRef = useRef<FlatList>(null);
@@ -1614,7 +1647,7 @@ export default function MainScreen() {
   const [entryFraction, setEntryFraction] = useState(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
-  useEffect(()=>{setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
+  useEffect(()=>{if(columns===1)setFocusedIndex(null);setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
     flatListRef.current?.scrollToOffset({offset:cardWidth*currentIndex,animated:false});
   },[cardWidth,columns]);
   const selectionCatalogueRef = useRef<{
@@ -1640,6 +1673,12 @@ export default function MainScreen() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [pickerScrolling, setPickerScrolling] = useState(false);
   const [sliderActive, setSliderActive] = useState(false);
+  const activeSliders = useRef(new Set<string>());
+  const handleSliderActiveChange = useCallback((active:boolean,wellName:string) => {
+    if (active) activeSliders.current.add(wellName);
+    else activeSliders.current.delete(wellName);
+    setSliderActive(activeSliders.current.size > 0);
+  }, []);
   const [wells, setWells] = useState<string[]>([]);
   const actionIndex=Math.max(0,Math.min(focusedIndex ?? currentIndex,wells.length-1));
   const visibleWellRef = useRef({ well: wells[currentIndex], index: currentIndex });
@@ -2218,7 +2257,9 @@ export default function MainScreen() {
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     setVisibleWellIndices(viewableItems.flatMap(item=>item.index==null?[]:[item.index]));
     if (viewableItems.length > 0 && viewableItems[0].index !== null) {
-      setFocusedIndex(null);
+      // Layout/viewability can fire without a swipe. Keep the touched right card
+      // selected until it actually leaves the visible pair.
+      setFocusedIndex(previous => previous !== null && viewableItems.some(item=>item.index===previous) ? previous : null);
       const newIndex = viewableItems[0].index;
       // Save current as previous BEFORE updating to new
       if (newIndex !== currentIndex) {
@@ -2318,23 +2359,34 @@ export default function MainScreen() {
     );
   }, [wells, currentIndex, alert, t]);
 
-  const renderWell = useCallback(({ item, index }: { item: string; index: number }) => (
+  const renderPortraitWell = useCallback(({ item, index }: {item:string;index:number}) => (
+    <View style={{width:cardWidth,flex:1,minHeight:0}}>
+      <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={false}
+        isActive={index===currentIndex} entryFraction={entryFraction}
+        onLevelChange={level=>handleLevelChange(item,level)} refreshTrigger={refreshTrigger}
+        onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
+        onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
+        showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
+    </View>
+  ),[cardWidth,viewportHeight,currentIndex,entryFraction,handleLevelChange,refreshTrigger,handleSliderActiveChange,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  const renderLandscapeWell = useCallback(({ item, index }: { item: string; index: number }) => (
     <View style={{width:cardWidth,flex:1,minHeight:0}} onTouchStart={()=>setFocusedIndex(index)}>
       <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
         <Text style={{color:getRouteColor(wellConfigMap?.[item]?.route || ''),fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.route || '\u00a0'}</Text>
-        <Text style={{color:'#F9FAFB',fontSize:18,fontWeight:'700'}} numberOfLines={1}>{wellConfigMap?.[item]?.displayName || item}</Text>
+        <Text style={{color:'#F9FAFB',fontSize:22,fontWeight:'700'}} numberOfLines={1}>{wellConfigMap?.[item]?.displayName || item}</Text>
         <Text style={{color:'#9CA3AF',fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.operator || '\u00a0'}</Text>
       </TouchableOpacity>
       <View style={{flex:1,minHeight:0}}>
-      <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight}
+      <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={true}
         isActive={visibleWellIndices.includes(index)}
         entryFraction={entryFraction} onLevelChange={level=>handleLevelChange(item,level)}
-        refreshTrigger={refreshTrigger} onSliderActiveChange={setSliderActive} loadBbls={loadBbls}
+        refreshTrigger={refreshTrigger} onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
         onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
       </View>
     </View>
-  ),[cardWidth,viewportHeight,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  ),[cardWidth,viewportHeight,columns,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  const renderWell = columns===1 ? renderPortraitWell : renderLandscapeWell;
   const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
 
   if (!isReady) {
@@ -2437,7 +2489,7 @@ export default function MainScreen() {
         </View>
 
         {/* Keep bottom nav accessible so user can still navigate (History | Pull | More) */}
-        <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (isTablet ? spacing.md : 6) }]}>
+        <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (columns===1 && windowSize.width>=600 ? windowSize.height*0.02 : 6) }]}>
           <View style={styles.navSide}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push('/history')}>
               <Text style={styles.navIcon}>📋</Text>
@@ -2476,11 +2528,50 @@ export default function MainScreen() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Global settings is shared; each visible card owns its well metadata. */}
+      {/* Independent portrait header and landscape toolbar; never mounted together. */}
+      {columns===1 ? <>
+      {/* Header with tappable well name and settings */}
+      <View style={styles.header}>
+        {/* Empty spacer for balance */}
+        <View style={styles.headerSpacer} />
+
+        {/* Center - route name and well name */}
+        <View style={styles.headerCenter}>
+          {/* Route name - smaller, in route color */}
+          {/* Reserve both metadata rows while the catalogue loads. Adding
+              them later resizes the tank area immediately after the spinner. */}
+          <Text style={[
+            styles.routeName,
+            { color: getRouteColor(wellConfigMap?.[wells[currentIndex]]?.route || '') }
+          ]} numberOfLines={1}>
+            {wellConfigMap?.[wells[currentIndex]]?.route || '\u00a0'}
+          </Text>
+          <TouchableOpacity onPress={()=>openPicker(currentIndex)} style={styles.wellNameButton}>
+            <Text style={styles.wellName}>{wellConfigMap?.[wells[currentIndex]]?.displayName || wells[currentIndex]}</Text>
+            <Text style={styles.wellNameArrow}>▼</Text>
+            {isBackgroundSyncing && (
+              <ActivityIndicator size="small" color="#60A5FA" style={styles.syncIndicator} />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.operatorName} numberOfLines={1}>
+            {wellConfigMap?.[wells[currentIndex]]?.operator || '\u00a0'}
+          </Text>
+          <Text style={styles.positionIndicator}>{currentIndex + 1} {t('homeExtra.of')} {wells.length}</Text>
+        </View>
+
+        {/* Right - settings button */}
+        <TouchableOpacity accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={styles.settingsButton}>
+          <Text style={styles.settingsIcon}>⚙</Text>
+        </TouchableOpacity>
+      </View>
+
+      </> : <>
       <View style={[styles.header,{paddingTop:Math.max(insets.top,8),paddingBottom:4}]}>
         <Text style={{color:'#F9FAFB',fontSize:16}}>Wells</Text>
         <TouchableOpacity accessibilityLabel="Settings" onPress={()=>router.push('/settings')} style={styles.settingsButton}><Text style={styles.settingsIcon}>⚙</Text></TouchableOpacity>
       </View>
+
+      </>}
 
       {/* Swipeable well views - with memory optimization for Android */}
       <FlatList
@@ -2520,7 +2611,7 @@ export default function MainScreen() {
       />
 
       {/* Bottom nav - History | Pull | More (Summary now lives in the More sheet) */}
-      <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (isTablet ? spacing.md : 6) }]}>
+      <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (columns===1 && windowSize.width>=600 ? windowSize.height*0.02 : 6) }]}>
         <View style={styles.navSide}>
           <TouchableOpacity style={styles.navButton} onPress={() => router.push('/history')}>
             <Text style={styles.navIcon}>📋</Text>
@@ -2535,6 +2626,7 @@ export default function MainScreen() {
             <Text style={[styles.navLabel, styles.navLabelAccent, isViewer && styles.navLabelDisabled]}>
               {isViewer ? t('homeExtra.viewOnly') : wellConfigMap?.[wells[actionIndex]]?.routeType === 'freshwater' ? 'Delivery' : t('nav.pull')}
             </Text>
+            {columns>1 && <Text numberOfLines={1} style={{fontSize:12,color:'#C4A574',maxWidth:cardWidth-24}}>{wellConfigMap?.[wells[actionIndex]]?.displayName || wells[actionIndex]}</Text>}
             {currentWellHasDraft && !isViewer && (
               <View style={styles.draftIndicator}>
                 <Text style={styles.draftIndicatorIcon}>✏️</Text>
@@ -3480,3 +3572,100 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 });
+
+const baseWellStyles = styles;
+const landscapeScreenStyles = {
+  ...baseWellStyles,
+  header:{...baseWellStyles.header,paddingHorizontal:20},
+  settingsIcon:{...baseWellStyles.settingsIcon,fontSize:24},
+  bottomNav:{...baseWellStyles.bottomNav,paddingTop:8,paddingHorizontal:16},
+  navIcon:{...baseWellStyles.navIcon,fontSize:24},
+  navLabel:{...baseWellStyles.navLabel,fontSize:12},
+};
+
+// Wide cards use readable, fixed control sizes, independent of launch orientation.
+// Tank graphics alone shrink into the remaining slot; phone styles stay unchanged.
+const wideWellStyles = {
+  ...styles,
+  topSection: {...styles.topSection,paddingTop:4},
+  statsSection: {...styles.statsSection,marginTop:4},
+  statLeft: {...styles.statLeft,fontSize:14},
+  statRight: {...styles.statRight,fontSize:14},
+  statDivider: {...styles.statDivider,fontSize:14},
+  lastPullContainer: {...styles.lastPullContainer,marginTop:4},
+  lastPullLabel: {...styles.lastPullLabel,fontSize:12},
+  lastPullInfo: {...styles.lastPullInfo,fontSize:13},
+  sliderContainer: {...styles.sliderContainer,paddingHorizontal:12,marginTop:6,paddingBottom:8},
+  sliderInfoContainer: {...styles.sliderInfoContainer,minHeight:58,marginBottom:4},
+  sliderRow: {...styles.sliderRow,width:'100%' as const},
+  sliderMarkersRow: {...styles.sliderMarkersRow,width:'100%' as const},
+  sliderArrowLeft: {...styles.sliderArrowLeft,fontSize:13,width:14},
+  sliderArrowRight: {...styles.sliderArrowRight,fontSize:13,width:14},
+  sliderEndWord: {...styles.sliderEndWord,fontSize:13,width:46},
+  sliderMarkerArrowLeft: {...styles.sliderMarkerArrowLeft,width:14},
+  sliderMarkerArrowRight: {...styles.sliderMarkerArrowRight,width:14},
+  sliderMarkerLeft: {...styles.sliderMarkerLeft,fontSize:11,width:46},
+  sliderMarkerRight: {...styles.sliderMarkerRight,fontSize:11,width:46},
+  sliderMarkerPositioned: {...styles.sliderMarkerPositioned,fontSize:11},
+  sliderValue: {...styles.sliderValue,fontSize:22},
+  sliderBbls: {...styles.sliderBbls,fontSize:18},
+  nextPullLabel: {...styles.nextPullLabel,fontSize:12},
+  nextPullTime: {...styles.nextPullTime,fontSize:22},
+  readyAt: {...styles.readyAt,fontSize:14,marginTop:4},
+  unlockHint: {...styles.unlockHint,fontSize:12,marginTop:6},
+};
+
+/** Original pre-dual-card portrait layout (81efeb3), evaluated with the current
+ * portrait window. Never imports landscape's font/track sizing into portrait.
+ */
+function portraitStyles(width:number,height:number) {
+  const tablet=width>=600;
+  const scale=(tablet?height*0.42:width*0.70*1.2)/TANK_HEIGHT;
+  const font=(fraction:number)=>Math.round(tablet?Math.min(fraction*height*0.6,fraction*800):fraction*height);
+  return {
+    ...baseWellStyles,
+    tankNumber:{...baseWellStyles.tankNumber,fontSize:font(0.028)/scale},
+    tankUnavailableLabel:{...baseWellStyles.tankUnavailableLabel,fontSize:font(0.016)/scale},
+    bblsAvailableText:{...baseWellStyles.bblsAvailableText,fontSize:font(0.016)/scale},
+    tankInfoTouchTarget:{...baseWellStyles.tankInfoTouchTarget,top:INTERIOR_TOP-18/scale,right:INTERIOR_RIGHT-19/scale,width:44/scale,height:44/scale},
+    tankInfoBadge:{...baseWellStyles.tankInfoBadge,width:18/scale,height:18/scale,borderRadius:9/scale},
+    tankInfoBadgeText:{...baseWellStyles.tankInfoBadgeText,fontSize:15/scale},
+    header:{...baseWellStyles.header,paddingTop:height*0.07,paddingBottom:height*0.01,paddingHorizontal:width*0.05},
+    headerSpacer:{width:height*0.028},
+    routeName:{...baseWellStyles.routeName,fontSize:height*0.015},
+    wellName:{...baseWellStyles.wellName,fontSize:height*0.028},
+    operatorName:{...baseWellStyles.operatorName,fontSize:height*0.012,maxWidth:width-96},
+    wellNameArrow:{...baseWellStyles.wellNameArrow,fontSize:height*0.014},
+    positionIndicator:{...baseWellStyles.positionIndicator,fontSize:height*0.015},
+    settingsIcon:{...baseWellStyles.settingsIcon,fontSize:height*0.028},
+    wellView:{...baseWellStyles.wellView,width,justifyContent:'space-between' as const},
+    topSection:{alignItems:'center' as const,paddingTop:height*(tablet?0.02:0.01)},
+    tankSection:{alignItems:'center' as const,justifyContent:'center' as const,width:'100%' as const,marginBottom:height*0.01},
+    statsSection:{...baseWellStyles.statsSection,marginTop:height*0.005},
+    statLeft:{...baseWellStyles.statLeft,fontSize:font(0.018)},
+    statRight:{...baseWellStyles.statRight,fontSize:font(0.018)},
+    statDivider:{...baseWellStyles.statDivider,fontSize:font(0.018)},
+    lastPullContainer:{...baseWellStyles.lastPullContainer,marginTop:height*(tablet?0.005:0.008)},
+    lastPullLabel:{...baseWellStyles.lastPullLabel,fontSize:font(0.013)},
+    lastPullInfo:{...baseWellStyles.lastPullInfo,fontSize:font(0.015)},
+    sliderContainer:{...baseWellStyles.sliderContainer,paddingHorizontal:height*0.02,marginTop:height*(tablet?0.01:0.012),paddingBottom:height*(tablet?0.03:0.02)},
+    sliderInfoContainer:{...baseWellStyles.sliderInfoContainer,minHeight:tablet?55:height*0.065,marginBottom:height*0.005},
+    sliderRow:{...baseWellStyles.sliderRow,width:(tablet?'70%':'100%') as '70%'|'100%'},
+    sliderMarkersRow:{...baseWellStyles.sliderMarkersRow,width:(tablet?'70%':'100%') as '70%'|'100%'},
+    sliderArrowLeft:{...baseWellStyles.sliderArrowLeft,fontSize:font(0.014)},
+    sliderArrowRight:{...baseWellStyles.sliderArrowRight,fontSize:font(0.014)},
+    sliderEndWord:{...baseWellStyles.sliderEndWord,fontSize:font(0.014)},
+    sliderMarkerLeft:{...baseWellStyles.sliderMarkerLeft,fontSize:font(0.011)},
+    sliderMarkerRight:{...baseWellStyles.sliderMarkerRight,fontSize:font(0.011)},
+    sliderMarkerPositioned:{...baseWellStyles.sliderMarkerPositioned,fontSize:font(0.011)},
+    sliderValue:{...baseWellStyles.sliderValue,fontSize:font(0.030)},
+    sliderBbls:{...baseWellStyles.sliderBbls,fontSize:font(0.026)},
+    nextPullLabel:{...baseWellStyles.nextPullLabel,fontSize:font(0.014)},
+    nextPullTime:{...baseWellStyles.nextPullTime,fontSize:font(0.026)},
+    readyAt:{...baseWellStyles.readyAt,fontSize:font(0.018),marginTop:height*(tablet?0.005:0.008)},
+    unlockHint:{...baseWellStyles.unlockHint,fontSize:font(0.013),marginTop:height*0.02},
+    navIcon:{...baseWellStyles.navIcon,fontSize:Math.round(height*0.025)},
+    navLabel:{...baseWellStyles.navLabel,fontSize:Math.round(height*0.012)},
+    bottomNav:{...baseWellStyles.bottomNav,paddingTop:height*(tablet?0.02:0.015),paddingHorizontal:tablet?width*0.15:height*0.02},
+  };
+}

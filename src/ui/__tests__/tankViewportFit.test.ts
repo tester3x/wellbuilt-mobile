@@ -28,3 +28,19 @@ test('unmeasured or exhausted slots do not impose a minimum overflowing tank siz
   expect(tankSceneScale(20, 100, 300, 360)).toBe(0);
   expect(tankSceneScale(360, NaN, 300, 360)).toBe(0);
 });
+
+test('portrait and landscape select independent card counts on tablet and unfolded Fold',()=>{
+  expect(tankViewport(876,1400)).toMatchObject({columns:1,cardWidth:876});
+  expect(tankViewport(1400,876)).toMatchObject({columns:2,cardWidth:700});
+  expect(tankViewport(748,830)).toMatchObject({columns:1,cardWidth:748});
+  expect(tankViewport(830,748)).toMatchObject({columns:2,cardWidth:415});
+  expect(tankViewport(360,780).columns).toBe(1);
+});
+
+test('landscape tank size is independent of the orientation used to launch',()=>{
+ const fromPortrait=tankSceneScale(415,210,490,588,true);
+ const fromLandscape=tankSceneScale(415,210,250,300,true);
+ expect(588*fromPortrait).toBeCloseTo(300*fromLandscape);
+ expect(490*fromPortrait).toBeCloseTo(250*fromLandscape);
+ expect(588*fromPortrait).toBeLessThanOrEqual(210);
+});

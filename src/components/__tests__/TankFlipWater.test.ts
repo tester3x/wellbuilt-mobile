@@ -2,7 +2,7 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { TankFlipWater } from '../TankFlipWater';
 const mockStyles: Array<() => any> = [];
-jest.mock('react-native', () => ({ View: 'view', StyleSheet: { absoluteFill: {}, create: (s: any) => s } }));
+jest.mock('react-native', () => ({ View: 'view', PixelRatio: { get: () => 3 }, StyleSheet: { absoluteFill: {}, create: (s: any) => s } }));
 jest.mock('react-native-reanimated', () => ({ __esModule: true, default: { View: 'water' }, useAnimatedStyle: (f: () => any) => { mockStyles.push(f); return f(); } }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 it('writes explicit column coordinates on inverted-to-upright return, with no stale bottom anchor', async () => {

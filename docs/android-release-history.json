@@ -90,15 +90,17 @@
         "aapt package122/version2.1.0 and apksigner approved signer verified"
       ],
       "crossComputerReconciliation": "Both active branches include reconciled desktop/laptop runtime through8745f0f. All GitHub heads reviewed; expected ancestry retained. Other-machine unpushed work cannot be discovered.",
-      "verificationState": "ADB verified122 installed on S24 and ZFold. S24 normal first launch, screenshot verifies no border/all details/slider visible; vertical gesture did not move the card. Native bidirectional swipe recording reviewed after layout correction (798 frames,8 janky frames,1.00 percent by Android gfxinfo). Actual unfolded ZFold1968x2184 screenshot verifies two cards/headers/statistics/sliders fit without scrolling and no blue border. Tablet absent from both ADB and Samsung Windows USB enumeration; tablet installation/landscape verification pending.",
+      "verificationState": "ADB verified122 on S24, ZFold and tablet S10+ SM-X828U. Tablet upgraded85 to122 with matching signer and existing data preserved. Landscape2800x1752 shows both tanks/details/sliders visible; auto-rotate restored to original enabled1/user_rotation0. Native user review identified unacceptable portrait reuse, wide slider proportions/unlock/drag, info-badge offset and water-strip seams. M122 is not acceptance evidence for the queued separate portrait/landscape correction. No real load submitted during tablet check.",
       "privateEvidence": [
         "C:/dev/tmp/wbm122-gradle-private.log",
         "C:/dev/tmp/wbm122-swipe-private.mp4",
         "C:/dev/tmp/wbm122-s24-after-vertical-private.png",
-        "C:/dev/tmp/wbm122-zfold-open-settled-private.png"
+        "C:/dev/tmp/wbm122-zfold-open-settled-private.png",
+        "C:/dev/tmp/wbm122-tablet-landscape-private.png",
+        "C:/dev/tmp/wbm122-tablet-after-rotate-private.png"
       ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "Evidence-only follow-up; M122 APK source8745f0f, not later documentation commits. Reservations120/121 retained; no EAS cloud build. Tablet check awaits USB device."
+  "notes": "M122 APK source8745f0f remains immutable. Tablet122 installation and layout defects recorded. Separate portrait/landscape source corrections remain unbuilt; no EAS cloud build or new APK was started."
 }

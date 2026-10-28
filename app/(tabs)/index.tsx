@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -1650,9 +1650,20 @@ export default function MainScreen() {
   const [entryFraction, setEntryFraction] = useState(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
-  useLayoutEffect(()=>{if(columns===1)setFocusedIndex(null);setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
-    flatListRef.current?.scrollToOffset({offset:cardWidth*currentIndex,animated:false});
-  },[cardWidth,columns]);
+  // A resize is not a swipe. Deliver the new width and matching native offset
+  // together, and ignore intermediate viewability at the previous pixel offset.
+  const pagerViewport=useMemo(()=>({width:cardWidth,columns,offset:cardWidth*currentIndex}),[cardWidth,columns]);
+  const previousPagerViewport=useRef(pagerViewport);
+  const pagerResizing=useRef(false);
+  const viewportChanged=previousPagerViewport.current!==pagerViewport;
+  const pagerContentOffset=useMemo(()=>({x:pagerViewport.offset,y:0}),[pagerViewport]);
+  useLayoutEffect(()=>{
+    if(previousPagerViewport.current!==pagerViewport)pagerResizing.current=true;
+    previousPagerViewport.current=pagerViewport;
+    if(columns===1)setFocusedIndex(null);
+    setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
+    flatListRef.current?.scrollToOffset({offset:pagerViewport.offset,animated:false});
+  },[pagerViewport]);
   const selectionCatalogueRef = useRef<{
     owner: Awaited<ReturnType<typeof captureWellSelectionOwner>>;
     eligible: string[];
@@ -2258,6 +2269,7 @@ export default function MainScreen() {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    if(viewportChanged || pagerResizing.current)return;
     setVisibleWellIndices(viewableItems.flatMap(item=>item.index==null?[]:[item.index]));
     if (viewableItems.length > 0 && viewableItems[0].index !== null) {
       // Layout/viewability can fire without a swipe. Keep the touched right card
@@ -2271,12 +2283,18 @@ export default function MainScreen() {
       }
       setCurrentIndex(newIndex);
     }
-  }, [currentIndex, captureTransitionStart]);
+  }, [currentIndex, captureTransitionStart, viewportChanged]);
+
+  const handlePagerDrag=useCallback(()=>{
+    pagerResizing.current=false;
+    captureTransitionStart();
+  },[captureTransitionStart]);
 
   const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
 
   // Open picker for well selection
   const openPicker = (index=currentIndex) => {
+    pagerResizing.current=false;
     setWellSearch('');
     setTempSelectedIndex(index);
     lastTickIndex.current = index;
@@ -2585,7 +2603,8 @@ export default function MainScreen() {
         decelerationRate="fast"
         style={{flex:1,minHeight:0}}
         showsHorizontalScrollIndicator={false}
-        onScrollBeginDrag={captureTransitionStart}
+        contentOffset={pagerContentOffset}
+        onScrollBeginDrag={handlePagerDrag}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         getItemLayout={getItemLayout}

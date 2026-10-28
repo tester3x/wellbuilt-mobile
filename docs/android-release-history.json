@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 126,
-  "observedAt": "2026-10-28T04:32:38.178360+00:00",
+  "versionCodeFloor": 127,
+  "observedAt": "2026-10-28T04:40:12.216665+00:00",
   "installedReports": [
     {
       "app": "WB-T",
@@ -186,10 +186,37 @@
         "C:/dev/tmp/wbm126-tablet-toggle-left-private.png",
         "C:/dev/tmp/wbm126-tablet-rotation-settled-private.png"
       ]
+    },
+    {
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "Local registered-home SDK/Gradle arm64-v8a account-device-test equivalent, original signer; no cloud",
+      "sourceCommit": "fdfbabc6826fa963302017babf077f15b8a8f413",
+      "versionCode": 127,
+      "sha256": "49161b8e6ebd079dcd4936db390fdf4fce17a3ad68379c60c8f98e3835c4c17c",
+      "artifact": "C:\\dev\\tmp\\WB-M127-fdfbabc.apk",
+      "buildTimeUTC": "2026-10-28T04:35:23.642512+00:00",
+      "reservation": "android-release-v127",
+      "checks": [
+        "131 suites/1349 tests",
+        "TypeScript noEmit",
+        "15 release-gate regressions",
+        "Strict all-head/reservation/forced bundle/postbuild checks",
+        "aapt127/package and approved apksigner certificate"
+      ],
+      "verificationState": "S24/tablet test-only; no ZFold install. Count glyph readable and initial full layouts fit. Tablet recorded rotation at middle Bayonet index9 catches intermediate offset/viewability selecting wrong neighbours and replaying a second entry despite stable mounts. Hold rollout for atomic offset/resize guard correction. Rotation settings restored1/0 by finally block and independently read. User ZFold125 missing-slider state remains unavailable over USB.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm127-release-private.json",
+        "C:/dev/tmp/wbm127-gradle-private.log",
+        "C:/dev/tmp/wbm127-rotation-frames-private.json",
+        "C:/dev/tmp/wbm127-rotation-landscape-board-private.png",
+        "C:/dev/tmp/wbm127-rotation-portrait-return-board-private.png"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M126 remains S24/tablet test-only. User reported rotation stutter and tiny tank count; corrected source keeps well/panel mounts stable across portrait/landscape, stages resize without swipe-entry replay, aligns pager before paint, preloads two cards and uses badge-relative count font. These follow-ups require next combined source reservation/build/device checks before ZFold rollout.",
+  "notes": "M126/M127 test-only on S24/tablet; ZFold125 unchanged. Recorded mid-list rotation found stale pixel offset generating wrong viewability. Next source uses native declarative contentOffset committed with new card width, ignores resize-only viewability until real navigation, preserves anchored index and mount/data/scene identity. Requires native replay before ZFold rollout.",
   "failedReservations": [
     {
       "versionCode": 123,

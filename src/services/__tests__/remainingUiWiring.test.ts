@@ -68,7 +68,7 @@ test('right-card focus survives viewability refresh and Pull opens that exact we
  let focused:number|null=1,current=0;
  const view=callback('onViewableItemsChanged',{
   setVisibleWellIndices:()=>{},setFocusedIndex:(update:any)=>{focused=update(focused);},
-  currentIndex:0,setCurrentIndex:(v:number)=>{current=v;},captureTransitionStart:()=>{},console,
+  viewportChanged:false,pagerResizing:{current:false},currentIndex:0,setCurrentIndex:(v:number)=>{current=v;},captureTransitionStart:()=>{},console,
  });
  view({viewableItems:[{index:0},{index:1}]});
  expect(focused).toBe(1);expect(current).toBe(0);
@@ -111,4 +111,16 @@ test('restored portrait has intrinsic middle and original phone/tablet typograph
  expect(phone.wellName.fontSize).toBeCloseTo(22.4);expect(phone.statLeft.fontSize).toBe(14);
  expect(phone.sliderRow.width).toBe('100%');expect(tablet.sliderRow.width).toBe('70%');
  expect(tablet.wellName.fontSize).toBeCloseTo(39.2);
+});
+
+
+test('intermediate resize viewability cannot change the anchored well or replay swipe entry',()=>{
+ const setVisibleWellIndices=jest.fn(),setFocusedIndex=jest.fn(),setCurrentIndex=jest.fn(),captureTransitionStart=jest.fn();
+ const pagerResizing={current:true};
+ const scope={viewportChanged:false,pagerResizing,setVisibleWellIndices,setFocusedIndex,setCurrentIndex,captureTransitionStart,currentIndex:9,console};
+ callback('onViewableItemsChanged',scope)({viewableItems:[{index:14},{index:15}]});
+ expect(setVisibleWellIndices).not.toHaveBeenCalled();expect(setCurrentIndex).not.toHaveBeenCalled();expect(captureTransitionStart).not.toHaveBeenCalled();
+ pagerResizing.current=false;
+ callback('onViewableItemsChanged',{...scope,viewportChanged:true})({viewableItems:[{index:5}]});expect(setCurrentIndex).not.toHaveBeenCalled();
+ callback('handlePagerDrag',scope)();expect(pagerResizing.current).toBe(false);expect(captureTransitionStart).toHaveBeenCalledTimes(1);
 });

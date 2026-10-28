@@ -82,3 +82,5 @@ scratchpad*
 output/
 output-*.log
 output-*-private.json
+# Local Gradle outputs for the in-repository Expo native module.
+/modules/wellbuilt-platform/android/build/

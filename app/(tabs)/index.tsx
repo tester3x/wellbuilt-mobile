@@ -1,20 +1,20 @@
 import {ProductionRateRow} from '../../components/ProductionRateRow';
 import {SliderInfoSlot} from '../../components/SliderInfoSlot';
 import {WellCardLayout} from '../../components/WellCardLayouts';
-import {WellPagerCard} from '../../components/WellPagerCard';
+import {WellPagerCard,WellPanelScaleContext} from '../../components/WellPagerCard';
 import { thresholdTime } from '@tester3x/water-hauling';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getFreshWaterSupply } from '../../src/services/freshWaterSupply';
 import { tankViewport, tankSceneScale } from '../../src/ui/tankViewport';
 import { wellPagerBuffer } from '../../src/ui/wellPagerBuffer';
-import { wellContentWidth, foldablePhoneLayout } from '../../src/ui/wellContentFrame';
+import { wellContentWidth, foldablePhoneLayout, FOLD_PANEL_WIDTH, usesFoldPanel } from '../../src/ui/wellContentFrame';
 import { resolveTankHeight, tankFillFraction } from '../../src/utils/tankHeight';
 import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -350,12 +350,16 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   // showOvernightBbls is now a prop from MainScreen (global toggle)
   const [tankSlotHeight, setTankSlotHeight] = useState(0);
   const [tankSlotWidth,setTankSlotWidth] = useState(cardWidth);
-  const contentWidth=wellContentWidth(cardWidth);
+  const panelScale=useContext(WellPanelScaleContext);
+  const fittedFold=usesFoldPanel(cardWidth,wideLayout);
+  const contentWidth=fittedFold ? FOLD_PANEL_WIDTH : wellContentWidth(cardWidth);
   const portraitTankHeight=foldablePhoneLayout ? contentWidth*0.70*1.2 : cardWidth>=600 ? viewportHeight*0.42 : cardWidth*0.70*1.2;
-  const tankScale=foldablePhoneLayout ? (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT : wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT;
+  const tankScale=fittedFold ? portraitTankHeight/TANK_HEIGHT : foldablePhoneLayout ? (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT : wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT;
   const sceneScale=Math.max(0.01,tankScale);
   const styles=foldablePhoneLayout ? {
     ...portraitStyles(contentWidth,contentWidth*2.2,sceneScale),
+    tankBadge:fittedFold?{...baseWellStyles.tankBadge,width:18/sceneScale,height:18/sceneScale,borderRadius:9/sceneScale}:baseWellStyles.tankBadge,
+    tankBadgeText:fittedFold?{...baseWellStyles.tankBadgeText,fontSize:14/sceneScale,lineHeight:18/sceneScale}:baseWellStyles.tankBadgeText,
     sliderRowContainer:{...baseWellStyles.sliderRowContainer,flexShrink:0},
   } : wideLayout ? {
     ...wideWellStyles,
@@ -1274,7 +1278,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   };
 
   const tankPanel=(
-<View style={[styles.tankSection,foldablePhoneLayout ? {flexBasis:portraitTankHeight,maxHeight:portraitTankHeight,flexShrink:1,minHeight:0} : !wideLayout && {height:portraitTankHeight,flexShrink:1,minHeight:0}]} onLayout={event => {
+<View style={[styles.tankSection,fittedFold ? {height:portraitTankHeight,flexGrow:0,flexShrink:0} : foldablePhoneLayout ? {flexBasis:portraitTankHeight,maxHeight:portraitTankHeight,flexShrink:1,minHeight:0} : !wideLayout && {height:portraitTankHeight,flexShrink:1,minHeight:0}]} onLayout={event => {
           const {height,width} = event.nativeEvent.layout;
           setTankSlotWidth(previous=>Math.abs(previous-width)>0.5 ? width : previous);
           setTankSlotHeight(previous => Math.abs(previous-height)>0.5 ? height : previous);
@@ -1292,7 +1296,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
           </View>
           <View style={styles.tankInterior}>
             <View style={styles.waterWrapper}>
-              <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} renderScale={tankScale} />
+              <TankFlipWater width={INTERIOR_WIDTH} height={INTERIOR_HEIGHT} fill={waterFraction} offsets={fluidOffsets} inverted={fluidInverted} renderScale={tankScale*panelScale} />
             </View>
 
             {/* Fish use the current fluid geometry to remain submerged under tilt. */}
@@ -1592,6 +1596,7 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
                 <Text style={[styles.sliderEndWord, wellDown && styles.textDisabled]}>{wellConfig?.routeType === 'freshwater' ? 'Less' : t('well.pull')}</Text>
                 <View style={styles.sliderWrapper} pointerEvents={sliderLocked ? "none" : "auto"}>
                   <Slider
+                    layoutScale={panelScale}
                     containerStyle={styles.slider}
                     dragGain={wideLayout ? 1 : undefined}
                     trackClickable={!wideLayout}
@@ -1638,7 +1643,7 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
       })()
   );
   const panels={tank:tankPanel,statistics:statisticsPanel,delivery:deliveryPanel,planning:planningPanel,rootStyle:styles.wellView,topStyle:styles.topSection};
-  return <WellCardLayout {...panels} wideLayout={wideLayout} contentWidth={foldablePhoneLayout ? contentWidth : undefined}/>;
+  return <WellCardLayout {...panels} wideLayout={wideLayout} fixedPanel={fittedFold} contentWidth={foldablePhoneLayout ? contentWidth : undefined}/>;
 
 });
 

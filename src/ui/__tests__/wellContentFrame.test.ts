@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import {runInNewContext} from 'vm';
-import {wellContentWidth} from '../wellContentFrame';
+import {wellContentWidth,foldPanelFit,FOLD_PANEL_WIDTH,FOLD_BODY_HEIGHT,usesFoldPanel} from '../wellContentFrame';
 
 test('Fold cover, centered unfolded view and both landscape columns share one phone frame',()=>{
   expect([412,750,416,416].map(width=>wellContentWidth(width,true))).toEqual([412,412,412,412]);
@@ -30,10 +30,31 @@ test('the same phone frame produces identical text and slider dimensions in each
   }
   expect(source).toContain('const styles=foldablePhoneLayout ? {');
   expect(source).toContain('...portraitStyles(contentWidth,contentWidth*2.2,sceneScale)');
-  expect(source).toContain('maxHeight:portraitTankHeight');
+  expect(source).toContain('fittedFold ? portraitTankHeight/TANK_HEIGHT');
+  expect(source).toContain('fittedFold ? {height:portraitTankHeight,flexGrow:0,flexShrink:0}');
 });
 
 test('Fold detection uses stable hardware capability rather than the current window or a Samsung model name',()=>{
   const native=fs.readFileSync(path.resolve(__dirname,'../../../modules/wellbuilt-platform/android/src/main/java/expo/modules/wbplatform/WellbuiltPlatformModule.kt'),'utf8');
   expect(native).toContain('Constant("isFoldable") { context().packageManager.hasSystemFeature("android.hardware.sensor.hinge_angle") }');
+});
+
+test.each([[412,800,false],[750,650,false],[416,570,true],[416,630,true]] as const)('whole Fold panel fits %s x %s with one scale', (width,height,wide)=>{
+ const fit=foldPanelFit(width,height,wide);
+ expect(fit.width*fit.scale).toBeLessThanOrEqual(width);
+ expect(fit.height*fit.scale).toBeLessThanOrEqual(height);
+ const tank=FOLD_PANEL_WIDTH*.70*1.2, text=FOLD_PANEL_WIDTH*2.2*.018;
+ expect((tank*fit.scale)/(text*fit.scale)).toBeCloseTo(tank/text);
+ expect(fit.height).toBe(wide?FOLD_BODY_HEIGHT+80:FOLD_BODY_HEIGHT);
+});
+test('invalid/exhausted geometry never paints an overflowing panel',()=>{
+ expect(foldPanelFit(412,0,true).scale).toBe(0);
+ expect(foldPanelFit(NaN,800,true).scale).toBe(0);
+});
+
+test('only unfolded Fold panels use uniform fitting; cover, phone and tablet keep their existing layout',()=>{
+ expect(usesFoldPanel(412,false,true)).toBe(false);
+ expect(usesFoldPanel(750,false,true)).toBe(true);
+ expect(usesFoldPanel(416,true,true)).toBe(true);
+ expect(usesFoldPanel(700,true,false)).toBe(false);
 });

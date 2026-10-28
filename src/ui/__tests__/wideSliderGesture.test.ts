@@ -51,3 +51,10 @@ test('phone slider retains its existing precision gain',()=>{
  slider._handlePanResponderGrant({nativeEvent:{locationX:122,locationY:27}});
  expect(slider._getValue({dx:40,dy:0})).toBeCloseTo(11.4);
 });
+
+test.each([0.6,0.75,0.9,1])('Fold scale %s preserves physical slider travel relative to the track',layoutScale=>{
+ const slider=new LevelTimeSlider({...base.Slider.defaultProps,minimumValue:0,maximumValue:20,value:10,trackClickable:false,layoutScale});
+ slider.state.containerSize={width:244,height:54};slider.state.thumbSize={width:44,height:44};
+ slider._handlePanResponderGrant({nativeEvent:{locationX:122,locationY:27}});
+ expect(slider._getValue({dx:40*layoutScale,dy:0})).toBeCloseTo(11.4);
+});

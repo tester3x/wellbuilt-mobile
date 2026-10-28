@@ -266,6 +266,29 @@
         "C:/dev/tmp/wbm129-rotation-landscape-board-private.png",
         "C:/dev/tmp/wbm129-rotate-landscape-right-slider-private.png"
       ]
+    },
+    {
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "Local registered-home SDK/Gradle arm64-v8a account-device-test equivalent, original signer; no cloud",
+      "sourceCommit": "2e40300cd6a8f7e15390ff493e8d18c1f629c5c3",
+      "versionCode": 130,
+      "sha256": "cbd2ed42b3679c7532ec68c7b5aa0e4f57a2e5445e6a3b6b643630e12c18c45e",
+      "artifact": "C:/dev/tmp/WB-M130-2e40300.apk",
+      "buildTimeUTC": "2026-10-28T05:01:33.716165+00:00",
+      "reservation": "android-release-v130",
+      "checks": [
+        "131 suites/1353 tests",
+        "TypeScript noEmit",
+        "Strict release gate, approved aapt/apksigner identity"
+      ],
+      "verificationState": "Test-only on S24/tablet; native rotation still evicts mounted cards. ZFold125 preserved; queued adaptive render buffer addresses list eviction, not yet natively verified.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm130-release-private.json",
+        "C:/dev/tmp/wbm130-gradle-private.log",
+        "C:/dev/tmp/wbm130-rotation-lifecycle-private.log"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",

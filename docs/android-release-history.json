@@ -289,10 +289,39 @@
         "C:/dev/tmp/wbm130-gradle-private.log",
         "C:/dev/tmp/wbm130-rotation-lifecycle-private.log"
       ]
+    },
+    {
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "Local registered-home SDK/Gradle arm64-v8a account-device-test equivalent, original signer; no cloud",
+      "sourceCommit": "15caa0fcd09f39cad5c915a49f5c52a0987da2a7",
+      "versionCode": 131,
+      "sha256": "673cd66d8d0476b7d482f86a17fc44b447be64bf750b0bce0674467088e38d8b",
+      "artifact": "C:/dev/tmp/WB-M131-15caa0f.apk",
+      "buildTimeUTC": "2026-10-28T13:53:31.551587+00:00",
+      "reservation": "android-release-v131",
+      "checks": [
+        "132 suites/1359 tests",
+        "TypeScript noEmit",
+        "15 release-gate regressions",
+        "Strict fresh all-head/reservation/forced bundle/postbuild checks",
+        "aapt131/package and approved apksigner certificate",
+        "Installed base APK SHA256 matches artifact on S24 and ZFold"
+      ],
+      "verificationState": "Installed on S24 and ZFold per user request. S24 portrait fits, swipe changes well, locked/peek slider-hint region pixel-identical. ZFold unfolded portrait fits all panels without scrolling; 12 swipes reached interior selection. Rotation replay interrupted by user opening notifications/WhatsApp; preferences restored, no native rotation pass claimed yet. Tablet not connected and not installed. Await free ZFold for uninterrupted rotation check.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm131-release-private.json",
+        "C:/dev/tmp/wbm131-gradle-private.log",
+        "C:/dev/tmp/wbm131-installed-proof-private.json",
+        "C:/dev/tmp/wbm131-s24-ready-private.png",
+        "C:/dev/tmp/wbm131-s24-peek-private.png",
+        "C:/dev/tmp/wbm131-zfold-middle-private.png"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M126-129 test-only; ZFold125 unchanged. M129 keeps Main selection anchored but native ScrollView still drops/reloads cells during rotation. Next source explicitly uses native pagingEnabled alongside existing card interval, disabling Android requestChildFocus free-scroll scrollToChild path. Repeat native verification before rollout.",
+  "notes": "M131 installed on both phones, original signer and exact artifact independently confirmed. S24 portrait and stationary peek passed. Uninterrupted ZFold rotation verification pending; prior M126-130 remain failed/test-only rotation baselines. No cloud build or load/config mutation.",
   "failedReservations": [
     {
       "versionCode": 123,

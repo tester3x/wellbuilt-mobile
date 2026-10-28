@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 121,
-  "observedAt": "2026-10-28T02:40:06.534245+00:00",
+  "versionCodeFloor": 122,
+  "observedAt": "2026-10-28T03:04:03.284164+00:00",
   "installedReports": [
     {
       "app": "WB-T",
@@ -64,14 +64,41 @@
         "APK embedded transition identifiers and native source map verified"
       ],
       "crossComputerReconciliation": "Both active branches reconciled through runtime abe7dd0 and source2ab22c2; all GitHub heads individually reviewed in reservation. Other-machine unpushed work cannot be discovered.",
-      "verificationState": "S24 installed121; first launch without restart; recorded shrink/grow and quick reversal pass. Background/foreground retained same well/level. ZFold installed121 with matching existing certificate; first launch opens successfully. No real load submitted for swipe tests.",
+      "verificationState": "S24 installed121; first launch without restart; recorded shrink/grow and quick reversal pass. Background/foreground retained same well/level. ZFold installed121 with matching existing certificate; first launch opens successfully. No real load submitted for swipe tests. User then reported vertical-scroll/blue-focus-border regression on S24 and unfolded Fold; superseded by corrective122.",
       "privateEvidence": [
         "C:/dev/tmp/wbm121-gradle-private.log",
         "C:/dev/tmp/wbm121-swipe-private.mp4",
         "C:/dev/tmp/wbm121-gfx-private.log"
       ]
+    },
+    {
+      "sourceCommit": "8745f0fee6103d8737b53d1034cac1fbfe1eacf2",
+      "versionCode": 122,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "c8204bbb52718552f70729a88ed68a8c002715ec56a6c049f8cc8b8d039635f7",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "Local Android SDK/Gradle arm64-v8a, account-device-test equivalent, configured Expo prebuild plugins, existing release key, JDK17/SDK36",
+      "buildTimeUTC": "2026-10-28T03:04:03.284164+00:00",
+      "reservation": "android-release-v122",
+      "artifact": "C:/dev/tmp/WB-M122-8745f0f.apk",
+      "checks": [
+        "125 Jest suites/1319 tests passed with detectOpenHandles",
+        "TypeScript noEmit exit0",
+        "15 release-gate regressions passed",
+        "Strict source/reservation/forced bundle/postbuild remote checks passed",
+        "aapt package122/version2.1.0 and apksigner approved signer verified"
+      ],
+      "crossComputerReconciliation": "Both active branches include reconciled desktop/laptop runtime through8745f0f. All GitHub heads reviewed; expected ancestry retained. Other-machine unpushed work cannot be discovered.",
+      "verificationState": "ADB verified122 installed on S24 and ZFold. S24 normal first launch, screenshot verifies no border/all details/slider visible; vertical gesture did not move the card. Native bidirectional swipe recording reviewed after layout correction (798 frames,8 janky frames,1.00 percent by Android gfxinfo). Actual unfolded ZFold1968x2184 screenshot verifies two cards/headers/statistics/sliders fit without scrolling and no blue border. Tablet absent from both ADB and Samsung Windows USB enumeration; tablet installation/landscape verification pending.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm122-gradle-private.log",
+        "C:/dev/tmp/wbm122-swipe-private.mp4",
+        "C:/dev/tmp/wbm122-s24-after-vertical-private.png",
+        "C:/dev/tmp/wbm122-zfold-open-settled-private.png"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "Evidence-only follow-up; APK source is2ab22c2, not this later documentation commit. M120 reservation remains consumed. No EAS cloud build. Version/signature/provenance checked separately from device UI."
+  "notes": "Evidence-only follow-up; M122 APK source8745f0f, not later documentation commits. Reservations120/121 retained; no EAS cloud build. Tablet check awaits USB device."
 }

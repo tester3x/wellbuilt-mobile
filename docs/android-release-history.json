@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 119,
-  "observedAt": "2026-10-27",
+  "versionCodeFloor": 121,
+  "observedAt": "2026-10-28T02:40:06.534245+00:00",
   "installedReports": [
     {
       "app": "WB-T",
@@ -33,8 +33,45 @@
       "method": "local Android SDK/Gradle, arm64-v8a",
       "evidencePacket": "wbm-last-load-20261027-return.md",
       "crossComputerReconciliation": "Incomplete: other-machine branch tips not included; do not claim full reconciliation."
+    },
+    {
+      "sourceCommit": "08e633acaf67bc0a92617b20b3b30ec852a25a14",
+      "versionCode": 120,
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "57376fa80d181d52a11ccd818dd49d06b604859b5d613b6929eee18ef55f2ee1",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "Local Android SDK/Gradle, arm64-v8a",
+      "verificationState": "Compiled, not released or installed. Strict postbuild gate rejected untracked Gradle output from repository native module; reservation retained. Fixed ignore rule and rebuilt121.",
+      "artifact": "C:/dev/tmp/WB-M120-unreleased-private.apk"
+    },
+    {
+      "sourceCommit": "2ab22c2bd8d3d29c6594aedaf79c1295dc6a04be",
+      "versionCode": 121,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "2bb3e5ef6de948b0a0baaf5b582b53ff9c477023745b52b790e373394965c48d",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "method": "Local Android SDK/Gradle arm64-v8a; account-device-test equivalent; JDK17/SDK36; configured Expo prebuild plugins; existing release signer",
+      "buildTimeUTC": "2026-10-28T02:40:06.534245+00:00",
+      "reservation": "android-release-v121",
+      "artifact": "C:/dev/tmp/WB-M121-2ab22c2.apk",
+      "checks": [
+        "124 Jest suites /1312 tests passed with detectOpenHandles",
+        "TypeScript noEmit exit0",
+        "15 release gate regressions passed",
+        "Strict release preflight/reservation/bundle regeneration/postbuild remote and clean-source checks passed",
+        "aapt package/version and apksigner approved certificate verified",
+        "APK embedded transition identifiers and native source map verified"
+      ],
+      "crossComputerReconciliation": "Both active branches reconciled through runtime abe7dd0 and source2ab22c2; all GitHub heads individually reviewed in reservation. Other-machine unpushed work cannot be discovered.",
+      "verificationState": "S24 installed121; first launch without restart; recorded shrink/grow and quick reversal pass. Background/foreground retained same well/level. ZFold installed121 with matching existing certificate; first launch opens successfully. No real load submitted for swipe tests.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm121-gradle-private.log",
+        "C:/dev/tmp/wbm121-swipe-private.mp4",
+        "C:/dev/tmp/wbm121-gfx-private.log"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "Historical floors only, not fresh allocation approval. Re-query all sources before reserving; do not allocate a new build for this documentation task."
+  "notes": "Evidence-only follow-up; APK source is2ab22c2, not this later documentation commit. M120 reservation remains consumed. No EAS cloud build. Version/signature/provenance checked separately from device UI."
 }

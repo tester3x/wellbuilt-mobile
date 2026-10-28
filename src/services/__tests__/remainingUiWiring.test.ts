@@ -68,7 +68,7 @@ test('right-card focus survives viewability refresh and Pull opens that exact we
  let focused:number|null=1,current=0;
  const view=callback('onViewableItemsChanged',{
   setVisibleWellIndices:()=>{},setFocusedIndex:(update:any)=>{focused=update(focused);},
-  viewportChanged:false,pagerResizing:{current:false},currentIndex:0,setCurrentIndex:(v:number)=>{current=v;},captureTransitionStart:()=>{},console,
+  viewportChanged:false,pagerInteraction:{current:true},pagerResizing:{current:false},currentIndex:0,setCurrentIndex:(v:number)=>{current=v;},captureTransitionStart:()=>{},console,
  });
  view({viewableItems:[{index:0},{index:1}]});
  expect(focused).toBe(1);expect(current).toBe(0);
@@ -117,7 +117,7 @@ test('restored portrait has intrinsic middle and original phone/tablet typograph
 test('intermediate resize viewability cannot change the anchored well or replay swipe entry',()=>{
  const setVisibleWellIndices=jest.fn(),setFocusedIndex=jest.fn(),setCurrentIndex=jest.fn(),captureTransitionStart=jest.fn();
  const pagerResizing={current:true};
- const scope={viewportChanged:false,pagerResizing,setVisibleWellIndices,setFocusedIndex,setCurrentIndex,captureTransitionStart,currentIndex:9,console};
+ const scope={viewportChanged:false,pagerInteraction:{current:true},pagerResizing,setVisibleWellIndices,setFocusedIndex,setCurrentIndex,captureTransitionStart,currentIndex:9,console};
  callback('onViewableItemsChanged',scope)({viewableItems:[{index:14},{index:15}]});
  expect(setVisibleWellIndices).not.toHaveBeenCalled();expect(setCurrentIndex).not.toHaveBeenCalled();expect(captureTransitionStart).not.toHaveBeenCalled();
  pagerResizing.current=false;
@@ -132,4 +132,14 @@ test('native resize offset is committed with new widths without overriding initi
  const viewport={width:700,columns:2,offset:6300};
  expect(execute(fn,{pagerViewport:viewport,previousPagerViewport:{current:viewport}})()).toBeUndefined();
  expect(execute(fn,{pagerViewport:viewport,previousPagerViewport:{current:{width:876}}})()).toEqual({x:6300,y:0});
+});
+
+
+test('resize viewability arriving before JS dimensions is ignored without an actual swipe',()=>{
+ const setCurrentIndex=jest.fn(),setVisibleWellIndices=jest.fn(),captureTransitionStart=jest.fn();
+ const pagerInteraction={current:false},pagerResizing={current:false};
+ callback('onViewableItemsChanged',{viewportChanged:false,pagerInteraction,pagerResizing,currentIndex:9,setCurrentIndex,setVisibleWellIndices,setFocusedIndex:jest.fn(),captureTransitionStart,console})({viewableItems:[{index:2},{index:3}]});
+ expect(setCurrentIndex).not.toHaveBeenCalled();expect(setVisibleWellIndices).not.toHaveBeenCalled();expect(captureTransitionStart).not.toHaveBeenCalled();
+ callback('handlePagerDrag',{pagerInteraction,pagerResizing,captureTransitionStart})();expect(pagerInteraction.current).toBe(true);
+ callback('handlePagerSettled',{pagerInteraction})();expect(pagerInteraction.current).toBe(false);
 });

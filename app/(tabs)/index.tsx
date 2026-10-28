@@ -1655,10 +1655,11 @@ export default function MainScreen() {
   const pagerViewport=useMemo(()=>({width:cardWidth,columns,offset:cardWidth*currentIndex}),[cardWidth,columns]);
   const previousPagerViewport=useRef(pagerViewport);
   const pagerResizing=useRef(false);
+  const pagerInteraction=useRef(false);
   const viewportChanged=previousPagerViewport.current!==pagerViewport;
   const pagerContentOffset=useMemo(()=>previousPagerViewport.current===pagerViewport ? undefined : ({x:pagerViewport.offset,y:0}),[pagerViewport]);
   useLayoutEffect(()=>{
-    if(previousPagerViewport.current!==pagerViewport)pagerResizing.current=true;
+    if(previousPagerViewport.current!==pagerViewport){pagerResizing.current=true;pagerInteraction.current=false;}
     previousPagerViewport.current=pagerViewport;
     if(columns===1)setFocusedIndex(null);
     setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
@@ -2269,7 +2270,7 @@ export default function MainScreen() {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    if(viewportChanged || pagerResizing.current)return;
+    if(!pagerInteraction.current || viewportChanged || pagerResizing.current)return;
     setVisibleWellIndices(viewableItems.flatMap(item=>item.index==null?[]:[item.index]));
     if (viewableItems.length > 0 && viewableItems[0].index !== null) {
       // Layout/viewability can fire without a swipe. Keep the touched right card
@@ -2286,14 +2287,18 @@ export default function MainScreen() {
   }, [currentIndex, captureTransitionStart, viewportChanged]);
 
   const handlePagerDrag=useCallback(()=>{
+    pagerInteraction.current=true;
     pagerResizing.current=false;
     captureTransitionStart();
   },[captureTransitionStart]);
+
+  const handlePagerSettled=useCallback(()=>{pagerInteraction.current=false;},[]);
 
   const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
 
   // Open picker for well selection
   const openPicker = (index=currentIndex) => {
+    pagerInteraction.current=false;
     pagerResizing.current=false;
     setWellSearch('');
     setTempSelectedIndex(index);
@@ -2398,7 +2403,7 @@ export default function MainScreen() {
         <Text style={{color:'#9CA3AF',fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.operator || '\u00a0'}</Text>
       </TouchableOpacity>}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={true}
-        isActive={visibleWellIndices.includes(index) || index===currentIndex || index===currentIndex+1}
+        isActive={index===currentIndex || index===currentIndex+1}
         entryFraction={entryFraction} onLevelChange={level=>handleLevelChange(item,level)}
         refreshTrigger={refreshTrigger} onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
         onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
@@ -2605,6 +2610,7 @@ export default function MainScreen() {
         showsHorizontalScrollIndicator={false}
         contentOffset={pagerContentOffset}
         onScrollBeginDrag={handlePagerDrag}
+        onMomentumScrollEnd={handlePagerSettled}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         getItemLayout={getItemLayout}

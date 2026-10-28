@@ -22,3 +22,11 @@ The follow-up measures the actual Fold root during loading/splash and content, i
 ## M134 rotation failure and native measurement host
 
 M134 source29fdf95 is installed with matching APK hashes on both phones. Landscape fits, but rotating into portrait leaves the two-column card geometry in place (native XML has1092px card spacing inside a1968px-wide portrait pager). This is a failed rotation check. Move the resize callback from GestureHandlerRootView to an ordinary non-collapsible View inside it; retain the same mounted pager and uniform panel transform. Startup loading roots already use ordinary Views. This change does not change tablet sizing, data, AFR or submissions. Native retest required after the local corrective build.
+
+## M135 native results
+
+Source91b6cc21835579e59c8b63d21d63174cfff77c2b built locally with strict release gates, original package/signer and immutable android-release-v135 reservation. SHA2566750112f8e4a9dc3cfeef314e3a43f7df567107f5bcb454f8e7810afed06df86 independently matches installed base APKs on S24 and ZFold. 37 focused regressions, TypeScript and19 release/retirement checks pass.
+
+S24 normal update launcher and locked/peek spacing pass. Fold returns to one centered complete portrait panel and two complete landscape panels; metadata, Next Load, slider and hint fit without scrolling. Left physical drag changes14ft3in to18ft9in; right10ft to14ft3in after unlock commits. Paging works with both sliders unlocked, from either half. Test automation must wait for native unlock state before starting a second gesture; immediate tap-then-swipe hit the still-locked overlay and are not slider-drag evidence. Auto-rotate restored and independently read as1.
+
+Remaining findings: rotation still takes approximately2-4seconds to settle in recorded frames, so smooth rotation is NOT accepted. Returning to Gabriel1 in paging captures retained another well level in the tank animation while its header/stats stayed Gabriel1; this display finding is not resolved or labeled correct. No load submission/history/configuration/AFR writes made by these UI checks. Evidence is private under C:/dev/tmp/wbm135-*; device captures are not committed. Tablet was not installed in this task.

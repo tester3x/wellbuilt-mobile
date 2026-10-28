@@ -147,6 +147,6 @@ test('resize viewability arriving before JS dimensions is ignored without an act
 
 test('well list uses native paging so Android focus cannot scroll it as a free-scrolling list',()=>{
  const {text}=variable('(tabs)/index.tsx','renderLandscapeWell');const ast=ts.createSourceFile('home.tsx',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
- let pager:ts.JsxOpeningElement|undefined;function visit(n:ts.Node){if(ts.isJsxOpeningElement(n)&&n.tagName.getText(ast)==='FlatList'&&n.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='testID'&&a.initializer?.getText(ast)==='"well-pager"'))pager=n;ts.forEachChild(n,visit);}visit(ast);
+ let pager:ts.JsxOpeningElement|ts.JsxSelfClosingElement|undefined;function visit(n:ts.Node){if((ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))&&n.tagName.getText(ast)==='FlatList'&&n.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='testID'&&a.initializer?.getText(ast)==='"well-pager"'))pager=n;ts.forEachChild(n,visit);}visit(ast);
  expect(pager).toBeDefined();expect(pager!.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='pagingEnabled'&&!a.initializer)).toBe(true);
 });

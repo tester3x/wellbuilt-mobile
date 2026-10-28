@@ -2604,6 +2604,8 @@ export default function MainScreen() {
         renderItem={renderWell}
         keyExtractor={(item) => item}
         horizontal
+        pagingEnabled
+        testID="well-pager"
         snapToInterval={cardWidth}
         decelerationRate="fast"
         style={{flex:1,minHeight:0}}

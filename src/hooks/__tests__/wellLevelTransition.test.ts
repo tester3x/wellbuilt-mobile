@@ -122,3 +122,18 @@ test('two visible tanks have independent entry and refresh state', () => {
   expect(right.fill.animation.target).toBe(0.9);
   left.unmount(); right.unmount();
 });
+
+
+test('rotation reveals a preloaded neighbour immediately without replaying a one-second well entry',()=>{
+ const h=mount({active:false,target:0.6,layoutKey:'876:1400:false'});
+ h.update({active:true,layoutKey:'700:876:true'});
+ expect(h.fill.value).toBe(0.6);expect(h.fill.animation).toBeNull();expect(mockTiming).not.toHaveBeenCalled();
+ h.update({layoutKey:'876:1400:false'});expect(h.fill.value).toBe(0.6);expect(h.fill.animation).toBeNull();
+ h.unmount();
+});
+
+test('rotation cannot cancel or reset a pending load drain',()=>{
+ const h=mount({active:true,draining:true,layoutKey:'876:1400:false'});
+ h.fill.sample(0.4);h.fill.writes.length=0;mockCancel.mockClear();
+ h.update({layoutKey:'700:876:true'});expect(h.fill.writes).toEqual([]);expect(mockCancel).not.toHaveBeenCalled();h.unmount();
+});

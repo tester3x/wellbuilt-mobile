@@ -10,16 +10,9 @@ type Panels = {
   topStyle:StyleProp<ViewStyle>;
 };
 
-/** Original portrait hierarchy: intrinsic tank/statistics above the planner. */
-export function PortraitWellLayout({tank,statistics,delivery,planning,rootStyle,topStyle}:Panels) {
-  return <View testID="portrait-well-layout" style={[rootStyle,{width:'100%',minHeight:0}]}>
-    <View style={[topStyle,{flexShrink:1,minHeight:0}]}>{tank}{statistics}</View>{delivery}{planning}
-  </View>;
-}
-
-/** Landscape is reserved for tablets and unfolded Folds. */
-export function LandscapeWellLayout({tank,statistics,delivery,planning,rootStyle,topStyle}:Panels) {
-  return <View testID="landscape-well-layout" style={[rootStyle,{width:'100%',minHeight:0}]}>
-    <View style={topStyle}>{tank}{statistics}</View>{delivery}{planning}
+/** Independent portrait/landscape geometry, stable panel identity during resize. */
+export function WellCardLayout({tank,statistics,delivery,planning,rootStyle,topStyle,wideLayout}:Panels & {wideLayout:boolean}) {
+  return <View testID={wideLayout?'landscape-well-layout':'portrait-well-layout'} style={[rootStyle,{width:'100%',minHeight:0,overflow:'hidden'}]}>
+    <View style={[topStyle,!wideLayout && {flexShrink:1,minHeight:0}]}>{tank}{statistics}</View>{delivery}{planning}
   </View>;
 }

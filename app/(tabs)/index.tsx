@@ -1,6 +1,7 @@
 import {ProductionRateRow} from '../../components/ProductionRateRow';
 import {SliderInfoSlot} from '../../components/SliderInfoSlot';
-import {PortraitWellLayout,LandscapeWellLayout} from '../../components/WellCardLayouts';
+import {WellCardLayout} from '../../components/WellCardLayouts';
+import {WellPagerCard} from '../../components/WellPagerCard';
 import { thresholdTime } from '@tester3x/water-hauling';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getFreshWaterSupply } from '../../src/services/freshWaterSupply';
@@ -11,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -450,7 +451,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   // drift, no pelican flight.
   const reducedMotion = useReducedMotion();
   useWellLevelTransition({ fill: waterFraction, target: targetFraction, active: isActive,
-    entryFraction, draining: drainAnimationActive.current, reducedMotion });
+    entryFraction, draining: drainAnimationActive.current, reducedMotion, layoutKey:`${cardWidth}:${viewportHeight}:${wideLayout}` });
 
   // App lifecycle: when the app goes inactive/background, EVERY wildlife
   // loop and timer is cancelled (no suspended pelican timeout can fire
@@ -1627,7 +1628,7 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
       })()
   );
   const panels={tank:tankPanel,statistics:statisticsPanel,delivery:deliveryPanel,planning:planningPanel,rootStyle:styles.wellView,topStyle:styles.topSection};
-  return wideLayout ? <LandscapeWellLayout {...panels}/> : <PortraitWellLayout {...panels}/>;
+  return <WellCardLayout {...panels} wideLayout={wideLayout}/>;
 
 });
 
@@ -1649,7 +1650,7 @@ export default function MainScreen() {
   const [entryFraction, setEntryFraction] = useState(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
-  useEffect(()=>{if(columns===1)setFocusedIndex(null);setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
+  useLayoutEffect(()=>{if(columns===1)setFocusedIndex(null);setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
     flatListRef.current?.scrollToOffset({offset:cardWidth*currentIndex,animated:false});
   },[cardWidth,columns]);
   const selectionCatalogueRef = useRef<{
@@ -2362,32 +2363,30 @@ export default function MainScreen() {
   }, [wells, currentIndex, alert, t]);
 
   const renderPortraitWell = useCallback(({ item, index }: {item:string;index:number}) => (
-    <View style={{width:cardWidth,flex:1,minHeight:0}}>
+    <WellPagerCard width={cardWidth} wideLayout={false}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={false}
         isActive={index===currentIndex} entryFraction={entryFraction}
         onLevelChange={level=>handleLevelChange(item,level)} refreshTrigger={refreshTrigger}
         onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
         onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
-    </View>
+    </WellPagerCard>
   ),[cardWidth,viewportHeight,currentIndex,entryFraction,handleLevelChange,refreshTrigger,handleSliderActiveChange,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const renderLandscapeWell = useCallback(({ item, index }: { item: string; index: number }) => (
-    <View style={{width:cardWidth,flex:1,minHeight:0}} onTouchStart={()=>setFocusedIndex(index)}>
+    <WellPagerCard width={cardWidth} wideLayout={true} onFocus={()=>setFocusedIndex(index)} header={
       <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
         <Text style={{color:getRouteColor(wellConfigMap?.[item]?.route || ''),fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.route || '\u00a0'}</Text>
         <Text style={{color:'#F9FAFB',fontSize:22,fontWeight:'700'}} numberOfLines={1}>{wellConfigMap?.[item]?.displayName || item}</Text>
         <Text style={{color:'#9CA3AF',fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.operator || '\u00a0'}</Text>
-      </TouchableOpacity>
-      <View style={{flex:1,minHeight:0}}>
+      </TouchableOpacity>}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={true}
-        isActive={visibleWellIndices.includes(index)}
+        isActive={visibleWellIndices.includes(index) || index===currentIndex || index===currentIndex+1}
         entryFraction={entryFraction} onLevelChange={level=>handleLevelChange(item,level)}
         refreshTrigger={refreshTrigger} onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
         onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
-      </View>
-    </View>
-  ),[cardWidth,viewportHeight,columns,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+    </WellPagerCard>
+  ),[cardWidth,viewportHeight,columns,currentIndex,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const renderWell = columns===1 ? renderPortraitWell : renderLandscapeWell;
   const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
 
@@ -2594,8 +2593,8 @@ export default function MainScreen() {
         removeClippedSubviews={false}
         maxToRenderPerBatch={2}
         windowSize={3}
-        initialNumToRender={columns}
-        updateCellsBatchingPeriod={100}
+        initialNumToRender={2}
+        updateCellsBatchingPeriod={16}
         extraData={[currentIndex,focusedIndex,visibleWellIndices,cardWidth,showOvernightBbls]}
         directionalLockEnabled={true}
         alwaysBounceVertical={Platform.OS === 'ios'}

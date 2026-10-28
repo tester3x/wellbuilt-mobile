@@ -1,9 +1,11 @@
+import {WellPagerCard} from '../../../components/WellPagerCard';
 import React from 'react';
 import TestRenderer,{act} from 'react-test-renderer';
 import fs from 'fs';import path from 'path';import ts from 'typescript';import {runInNewContext} from 'vm';
 import {freshwaterSummaryPlanning,summarySliderValue} from '../freshwaterSummaryPlanning';
 import {formatFeetInches} from '../summaryWellLevel';
 import {tankViewport,tankSceneScale} from '../../ui/tankViewport';
+jest.mock('react-native',()=>({View:'View'}));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
 function variable(file:string,name:string){const text=fs.readFileSync(path.join(__dirname,'../../../app',file),'utf8');const ast=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let found:ts.VariableDeclaration|undefined;function visit(n:ts.Node){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)===name)found=n;ts.forEachChild(n,visit);}visit(ast);if(!found)throw Error(name);return {node:found,ast,text};}
 function execute(text:string,scope:Record<string,unknown>){return runInNewContext(ts.transpileModule('const action='+text,{compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText+'\naction',{...scope});}
@@ -39,7 +41,7 @@ test('actual movement and release handlers commit the same normalized selected v
 });
 test.each([[800,1000],[1000,600],[360,800]])('actual card renderer keeps each well and its controls in a fixed viewport at %sx%s', (width,height)=>{
  const {columns,cardWidth,viewportHeight}=tankViewport(width,height);const {node,ast}=variable('(tabs)/index.tsx','renderLandscapeWell');const call=node.initializer as ts.CallExpression;
- const scope={React,View:'View',Text:'Text',TouchableOpacity:'TouchableOpacity',ScrollView:'ScrollView',WellView:'WellView',cardWidth,viewportHeight,columns,handleSliderActiveChange:()=>{},visibleWellIndices:[0,1],actionIndex:0,wellConfigMap:{Left:{route:'Route',operator:'Operator'},Right:{route:'Route',operator:'Operator'}},getRouteColor:()=>'',setFocusedIndex:()=>{},openPicker:()=>{},entryFraction:0,handleLevelChange:()=>{},refreshTrigger:0,setSliderActive:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}};
+ const scope={React,WellPagerCard,currentIndex:0,View:'View',Text:'Text',TouchableOpacity:'TouchableOpacity',ScrollView:'ScrollView',WellView:'WellView',cardWidth,viewportHeight,columns,handleSliderActiveChange:()=>{},visibleWellIndices:[0,1],actionIndex:0,wellConfigMap:{Left:{route:'Route',operator:'Operator'},Right:{route:'Route',operator:'Operator'}},getRouteColor:()=>'',setFocusedIndex:()=>{},openPicker:()=>{},entryFraction:0,handleLevelChange:()=>{},refreshTrigger:0,setSliderActive:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}};
  const render=execute(call.arguments[0].getText(ast),scope);let tree!:TestRenderer.ReactTestRenderer;
  act(()=>{tree=TestRenderer.create(React.createElement(React.Fragment,null,render({item:'Left',index:0}),render({item:'Right',index:1})));});
  const cards=tree.root.findAllByType('WellView' as any);expect(cards.map(c=>c.props.wellName)).toEqual(['Left','Right']);expect(cards.every(c=>c.props.isActive)).toBe(true);expect(cards.every(c=>c.props.cardWidth===width/columns)).toBe(true);expect(tree.root.findAllByType('ScrollView' as any)).toHaveLength(0);expect(words(tree.toJSON())).toContain('Left');expect(words(tree.toJSON())).toContain('Right');
@@ -91,7 +93,7 @@ test('explicit unlock takes one action and remains disabled for down wells',()=>
 
 test('portrait renderer has one well with no landscape header or landscape controls',()=>{
  const {node,ast}=variable('(tabs)/index.tsx','renderPortraitWell');
- const render=execute((node.initializer as ts.CallExpression).arguments[0].getText(ast),{React,View:'View',WellView:'WellView',cardWidth:876,viewportHeight:1400,currentIndex:1,entryFraction:0.3,handleLevelChange:()=>{},refreshTrigger:0,handleSliderActiveChange:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}});
+ const render=execute((node.initializer as ts.CallExpression).arguments[0].getText(ast),{React,WellPagerCard,View:'View',WellView:'WellView',cardWidth:876,viewportHeight:1400,currentIndex:1,entryFraction:0.3,handleLevelChange:()=>{},refreshTrigger:0,handleSliderActiveChange:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}});
  let tree!:TestRenderer.ReactTestRenderer;
  act(()=>{tree=TestRenderer.create(render({item:'Portrait well',index:1}));});
  const card=tree.root.findByType('WellView' as any);

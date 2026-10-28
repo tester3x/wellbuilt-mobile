@@ -9,12 +9,13 @@ const clamp = (value: number) => Math.max(0, Math.min(1, value));
  * Offscreen cards are staged at the departing tank's captured visible fraction,
  * not their preloaded destination. Refresh/live targets cannot cut entry short.
  */
-export function useWellLevelTransition({ fill, target, active, entryFraction, draining, reducedMotion }: {
+export function useWellLevelTransition({ fill, target, active, entryFraction, draining, reducedMotion, layoutKey }: {
   fill: SharedValue<number>; target: number | null; active: boolean;
   entryFraction: number; draining: boolean; reducedMotion: boolean;
+  layoutKey?:string;
 }) {
   const state = useRef({ active: false, initialized: false, entering: false, generation: 0,
-    target, draining, reducedMotion });
+    target, draining, reducedMotion, layoutKey });
   state.current.target = target;
   state.current.draining = draining;
   state.current.reducedMotion = reducedMotion;
@@ -34,6 +35,8 @@ export function useWellLevelTransition({ fill, target, active, entryFraction, dr
 
   useLayoutEffect(() => {
     const current = state.current;
+    const resized=current.layoutKey!==layoutKey;
+    current.layoutKey=layoutKey;
     const entered = active && !current.active;
     current.active = active;
     if (draining) {
@@ -41,6 +44,15 @@ export function useWellLevelTransition({ fill, target, active, entryFraction, dr
       current.entering = false;
       current.initialized = true;
       return; // Do not cancel or write over an in-progress pull drain.
+    }
+    if (resized) {
+      // Rotation reveals an already loaded neighbour; it is not a well swipe.
+      ++current.generation;
+      current.entering=false;
+      current.initialized=target!==null;
+      cancelAnimation(fill);
+      if(target!==null)fill.value=clamp(target);
+      return;
     }
     if (!active) {
       ++current.generation;
@@ -77,7 +89,7 @@ export function useWellLevelTransition({ fill, target, active, entryFraction, dr
         duration: REFRESH_DURATION_MS, easing: Easing.inOut(Easing.ease),
       });
     }
-  }, [active, target, entryFraction, draining, reducedMotion, fill, finishEntry]);
+  }, [active, target, entryFraction, draining, reducedMotion, fill, finishEntry, layoutKey]);
 
   useLayoutEffect(() => () => {
     ++state.current.generation;

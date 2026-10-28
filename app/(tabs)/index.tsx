@@ -341,12 +341,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   // showOvernightBbls is now a prop from MainScreen (global toggle)
   const [tankSlotHeight, setTankSlotHeight] = useState(0);
   const [tankSlotWidth,setTankSlotWidth] = useState(cardWidth);
-  const compactLandscape=wideLayout && viewportHeight<500;
   const portraitTankHeight=cardWidth>=600 ? viewportHeight*0.42 : cardWidth*0.70*1.2;
   const tankScale=wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : portraitTankHeight/TANK_HEIGHT;
   const sceneScale=Math.max(0.01,tankScale);
   const styles=wideLayout ? {
-    ...(compactLandscape ? compactLandscapeWellStyles : wideWellStyles),
+    ...wideWellStyles,
     tankNumber:{...wideWellStyles.tankNumber,fontSize:24/sceneScale},
     tankUnavailableLabel:{...wideWellStyles.tankUnavailableLabel,fontSize:15/sceneScale},
     bblsAvailableText:{...wideWellStyles.bblsAvailableText,fontSize:14/sceneScale},
@@ -1629,7 +1628,7 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
       })()
   );
   const panels={tank:tankPanel,statistics:statisticsPanel,delivery:deliveryPanel,planning:planningPanel,rootStyle:styles.wellView,topStyle:styles.topSection};
-  return wideLayout ? <LandscapeWellLayout {...panels} compact={compactLandscape}/> : <PortraitWellLayout {...panels}/>;
+  return wideLayout ? <LandscapeWellLayout {...panels}/> : <PortraitWellLayout {...panels}/>;
 
 });
 
@@ -3673,27 +3672,3 @@ function portraitStyles(width:number,height:number) {
     bottomNav:{...baseWellStyles.bottomNav,paddingTop:height*(tablet?0.02:0.015),paddingHorizontal:tablet?width*0.15:height*0.02},
   };
 }
-
-const compactLandscapeWellStyles={
-  ...wideWellStyles,
-  statLeft:{...wideWellStyles.statLeft,fontSize:12,paddingRight:3},
-  statRight:{...wideWellStyles.statRight,fontSize:12,paddingLeft:3},
-  statDivider:{...wideWellStyles.statDivider,fontSize:11,width:8},
-  lastPullLabel:{...wideWellStyles.lastPullLabel,fontSize:10},
-  lastPullInfo:{...wideWellStyles.lastPullInfo,fontSize:11},
-  sliderContainer:{...wideWellStyles.sliderContainer,paddingHorizontal:4,marginTop:2,paddingBottom:2},
-  sliderInfoContainer:{...wideWellStyles.sliderInfoContainer,minHeight:36,marginBottom:0},
-  nextPullLabel:{...wideWellStyles.nextPullLabel,fontSize:11},
-  nextPullTime:{...wideWellStyles.nextPullTime,fontSize:16},
-  sliderValue:{...wideWellStyles.sliderValue,fontSize:18},
-  sliderBbls:{...wideWellStyles.sliderBbls,fontSize:13},
-  readyAt:{...wideWellStyles.readyAt,fontSize:11,marginTop:2},
-  sliderArrowLeft:{...wideWellStyles.sliderArrowLeft,width:0},
-  sliderArrowRight:{...wideWellStyles.sliderArrowRight,width:0},
-  sliderEndWord:{...wideWellStyles.sliderEndWord,width:0},
-  sliderMarkerArrowLeft:{...wideWellStyles.sliderMarkerArrowLeft,width:0},
-  sliderMarkerArrowRight:{...wideWellStyles.sliderMarkerArrowRight,width:0},
-  sliderMarkerLeft:{...wideWellStyles.sliderMarkerLeft,width:26},
-  sliderMarkerRight:{...wideWellStyles.sliderMarkerRight,width:26},
-  unlockHint:{...wideWellStyles.unlockHint,fontSize:10,marginTop:2},
-};

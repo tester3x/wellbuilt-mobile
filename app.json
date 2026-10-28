@@ -48,7 +48,7 @@
         "INTERNET"
       ],
       "package": "com.wellbuiltmobile.app",
-      "versionCode": 124
+      "versionCode": 125
     },
     "web": {
       "output": "static",
@@ -99,7 +99,8 @@
             }
           }
         }
-      ]
+      ],
+      "./plugins/withDeviceOrientation"
     ],
     "experiments": {
       "typedRoutes": true,

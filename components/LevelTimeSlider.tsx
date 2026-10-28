@@ -6,9 +6,10 @@ export type LevelTimeSliderProps = SliderProps & { dragGain?: number };
 
 /** Retain the installed slider's rendering, bounds, stepping and callbacks. */
 export class LevelTimeSlider extends Slider {
-  declare props: Readonly<LevelTimeSliderProps>;
+  props: Readonly<LevelTimeSliderProps>;
   constructor(props: LevelTimeSliderProps) {
     super(props);
+    this.props = props;
     const valueFromGesture = this._getValue;
     this._getValue = gesture => valueFromGesture({
       ...gesture,

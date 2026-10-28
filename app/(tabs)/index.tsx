@@ -1,3 +1,4 @@
+import {PortraitWellLayout,LandscapeWellLayout} from '../../components/WellCardLayouts';
 import { thresholdTime } from '@tester3x/water-hauling';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getFreshWaterSupply } from '../../src/services/freshWaterSupply';
@@ -339,11 +340,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   const [showTankMath, setShowTankMath] = useState(false); // Tap first metrics row → peek bbl/in • bbl/ft (~4s, all wells)
   // showOvernightBbls is now a prop from MainScreen (global toggle)
   const [tankSlotHeight, setTankSlotHeight] = useState(0);
+  const [tankSlotWidth,setTankSlotWidth] = useState(cardWidth);
+  const compactLandscape=wideLayout && viewportHeight<500;
   const portraitTankHeight=cardWidth>=600 ? viewportHeight*0.42 : cardWidth*0.70*1.2;
-  const tankScale=wideLayout ? tankSceneScale(cardWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : portraitTankHeight/TANK_HEIGHT;
+  const tankScale=wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : portraitTankHeight/TANK_HEIGHT;
   const sceneScale=Math.max(0.01,tankScale);
   const styles=wideLayout ? {
-    ...wideWellStyles,
+    ...(compactLandscape ? compactLandscapeWellStyles : wideWellStyles),
     tankNumber:{...wideWellStyles.tankNumber,fontSize:24/sceneScale},
     tankUnavailableLabel:{...wideWellStyles.tankUnavailableLabel,fontSize:15/sceneScale},
     bblsAvailableText:{...wideWellStyles.bblsAvailableText,fontSize:14/sceneScale},
@@ -1265,13 +1268,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
     );
   };
 
-  return (
-    <View style={[styles.wellView,{width:'100%',minHeight:0}]}>
-      {/* Top section - tank and stats */}
-      <View style={styles.topSection}>
-        {/* Tank - double-tap for Performance, long-press to hide well */}
-        <View style={[styles.tankSection,!wideLayout && {height:portraitTankHeight}]} onLayout={event => {
-          const height = event.nativeEvent.layout.height;
+  const tankPanel=(
+<View style={[styles.tankSection,!wideLayout && {height:portraitTankHeight}]} onLayout={event => {
+          const {height,width} = event.nativeEvent.layout;
+          setTankSlotWidth(previous=>Math.abs(previous-width)>0.5 ? width : previous);
           setTankSlotHeight(previous => Math.abs(previous-height)>0.5 ? height : previous);
         }}>
         <View style={{position:'absolute',width:wideLayout?TANK_WIDTH:TANK_WIDTH*0.92,height:TANK_HEIGHT,
@@ -1404,8 +1404,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
             catch { /* Confirmed info stays cached; normal catalogue refresh retries. */ }
           })(); }} />}
       </View>
-
-      {/* Quick stats */}
+  );
+  const statisticsPanel=(<>
+{/* Quick stats */}
       <View style={styles.statsSection}>
         <Pressable
           onPress={() => {
@@ -1471,18 +1472,19 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
           </View>
         )}
       </View>
-      </View>
-
-      {wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',paddingHorizontal:12}}>
+  </>);
+  const deliveryPanel=(
+wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',paddingHorizontal:12}}>
         <TouchableOpacity onPress={()=>setDeliveryPicker('date')}><Text style={styles.nextPullLabel}>Assumed delivery: {deliveryAt ? formatDateTime(deliveryAt) : 'Now'} (change)</Text></TouchableOpacity>
         {deliveryAt && <TouchableOpacity onPress={()=>setDeliveryAt(null)}><Text style={styles.nextPullLabel}>Use now</Text></TouchableOpacity>}
         {deliveryPicker && <DateTimePicker value={deliveryAt ?? new Date()} mode={deliveryPicker} onChange={(event,date)=>{
           const mode=deliveryPicker;setDeliveryPicker(null);
           if(event.type==='set' && date){setDeliveryAt(date);if(mode==='date')setDeliveryPicker('time');}
         }}/>}
-      </View>}
-      {/* Slider - tap to peek values, long press to unlock */}
-      {(() => {
+      </View>
+  );
+  const planningPanel=(
+(() => {
         // Calculate slider minimum: use loadLine (1.33') or allowedBottom if lower
         const literalLoadLine = wellConfig?.routeType === 'freshwater' ? 0 : wellConfig?.loadLine ?? 1.33;
         const allowedBottom = wellConfig?.allowedBottom ?? 3;
@@ -1624,9 +1626,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
             </Text>
           </View>
         );
-      })()}
-    </View>
+      })()
   );
+  const panels={tank:tankPanel,statistics:statisticsPanel,delivery:deliveryPanel,planning:planningPanel,rootStyle:styles.wellView,topStyle:styles.topSection};
+  return wideLayout ? <LandscapeWellLayout {...panels} compact={compactLandscape}/> : <PortraitWellLayout {...panels}/>;
+
 });
 
 // Main screen
@@ -3669,3 +3673,27 @@ function portraitStyles(width:number,height:number) {
     bottomNav:{...baseWellStyles.bottomNav,paddingTop:height*(tablet?0.02:0.015),paddingHorizontal:tablet?width*0.15:height*0.02},
   };
 }
+
+const compactLandscapeWellStyles={
+  ...wideWellStyles,
+  statLeft:{...wideWellStyles.statLeft,fontSize:12,paddingRight:3},
+  statRight:{...wideWellStyles.statRight,fontSize:12,paddingLeft:3},
+  statDivider:{...wideWellStyles.statDivider,fontSize:11,width:8},
+  lastPullLabel:{...wideWellStyles.lastPullLabel,fontSize:10},
+  lastPullInfo:{...wideWellStyles.lastPullInfo,fontSize:11},
+  sliderContainer:{...wideWellStyles.sliderContainer,paddingHorizontal:4,marginTop:2,paddingBottom:2},
+  sliderInfoContainer:{...wideWellStyles.sliderInfoContainer,minHeight:36,marginBottom:0},
+  nextPullLabel:{...wideWellStyles.nextPullLabel,fontSize:11},
+  nextPullTime:{...wideWellStyles.nextPullTime,fontSize:16},
+  sliderValue:{...wideWellStyles.sliderValue,fontSize:18},
+  sliderBbls:{...wideWellStyles.sliderBbls,fontSize:13},
+  readyAt:{...wideWellStyles.readyAt,fontSize:11,marginTop:2},
+  sliderArrowLeft:{...wideWellStyles.sliderArrowLeft,width:0},
+  sliderArrowRight:{...wideWellStyles.sliderArrowRight,width:0},
+  sliderEndWord:{...wideWellStyles.sliderEndWord,width:0},
+  sliderMarkerArrowLeft:{...wideWellStyles.sliderMarkerArrowLeft,width:0},
+  sliderMarkerArrowRight:{...wideWellStyles.sliderMarkerArrowRight,width:0},
+  sliderMarkerLeft:{...wideWellStyles.sliderMarkerLeft,width:26},
+  sliderMarkerRight:{...wideWellStyles.sliderMarkerRight,width:26},
+  unlockHint:{...wideWellStyles.unlockHint,fontSize:10,marginTop:2},
+};

@@ -309,19 +309,24 @@
         "aapt131/package and approved apksigner certificate",
         "Installed base APK SHA256 matches artifact on S24 and ZFold"
       ],
-      "verificationState": "Installed on S24 and ZFold per user request. S24 portrait fits, swipe changes well, locked/peek slider-hint region pixel-identical. ZFold unfolded portrait fits all panels without scrolling; 12 swipes reached interior selection. Rotation replay interrupted by user opening notifications/WhatsApp; preferences restored, no native rotation pass claimed yet. Tablet not connected and not installed. Await free ZFold for uninterrupted rotation check.",
+      "verificationState": "Installed on S24 and ZFold per user request; FAILED native rotation/landscape-fit check. S24 portrait fits, swipe changes well, locked/peek slider-hint region pixel-identical. Repeated uninterrupted ZFold rotation at interior index13/80 keeps selected AddedTest/Burger1 owners mounted but delays portrait/landscape geometry roughly1-2 seconds, then performs another measured tank resize. Settled landscape clips both sliders and overlaps last-load/planning text. Rotation log28 mounts/28 unmounts are offscreen wells, not the selected pair. No native pass claimed. ZFold restored portrait; captured rotation preferences0/0 restored and independently read. Tablet not connected or installed.",
       "privateEvidence": [
         "C:/dev/tmp/wbm131-release-private.json",
         "C:/dev/tmp/wbm131-gradle-private.log",
         "C:/dev/tmp/wbm131-installed-proof-private.json",
         "C:/dev/tmp/wbm131-s24-ready-private.png",
         "C:/dev/tmp/wbm131-s24-peek-private.png",
-        "C:/dev/tmp/wbm131-zfold-middle-private.png"
+        "C:/dev/tmp/wbm131-zfold-middle-private.png",
+        "C:/dev/tmp/wbm131-rotation-frames-private.json",
+        "C:/dev/tmp/wbm131-rotation-lifecycle-private.log",
+        "C:/dev/tmp/wbm131-rotation-landscape-board-private.png",
+        "C:/dev/tmp/wbm131-rotation-portrait-board-private.png",
+        "C:/dev/tmp/wbm131-rotate-landscape-5-private.png"
       ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M131 installed on both phones, original signer and exact artifact independently confirmed. S24 portrait and stationary peek passed. Uninterrupted ZFold rotation verification pending; prior M126-130 remain failed/test-only rotation baselines. No cloud build or load/config mutation.",
+  "notes": "M131 installed on both phones; original signer and exact artifact confirmed. S24 portrait/peek passed. Uninterrupted ZFold native rotation and landscape fit FAILED: selected pair retained, delayed geometry, clipped sliders. Keep evidence and fix source before next explicitly authorized build. No new build or load/config mutation during verification.",
   "failedReservations": [
     {
       "versionCode": 123,

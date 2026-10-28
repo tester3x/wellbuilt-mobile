@@ -11,8 +11,8 @@ type Panels = {
 };
 
 /** Independent portrait/landscape geometry, stable panel identity during resize. */
-export function WellCardLayout({tank,statistics,delivery,planning,rootStyle,topStyle,wideLayout}:Panels & {wideLayout:boolean}) {
-  return <View testID={wideLayout?'landscape-well-layout':'portrait-well-layout'} style={[rootStyle,{width:'100%',minHeight:0,overflow:'hidden'}]}>
-    <View style={[topStyle,!wideLayout && {flexShrink:1,minHeight:0}]}>{tank}{statistics}</View>{delivery}{planning}
+export function WellCardLayout({tank,statistics,delivery,planning,rootStyle,topStyle,wideLayout,contentWidth}:Panels & {wideLayout:boolean;contentWidth?:number}) {
+  return <View testID={wideLayout?'landscape-well-layout':'portrait-well-layout'} style={[rootStyle,{width:contentWidth ?? '100%',alignSelf:'center',minHeight:0,overflow:'hidden'}]}>
+    <View style={[topStyle,(contentWidth!==undefined || !wideLayout) && {flexShrink:1,minHeight:0}]}>{tank}{statistics}</View>{delivery}{planning}
   </View>;
 }

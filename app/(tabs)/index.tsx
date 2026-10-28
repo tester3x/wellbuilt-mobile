@@ -7,6 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { getFreshWaterSupply } from '../../src/services/freshWaterSupply';
 import { tankViewport, tankSceneScale } from '../../src/ui/tankViewport';
 import { wellPagerBuffer } from '../../src/ui/wellPagerBuffer';
+import { wellContentWidth, foldablePhoneLayout } from '../../src/ui/wellContentFrame';
 import { resolveTankHeight, tankFillFraction } from '../../src/utils/tankHeight';
 import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
@@ -349,10 +350,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   // showOvernightBbls is now a prop from MainScreen (global toggle)
   const [tankSlotHeight, setTankSlotHeight] = useState(0);
   const [tankSlotWidth,setTankSlotWidth] = useState(cardWidth);
-  const portraitTankHeight=cardWidth>=600 ? viewportHeight*0.42 : cardWidth*0.70*1.2;
-  const tankScale=wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT;
+  const contentWidth=wellContentWidth(cardWidth);
+  const portraitTankHeight=foldablePhoneLayout ? contentWidth*0.70*1.2 : cardWidth>=600 ? viewportHeight*0.42 : cardWidth*0.70*1.2;
+  const tankScale=foldablePhoneLayout ? (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT : wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT;
   const sceneScale=Math.max(0.01,tankScale);
-  const styles=wideLayout ? {
+  const styles=foldablePhoneLayout ? {
+    ...portraitStyles(contentWidth,contentWidth*2.2,sceneScale),
+    sliderRowContainer:{...baseWellStyles.sliderRowContainer,flexShrink:0},
+  } : wideLayout ? {
     ...wideWellStyles,
     tankNumber:{...wideWellStyles.tankNumber,fontSize:24/sceneScale},
     tankUnavailableLabel:{...wideWellStyles.tankUnavailableLabel,fontSize:15/sceneScale},
@@ -379,10 +384,10 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   // Pending pull / waiting state
   const [pendingPull, setPendingPull] = useState<PendingPull | null>(null);
   const wellDown = !!(pendingPull?.wellDown || levelSnapshot?.isDown);
-  // Claim the pager before the first drag, rather than after it steals the gesture.
+  // Unlocked is not dragging. Only the slider responder may claim the pager;
+  // hiding, locking, rotating or unmounting a card must release its claim.
   useEffect(() => {
-    if (!wideLayout) return;
-    onSliderActiveChange?.(isActive && !sliderLocked && !wellDown, wellName);
+    if (!isActive || sliderLocked || wellDown) onSliderActiveChange?.(false, wellName);
     return () => onSliderActiveChange?.(false, wellName);
   }, [wideLayout, isActive, sliderLocked, wellDown, wellName, onSliderActiveChange]);
   // Removed: const [isWaiting, setIsWaiting] = useState(false);
@@ -924,13 +929,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
       sliderLockTimerRef.current = null;
     }
     activateSliderUI();
-    if (!wideLayout) onSliderActiveChange?.(true, wellName);
+    onSliderActiveChange?.(true, wellName);
   }, [activateSliderUI, onSliderActiveChange, wideLayout, wellName]);
 
   // Handle slider drag end - start lock timer and notify parent
   const handleSliderEnd = useCallback(() => {
     resetSliderLockTimer();
-    if (!wideLayout) onSliderActiveChange?.(false, wellName);
+    onSliderActiveChange?.(false, wellName);
   }, [resetSliderLockTimer, onSliderActiveChange, wideLayout, wellName]);
 
   // Animated style for slider level/datetime fade
@@ -1269,14 +1274,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   };
 
   const tankPanel=(
-<View style={[styles.tankSection,!wideLayout && {height:portraitTankHeight,flexShrink:1,minHeight:0}]} onLayout={event => {
+<View style={[styles.tankSection,foldablePhoneLayout ? {flexBasis:portraitTankHeight,maxHeight:portraitTankHeight,flexShrink:1,minHeight:0} : !wideLayout && {height:portraitTankHeight,flexShrink:1,minHeight:0}]} onLayout={event => {
           const {height,width} = event.nativeEvent.layout;
           setTankSlotWidth(previous=>Math.abs(previous-width)>0.5 ? width : previous);
           setTankSlotHeight(previous => Math.abs(previous-height)>0.5 ? height : previous);
         }}>
-        <View style={{position:'absolute',width:wideLayout?TANK_WIDTH:TANK_WIDTH*0.92,height:TANK_HEIGHT,
-          left:'50%',top:'50%',marginLeft:-(wideLayout?TANK_WIDTH:TANK_WIDTH*0.92)/2,marginTop:-TANK_HEIGHT/2,
-          opacity:!wideLayout || tankSlotHeight>0 ? 1 : 0,transform:[{scale:tankScale}]}}>
+        <View style={{position:'absolute',width:foldablePhoneLayout||!wideLayout?TANK_WIDTH*0.92:TANK_WIDTH,height:TANK_HEIGHT,
+          left:'50%',top:'50%',marginLeft:-(foldablePhoneLayout||!wideLayout?TANK_WIDTH*0.92:TANK_WIDTH)/2,marginTop:-TANK_HEIGHT/2,
+          opacity:foldablePhoneLayout||!wideLayout||tankSlotHeight>0 ? 1 : 0,transform:[{scale:tankScale}]}}>
         <Pressable onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
           onPress={() => { if (!fishTouchedRef.current) handleNormalTankTap(); }}
           onLongPress={() => { if (!fishTouchedRef.current) handleTankLongPress(); }} delayLongPress={500}>
@@ -1633,7 +1638,7 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
       })()
   );
   const panels={tank:tankPanel,statistics:statisticsPanel,delivery:deliveryPanel,planning:planningPanel,rootStyle:styles.wellView,topStyle:styles.topSection};
-  return <WellCardLayout {...panels} wideLayout={wideLayout}/>;
+  return <WellCardLayout {...panels} wideLayout={wideLayout} contentWidth={foldablePhoneLayout ? contentWidth : undefined}/>;
 
 });
 
@@ -1645,7 +1650,7 @@ export default function MainScreen() {
   const flatListRef = useRef<FlatList>(null);
   const windowSize=useWindowDimensions();
   const {columns,cardWidth,viewportHeight}=tankViewport(windowSize.width,windowSize.height);
-  const styles=columns===1 ? portraitStyles(windowSize.width,windowSize.height) : landscapeScreenStyles;
+  const styles=foldablePhoneLayout ? portraitStyles(wellContentWidth(cardWidth),wellContentWidth(cardWidth)*2.2) : columns===1 ? portraitStyles(windowSize.width,windowSize.height) : landscapeScreenStyles;
   const [visibleWellIndices,setVisibleWellIndices]=useState<number[]>([]);
   const [focusedIndex,setFocusedIndex]=useState<number|null>(null);
   const pickerListRef = useRef<FlatList>(null);
@@ -2406,9 +2411,9 @@ export default function MainScreen() {
   const renderLandscapeWell = useCallback(({ item, index }: { item: string; index: number }) => (
     <WellPagerCard width={cardWidth} wideLayout={true} onFocus={()=>setFocusedIndex(index)} header={
       <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
-        <Text style={{color:getRouteColor(wellConfigMap?.[item]?.route || ''),fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.route || '\u00a0'}</Text>
-        <Text style={{color:'#F9FAFB',fontSize:22,fontWeight:'700'}} numberOfLines={1}>{wellConfigMap?.[item]?.displayName || item}</Text>
-        <Text style={{color:'#9CA3AF',fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.operator || '\u00a0'}</Text>
+        <Text style={[foldablePhoneLayout ? styles.routeName : {fontSize:12},{color:getRouteColor(wellConfigMap?.[item]?.route || '')}]} numberOfLines={1}>{wellConfigMap?.[item]?.route || '\u00a0'}</Text>
+        <Text style={foldablePhoneLayout ? styles.wellName : {color:'#F9FAFB',fontSize:22,fontWeight:'700'}} numberOfLines={1}>{wellConfigMap?.[item]?.displayName || item}</Text>
+        <Text style={foldablePhoneLayout ? styles.operatorName : {color:'#9CA3AF',fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.operator || '\u00a0'}</Text>
       </TouchableOpacity>}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={true}
         isActive={index===currentIndex || index===currentIndex+1}
@@ -2521,7 +2526,7 @@ export default function MainScreen() {
         </View>
 
         {/* Keep bottom nav accessible so user can still navigate (History | Pull | More) */}
-        <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (columns===1 && windowSize.width>=600 ? windowSize.height*0.02 : 6) }]}>
+        <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (columns===1 && windowSize.width>=600 && !foldablePhoneLayout ? windowSize.height*0.02 : 6) }]}>
           <View style={styles.navSide}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push('/history')}>
               <Text style={styles.navIcon}>📋</Text>
@@ -2647,7 +2652,7 @@ export default function MainScreen() {
       />
 
       {/* Bottom nav - History | Pull | More (Summary now lives in the More sheet) */}
-      <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (columns===1 && windowSize.width>=600 ? windowSize.height*0.02 : 6) }]}>
+      <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + (columns===1 && windowSize.width>=600 && !foldablePhoneLayout ? windowSize.height*0.02 : 6) }]}>
         <View style={styles.navSide}>
           <TouchableOpacity style={styles.navButton} onPress={() => router.push('/history')}>
             <Text style={styles.navIcon}>📋</Text>

@@ -81,7 +81,7 @@ test('cancelled refresh cannot overwrite the visible observation', async () => {
 });
 
 
-test('actual header keeps route/operator rows in place before and after catalogue hydration', () => {
+test.each([false,true])('actual header keeps route/operator rows in place before and after catalogue hydration (Fold=%s)', foldablePhoneLayout => {
   let header = '';
   function find(node: ts.Node) {
     if (ts.isJsxElement(node) && node.openingElement.attributes.getText(ast).includes('openPicker(index)'))
@@ -96,7 +96,7 @@ test('actual header keeps route/operator rows in place before and after catalogu
   const render = (config: unknown) => runInNewContext(compiled, {
     React, View: 'View', Text: 'Text', TouchableOpacity: 'Button', ActivityIndicator: 'Spinner',
     styles: { headerCenter: 'center', routeName: 'route', operatorName: 'operator' },
-    wellConfigMap: config, item:'Olson',index:0,setFocusedIndex:()=>{},
+    wellConfigMap: config, item:'Olson',index:0,setFocusedIndex:()=>{},foldablePhoneLayout,
     getRouteColor: () => '#fff', openPicker: () => {}, t: () => 'of',
   }) as React.ReactElement<{children: React.ReactElement<{style: unknown; children: unknown}>[]}>;
   const pending = render(null).props.children.filter(n => n.type === 'Text');

@@ -64,6 +64,7 @@ class WellbuiltPlatformModule:Module(){
  }
  override fun definition()=ModuleDefinition {
   Name("WellbuiltPlatform")
+  Constant("isFoldable") { context().packageManager.hasSystemFeature("android.hardware.sensor.hinge_angle") }
   Events("connectionChanged","accountChanged")
   OnCreate {
    val m=context().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager

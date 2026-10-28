@@ -1,3 +1,4 @@
+import {ProductionRateRow} from '../../components/ProductionRateRow';
 import {SliderInfoSlot} from '../../components/SliderInfoSlot';
 import {PortraitWellLayout,LandscapeWellLayout} from '../../components/WellCardLayouts';
 import { thresholdTime } from '@tester3x/water-hauling';
@@ -951,16 +952,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   
   const oneInchFlow = calculateOneInchFlow(flowMins);
   
-  // BBLs per hour/day — window-averaged (matches history screen), overnight as easter egg
-  const windowBblsDay = levelSnapshot?.windowBblsDay ?? 0;
-  const overnightBblsDay = levelSnapshot?.overnightBblsDay ?? 0;
+  // ON is a shared display preference; unavailable wells retain AFR with a lock.
   const afrBblsPerDay = flowMins > 0 ? Math.round((60 / flowMins) * bblsPerFoot * 24) : 0;
-  const bblsPerDay = afrBblsPerDay; // AFR-based daily value — matches 1"/1' flow rate family on this card
-  const bblsPerHour = bblsPerDay > 0 ? Math.round(bblsPerDay / 24 * 10) / 10 : 0;
-  // Easter egg: tap bbls/day to toggle overnight formula
-  const displayBblsPerDay = showOvernightBbls && overnightBblsDay > 0 ? overnightBblsDay : bblsPerDay;
-  const displayBblsPerHour = displayBblsPerDay > 0 ? Math.round(displayBblsPerDay / 24 * 10) / 10 : 0;
-  
+
   // Ready at calculation
   // Above current level (Fill side): "When will it reach slider level?"
   // Below current level (Pull side): "If I pull to slider level, what level will it be in X hours?"
@@ -1445,18 +1439,23 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
             )}
           </View>
         </Pressable>
-        <Pressable
-          onPress={() => {
+        <ProductionRateRow
+          afrDaily={afrBblsPerDay}
+          overnightDaily={levelSnapshot?.overnightBblsDay}
+          estimated={levelSnapshot?.overnightEstimatedTime}
+          freshwater={wellConfig?.routeType === 'freshwater'}
+          consumptionDaily={levelSnapshot?.dailyBbl}
+          showOvernight={showOvernightBbls}
+          onToggle={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             onToggleOvernightBbls?.();
           }}
-        >
-          <View style={styles.statsRow}>
-            <Text style={styles.statLeft}>{wellConfig?.routeType === 'freshwater' ? (levelSnapshot?.dailyBbl == null ? '--' : (levelSnapshot.dailyBbl/24).toFixed(1)) : displayBblsPerHour} {t('units.bbl')}{t('units.perHour')}</Text>
-            <Text style={styles.statDivider}>•</Text>
-            <Text style={styles.statRight}>{wellConfig?.routeType === 'freshwater' ? (levelSnapshot?.dailyBbl ?? '--') : displayBblsPerDay} {t('units.bbl')}{t('units.perDay')}{showOvernightBbls && overnightBblsDay > 0 ? (levelSnapshot?.overnightEstimatedTime ? ' ON ≈' : ' ON') : ''}</Text>
-          </View>
-        </Pressable>
+          styles={styles}
+          hourUnit={`${t('units.bbl')}${t('units.perHour')}`}
+          dayUnit={`${t('units.bbl')}${t('units.perDay')}`}
+          accessibilityLabel={t('well.toggleOvernight')}
+          lockedHint={t('well.overnightUnavailable')}
+        />
 
         {/* Last pull info - below stats, two lines for readability */}
         {lastPullInfo && lastPullInfo.dateTime && (
@@ -2597,7 +2596,7 @@ export default function MainScreen() {
         windowSize={3}
         initialNumToRender={columns}
         updateCellsBatchingPeriod={100}
-        extraData={[currentIndex,focusedIndex,visibleWellIndices,cardWidth]}
+        extraData={[currentIndex,focusedIndex,visibleWellIndices,cardWidth,showOvernightBbls]}
         directionalLockEnabled={true}
         alwaysBounceVertical={Platform.OS === 'ios'}
         alwaysBounceHorizontal={true}

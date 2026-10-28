@@ -292,7 +292,9 @@
     "readyWithLoads_one": "Listo ({{count}} carga)",
     "readyWithLoads_other": "Listo ({{count}} cargas)",
     "noFlowData": "Sin datos de flujo",
-    "readyWithLoads": "Listo ({{count}})"
+    "readyWithLoads": "Listo ({{count}})",
+    "toggleOvernight": "Cambiar AFR / ON para todos los pozos",
+    "overnightUnavailable": "ON no disponible para este pozo"
   },
   "units": {
     "perInch": "/pulg",

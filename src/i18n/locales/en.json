@@ -292,7 +292,9 @@
     "readyWithLoads_one": "Ready ({{count}} load)",
     "readyWithLoads_other": "Ready ({{count}} loads)",
     "noFlowData": "No flow data",
-    "readyWithLoads": "Ready ({{count}})"
+    "readyWithLoads": "Ready ({{count}})",
+    "toggleOvernight": "Toggle AFR / ON for all wells",
+    "overnightUnavailable": "ON unavailable for this well"
   },
   "units": {
     "perInch": "/in",

@@ -82,6 +82,17 @@ describe('active-only edit retry scheduler', () => {
     expect(rawOps()[0].attempts).toBe(1);
   });
 
+  it('concurrent schedule requests leave one timer, including when shutdown races a pending read', async () => {
+    await submit(PID, 140);
+    startEditDelivery(); setDeliveryFetch(makeFetch(processed(PID))); await flush();
+    await Promise.all([scheduleEditDelivery(), scheduleEditDelivery(), scheduleEditDelivery()]);
+    expect(jest.getTimerCount()).toBe(1);
+    const pendingSchedule = scheduleEditDelivery();
+    stopEditDelivery();
+    await pendingSchedule;
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
   it('retries at each documented backoff deadline with NO AppState event', async () => {
     await submit(PID, 140);                 // attempt 1 @ t0
     startEditDelivery(); setDeliveryFetch(makeFetch(processed(PID))); await scheduleEditDelivery(); await flush();

@@ -1,3 +1,4 @@
+import { platformDelivery } from '../platformDelivery';
 // Phase-4 client: permanent structured refusals park with their reason;
 // transient failures keep the capped-backoff retry; classification is
 // conservative (unknown → transient); the queue never silently deletes.
@@ -74,6 +75,8 @@ describe('flush parking of permanent refusals', () => {
   const PID = '20260828_044800_Gabriel5_ab12cd';
 
   beforeEach(() => {
+    platformDelivery.setReachable(true);
+    platformDelivery.record({ ok: true });
     uploadTankPacket.mockReset();
   });
 

@@ -40,6 +40,16 @@ test('another signed-in driver cannot send queued delivery', async () => {
   expect(callable).not.toHaveBeenCalled();
 });
 
+test.each(['not-a-date', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()])(
+  'invalid or future delivery time %s never enters the durable queue', async deliveredAtUTC => {
+    await expect(queueFreshWaterDelivery({ groupId: 'test-group', deliveredBbl: 80, deliveredAtUTC }))
+      .rejects.toThrow();
+    expect(session).not.toHaveBeenCalled();
+    expect(await pendingFreshWaterDeliveries()).toEqual([]);
+    expect(callable).not.toHaveBeenCalled();
+  },
+);
+
 test('server refusal stays saved for review', async () => {
   await queueFreshWaterDelivery({ groupId: 'gabriel-1-4-5-6', deliveredBbl: 80 });
   const error = Object.assign(new Error('tank_overflow'), { callableStatus: 'FAILED_PRECONDITION' });

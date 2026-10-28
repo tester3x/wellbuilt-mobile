@@ -38,6 +38,7 @@ jest.mock('../driverAuth', () => ({
 import {
   addPullToHistory, getPullHistory, updatePullHistoryEntry, clearPullHistory,
   PullHistoryEntry,
+  __setBackfillTimingForTests, refreshFromServer,
 } from '../pullHistory';
 
 const STORAGE_KEY = '@wellbuilt_pull_history';
@@ -45,9 +46,13 @@ const raw = (): PullHistoryEntry[] => (mockStore[STORAGE_KEY] ? JSON.parse(mockS
 const find = (id: string) => raw().find(e => e.packetId === id || e.id === id)!;
 
 beforeEach(async () => {
+  // This suite tests local timestamp updates; offline backfill retries have
+  // their own suite. Do not leave a retry importing modules after teardown.
+  __setBackfillTimingForTests({ backoffMs: [] });
   for (const k of Object.keys(mockStore)) delete mockStore[k];
   await clearPullHistory();
 });
+afterEach(async () => { await refreshFromServer(); });
 
 const PID = '20260902_175952_TestWell_abcd12';
 

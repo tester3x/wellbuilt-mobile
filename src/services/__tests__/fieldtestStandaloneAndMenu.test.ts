@@ -135,7 +135,7 @@ describe('WB-M Field-Test Standalone & Bottom Navigation Verification (Tests 1-1
   // ── 11. No stale governed context leaks into a later standalone pull ──
   test('11. No stale governed context leaks into a later standalone pull', () => {
     const indexSrc = src('app/(tabs)/index.tsx');
-    expect(indexSrc).toMatch(/router\.push\(\{\s*pathname: '\/record',\s*params: \{ wellName: wells\[currentIndex\] \},\s*\}\);/);
+    expect(indexSrc).toMatch(/router\.push\(\{\s*pathname: '\/record',\s*params: \{ wellName: wells\[actionIndex\] \},\s*\}\);/);
     expect(indexSrc).not.toMatch(/jobId:/);
   });
 
@@ -172,15 +172,15 @@ describe('WB-M Field-Test Standalone & Bottom Navigation Verification (Tests 1-1
     }
   });
 
-  // ── 15. Route Me, Summary, and Switch Apps remain reachable ──
-  test('15. Route Me, Summary, and Switch Apps remain reachable in ••• menu', () => {
+  // ── 15. Route Me, Summary, and Back to WB S remain reachable ──
+  test('15. Route Me, Summary, and Back to WB S remain reachable in ••• menu', () => {
     const combined = src('app/(tabs)/index.tsx') + src('src/components/MoreMenu.tsx');
     expect(combined).toMatch(/accessibilityLabel="Route Me"/);
     expect(combined).toMatch(/accessibilityLabel="Summary"/);
-    expect(combined).toMatch(/accessibilityLabel="Switch Apps"/);
+    expect(combined).toMatch(/accessibilityLabel="Back to WB S"/);
     expect(combined).toMatch(/router\.push\('\/route-me'\)/);
     expect(combined).toMatch(/handleSummaryPress/);
-    expect(combined).toMatch(/DeviceEventEmitter\.emit\(OPEN_APP_SWITCHER_EVENT\)/);
+    expect(combined).toMatch(/backToSuite\(\)/);
   });
 
   // ── 16. Menu uses intended WellBuilt-style component, not emoji rows/generic giant sheet ──
@@ -191,7 +191,7 @@ describe('WB-M Field-Test Standalone & Bottom Navigation Verification (Tests 1-1
     expect(combined).toMatch(/moreMenuDivider/);
     expect(combined).toMatch(/name="navigate-outline"/);
     expect(combined).toMatch(/name="stats-chart-outline"/);
-    expect(combined).toMatch(/name="apps-outline"/);
+    expect(combined).toMatch(/name="home-outline"/);
     expect(combined).not.toMatch(/moreSheet/);
     expect(combined).not.toMatch(/🧭/);
     expect(combined).not.toMatch(/📊/);

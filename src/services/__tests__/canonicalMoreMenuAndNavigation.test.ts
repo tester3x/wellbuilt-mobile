@@ -73,7 +73,7 @@ describe('Task 1 — Exact WB-T More-Menu Structural Parity', () => {
     const routeMeIdx = moreMenuSrc.indexOf('accessibilityLabel="Route Me"');
     const summaryIdx = moreMenuSrc.indexOf('accessibilityLabel="Summary"');
     const dividerIdx = moreMenuSrc.lastIndexOf('moreMenuDivider');
-    const switchAppsIdx = moreMenuSrc.indexOf('accessibilityLabel="Switch Apps"');
+    const switchAppsIdx = moreMenuSrc.indexOf('accessibilityLabel="Back to WB S"');
 
     expect(routeMeIdx).toBeGreaterThan(0);
     expect(summaryIdx).toBeGreaterThan(routeMeIdx);
@@ -83,7 +83,7 @@ describe('Task 1 — Exact WB-T More-Menu Structural Parity', () => {
     // Icons
     expect(moreMenuSrc).toMatch(/name="navigate-outline"/);
     expect(moreMenuSrc).toMatch(/name="stats-chart-outline"/);
-    expect(moreMenuSrc).toMatch(/name="apps-outline"/);
+    expect(moreMenuSrc).toMatch(/name="home-outline"/);
   });
 
   test('3. Trigger button is strictly ••• with no text label, and index.tsx uses single MoreMenu component', () => {

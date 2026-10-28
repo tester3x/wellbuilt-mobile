@@ -61,27 +61,49 @@ describe('WB-M route-scoped well display', () => {
   });
 });
 
-describe('pull ingest uses deployed ingestDriverPacket envelope', () => {
+describe('pull ingest uses deployed ingestWbmPull envelope', () => {
   beforeEach(() => {
     mockCallable.mockReset();
     mockCallable.mockResolvedValue({ ok: true, key: 'k1' });
   });
 
-  it('secureIngestPacket calls ingestDriverPacket with { packet }', async () => {
-    const packet = { requestType: 'pull', wellName: 'Gabriel 1', idempotencyKey: 'abc12345' };
+  it('secureIngestPacket requires the matching ingestWbmPull acknowledgement', async () => {
+    const packet = { requestType: 'pull', wellName: 'Gabriel 1', packetId: 'abc12345', idempotencyKey: 'abc12345' };
+    mockCallable.mockResolvedValue({ ok: true, key: packet.packetId, packetId: packet.packetId });
     await secureIngestPacket(packet);
     expect(mockCallable).toHaveBeenCalledWith('ingestWbmPull', { packet });
   });
 
   it('edit commands use ingestWbmEdit; history/control stay unavailable', async () => {
-    await secureSubmitFieldCommand({ requestType: 'edit', wellName: 'Gabriel 1' });
+    mockCallable.mockResolvedValue({ ok: true, key: 'edit-123', packetId: 'original-123', queued: true });
+    await secureSubmitFieldCommand({ requestType: 'edit', wellName: 'Gabriel 1', originalPacketId: 'original-123', idempotencyKey: 'edit-123' });
     expect(mockCallable).toHaveBeenCalledWith('ingestWbmEdit', {
-      packet: { requestType: 'edit', wellName: 'Gabriel 1' },
+      packet: { requestType: 'edit', wellName: 'Gabriel 1', originalPacketId: 'original-123', idempotencyKey: 'edit-123' },
     });
     mockCallable.mockClear();
     await expect(getFieldCommandStatus({ packetId: 'x' }))
       .rejects.toThrow('unsupported_field_command:getFieldCommandStatus');
     expect(mockCallable).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { ok: true, key: 'different-pull', packetId: 'expected-pull' },
+    { ok: true, key: 'expected-pull' },
+    { ok: false, key: 'expected-pull', packetId: 'expected-pull' },
+  ])('does not acknowledge an unconfirmed or mismatched pull receipt %j', async receipt => {
+    mockCallable.mockResolvedValue(receipt);
+    await expect(secureIngestPacket({ requestType: 'pull', packetId: 'expected-pull' }))
+      .rejects.toThrow('pull_delivery_unconfirmed');
+  });
+
+  it.each([
+    { ok: true, key: 'other-edit', packetId: 'original-pull', queued: true },
+    { ok: true, key: 'expected-edit', packetId: 'other-pull', committed: true },
+    { ok: true, key: 'expected-edit', packetId: 'original-pull' },
+  ])('does not acknowledge an unconfirmed or mismatched edit receipt %j', async receipt => {
+    mockCallable.mockResolvedValue(receipt);
+    await expect(secureSubmitFieldCommand({ requestType: 'edit', originalPacketId: 'original-pull', idempotencyKey: 'expected-edit' }))
+      .rejects.toThrow('edit_delivery_unconfirmed');
   });
 
   it('source no longer references nonexistent production callables', () => {
@@ -137,7 +159,7 @@ describe('fresh install does not depend on cached well_config', () => {
       wellCount: 1,
     });
     const wells = await loadWellConfig(true);
-    expect(mockCallable).toHaveBeenCalledWith('bootstrapWbmSession', {});
+    expect(mockCallable).toHaveBeenCalledWith('bootstrapWbmSession', { routeContractVersion: 1 });
     expect(Object.keys(wells || {})).toEqual(['Gabriel 1']);
   });
 });

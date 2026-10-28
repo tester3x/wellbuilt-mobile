@@ -2,6 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authorizedCallable } from './firebaseAuthSession';
 import { getDriverSession } from './driverAuth';
+import { evaluatePullTime } from './pullTimeGuard';
 
 const QUEUE_KEY = '@wellbuilt_fresh_water_deliveries_v1';
 export type FreshWaterDeliveryDraft = {
@@ -62,12 +63,17 @@ export async function pendingFreshWaterDeliveries(): Promise<FreshWaterDeliveryD
 export async function queueFreshWaterDelivery(input: {
   groupId: string; deliveredBbl: number; measuredBeforeFeet?: number; wellDown?: boolean; deliveredAtUTC?: string;
 }): Promise<FreshWaterDeliveryDraft> {
+  const deliveredAtUTC = input.deliveredAtUTC ?? new Date().toISOString();
+  // The separate delivery queue must retain the same future-time hard stop as
+  // production-water pulls, before any durable write or delivery ID is minted.
+  const timeGate = evaluatePullTime(deliveredAtUTC, Date.now());
+  if (!timeGate.ok) throw new Error(timeGate.message);
   const session = await getDriverSession();
   if (!session?.driverId || !session.companyId || session.isViewer) throw new Error('Driver session required');
   const entry: FreshWaterDeliveryDraft = {
     deliveryId: `fw_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`,
     groupId: input.groupId,
-    deliveredAtUTC: input.deliveredAtUTC ?? new Date().toISOString(),
+    deliveredAtUTC,
     deliveredBbl: input.deliveredBbl,
     ...(input.wellDown === undefined ? {} : { wellDown: input.wellDown }),
     ...(input.measuredBeforeFeet === undefined ? {} : { measuredBeforeFeet: input.measuredBeforeFeet }),

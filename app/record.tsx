@@ -595,99 +595,95 @@ function RecordScreenInner() {
   };
 
   const handleSubmit = async (committed?: { barrels?: string; level?: string }) => {
+    // Own the tap before either route can await configuration or transport.
+    // Every return below goes through the same finally, including validation.
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     // Privacy-safe phase timing (operational metadata only — no identity/values).
     const trace = startSubmitTrace(isEditMode ? 'edit' : 'create');
     trace.mark('tap');
     let submitOutcome: SubmitOutcome = 'failure';
-    const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
-    const levelValue = committed?.level ?? committedLevelRef.current ?? level;
-    if (routeType === 'freshwater') {
-      const config=await getWellConfig(wellName);
-      if (!config) return;
-      if (isEditMode) { alert.show('Delivery history', 'Delivery corrections require office review.'); return; }
-      const current=parseLevel(levelValue), quantity=Number(barrelsValue);
-      const downCommand = wellDownTouchedRef.current ? wellDownRef.current : undefined;
-      if (quantity > 500 || !Number.isFinite(quantity) || !config.inventoryGroupId || config.equalization === 'unverified' || (current == null && (quantity > 0 || downCommand === undefined))
-        || quantity < 0 || (quantity === 0 && downCommand === undefined && current == null)
-        || (quantity > 0 && resultingLevel('freshwater',current!,quantity,config.bblPerFoot || 0,config.tankHeight || 0) == null)) {
-        alert.show('Check delivery', 'Enter a current level and delivery within the tank capacity. Equalization must be verified.'); return;
-      }
-      if (submitInFlightRef.current) return;
-      submitInFlightRef.current=true;
-      try {
-        await queueFreshWaterDelivery({groupId:config.inventoryGroupId,deliveredBbl:quantity,measuredBeforeFeet:current ?? undefined,deliveredAtUTC:dateTime.toISOString(),wellDown:downCommand});
-        await flushFreshWaterDeliveries();
-        router.back();
-      } catch(error) { alert.show('Delivery saved status',String(error)); }
-      finally { submitInFlightRef.current=false; }
-      return;
-    }
-
-    // Resolve Well Down from LIVE refs, not from this closure's captured state.
-    // The keypad Done handler is a closure frozen at field-activation time
-    // (before the driver toggles the box), so reading `wellDown` state here
-    // loses an explicit down->online (or online->down) transition. New pulls
-    // resolve through the authority helper: a touched box sends the driver's
-    // value; an untouched box sends canonical (a deliberate non-transition).
-    // Edit mode carries exactly the checkbox value the driver sees (the edit
-    // contract handles authority server-side); still read from the ref so it
-    // is never stale.
-    // Pull path: resolve BOTH the explicit boolean and whether this pull asserts
-    // authority. An UNTOUCHED box asserts NO authority (wellDownIsAuthoritative
-    // false) so the server preserves canonical status even if it changed while
-    // the form was open. Edit mode carries the checkbox value; authority is
-    // handled by the edit contract server-side.
-    const wellDownResolution = isEditMode
-      // Edit path: an UNTOUCHED checkbox must NOT assert authority — it carries
-      // the ORIGINAL value non-authoritatively so the server preserves canonical.
-      // Only an explicit change (incl. to false) is authoritative. Toggling away
-      // and back to the original is not a change.
-      ? (() => {
-          const original = editWellDown === true;
-          const next = wellDownRef.current === true;
-          const changed = wellDownTouchedRef.current && next !== original;
-          return { wellDown: changed ? next : original, wellDownIsAuthoritative: changed };
-        })()
-      : resolveWellDownForSubmit({
-          canonicalIsDown: canonicalWellDownRef.current,
-          checkboxWellDown: wellDownRef.current,
-          touched: wellDownTouchedRef.current,
-        });
-    const wellDownFinal = wellDownResolution.wellDown;
-    const wellDownAuthoritativeFinal = wellDownResolution.wellDownIsAuthoritative;
-
-    // ONE required-field validation authority, shared with the keypad's Done
-    // gate (getRecordLoadBlockReason) — same checks, same order as always.
-    // Uses the resolved value so submit and the Done gate agree on whether a
-    // down well may skip level/barrels.
-    const blocked = getRecordLoadBlockReason({
-      wellName,
-      level: levelValue,
-      barrels: barrelsValue,
-      wellDown: wellDownFinal,
-    });
-    if (blocked === 'no_well') {
-      alert.show(t('common.error'), t('record.errorNoWell'));
-      return;
-    }
-    if (blocked === 'missing_level') {
-      alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingLevel'));
-      return;
-    }
-    if (blocked === 'missing_barrels') {
-      alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingBarrels'));
-      return;
-    }
-    const tankLevelFeet = parseLevel(levelValue);
-    trace.mark('validation');
-
-    // One operation per tap: block a duplicate submit (keypad Done re-fire, edit
-    // Save double-tap) during the network await. The guard is set before the
-    // first await; existing idempotency/durable-queue behavior stays authoritative.
-    if (submitInFlightRef.current) return;
-    submitInFlightRef.current = true;
-
     try {
+      const barrelsValue = committed?.barrels ?? committedBarrelsRef.current ?? barrels;
+      const levelValue = committed?.level ?? committedLevelRef.current ?? level;
+      if (routeType === 'freshwater') {
+        setIsSending(true);
+        const config=await getWellConfig(wellName);
+        if (!config) return;
+        if (isEditMode) { alert.show('Delivery history', 'Delivery corrections require office review.'); return; }
+        const current=parseLevel(levelValue), quantity=Number(barrelsValue);
+        const downCommand = wellDownTouchedRef.current ? wellDownRef.current : undefined;
+        if (quantity > 500 || !Number.isFinite(quantity) || !config.inventoryGroupId || config.equalization === 'unverified' || (current == null && (quantity > 0 || downCommand === undefined))
+          || quantity < 0 || (quantity === 0 && downCommand === undefined && current == null)
+          || (quantity > 0 && resultingLevel('freshwater',current!,quantity,config.bblPerFoot || 0,config.tankHeight || 0) == null)) {
+          alert.show('Check delivery', 'Enter a current level and delivery within the tank capacity. Equalization must be verified.'); return;
+        }
+        try {
+          await queueFreshWaterDelivery({groupId:config.inventoryGroupId,deliveredBbl:quantity,measuredBeforeFeet:current ?? undefined,deliveredAtUTC:dateTime.toISOString(),wellDown:downCommand});
+          await flushFreshWaterDeliveries();
+          router.back();
+        } catch(error) { alert.show('Delivery saved status',String(error)); }
+        return;
+      }
+
+      // Resolve Well Down from LIVE refs, not from this closure's captured state.
+      // The keypad Done handler is a closure frozen at field-activation time
+      // (before the driver toggles the box), so reading `wellDown` state here
+      // loses an explicit down->online (or online->down) transition. New pulls
+      // resolve through the authority helper: a touched box sends the driver's
+      // value; an untouched box sends canonical (a deliberate non-transition).
+      // Edit mode carries exactly the checkbox value the driver sees (the edit
+      // contract handles authority server-side); still read from the ref so it
+      // is never stale.
+      // Pull path: resolve BOTH the explicit boolean and whether this pull asserts
+      // authority. An UNTOUCHED box asserts NO authority (wellDownIsAuthoritative
+      // false) so the server preserves canonical status even if it changed while
+      // the form was open. Edit mode carries the checkbox value; authority is
+      // handled by the edit contract server-side.
+      const wellDownResolution = isEditMode
+        // Edit path: an UNTOUCHED checkbox must NOT assert authority — it carries
+        // the ORIGINAL value non-authoritatively so the server preserves canonical.
+        // Only an explicit change (incl. to false) is authoritative. Toggling away
+        // and back to the original is not a change.
+        ? (() => {
+            const original = editWellDown === true;
+            const next = wellDownRef.current === true;
+            const changed = wellDownTouchedRef.current && next !== original;
+            return { wellDown: changed ? next : original, wellDownIsAuthoritative: changed };
+          })()
+        : resolveWellDownForSubmit({
+            canonicalIsDown: canonicalWellDownRef.current,
+            checkboxWellDown: wellDownRef.current,
+            touched: wellDownTouchedRef.current,
+          });
+      const wellDownFinal = wellDownResolution.wellDown;
+      const wellDownAuthoritativeFinal = wellDownResolution.wellDownIsAuthoritative;
+
+      // ONE required-field validation authority, shared with the keypad's Done
+      // gate (getRecordLoadBlockReason) — same checks, same order as always.
+      // Uses the resolved value so submit and the Done gate agree on whether a
+      // down well may skip level/barrels.
+      const blocked = getRecordLoadBlockReason({
+        wellName,
+        level: levelValue,
+        barrels: barrelsValue,
+        wellDown: wellDownFinal,
+      });
+      if (blocked === 'no_well') {
+        alert.show(t('common.error'), t('record.errorNoWell'));
+        return;
+      }
+      if (blocked === 'missing_level') {
+        alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingLevel'));
+        return;
+      }
+      if (blocked === 'missing_barrels') {
+        alert.show(t('record.errorMissingDataTitle'), t('record.errorMissingBarrels'));
+        return;
+      }
+      const tankLevelFeet = parseLevel(levelValue);
+      trace.mark('validation');
+
       setIsSending(true);
 
       if (!isEditMode && isGovernedPacketAccessEnabled() && !!jobId) {

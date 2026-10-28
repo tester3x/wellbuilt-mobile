@@ -85,7 +85,11 @@ describe('Suite-owned SSO logout', () => {
     expect(layout).not.toMatch(/drivers\/profiles\/\$\{/);
     expect(layout).toMatch(/checkCanonicalSsoLogout/);
     expect(layout).toMatch(/performPermittedLogout/);
-    expect(layout).not.toMatch(/clearDriverSession\(\)/);
+    const logoutHandler = layout.slice(layout.indexOf('checkCanonicalSsoLogout().then'), layout.indexOf('async function prepare'));
+    expect(logoutHandler).not.toMatch(/clearDriverSession/);
+    expect(logoutHandler).toContain('performPermittedLogout(permit)');
+    // Explicit device-account removal remains separate from Suite logout.
+    expect(layout).toContain('clearLocal={clearDeviceAccount}');
     expect(sso).toMatch(/bootstrapWbmSession/);
     expect(sso).not.toMatch(/drivers\/profiles\/\$\{/);
     expect(wellConfig).not.toMatch(/drivers\/profiles\/\$\{/);

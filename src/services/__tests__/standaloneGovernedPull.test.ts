@@ -81,7 +81,7 @@ describe('WB-M standalone architecture verification', () => {
 
   test('7. index.tsx direct well selection navigates directly to /record without blocking modal', () => {
     const indexSrc = src('app/(tabs)/index.tsx');
-    expect(indexSrc).toMatch(/router\.push\(\{\s*pathname: '\/record',\s*params: \{ wellName: wells\[currentIndex\] \},\s*\}\);/);
+    expect(indexSrc).toMatch(/router\.push\(\{\s*pathname: '\/record',\s*params: \{ wellName: wells\[actionIndex\] \},\s*\}\);/);
     expect(indexSrc).not.toMatch(/const jobId = ''/);
     expect(indexSrc).not.toMatch(/beginGovernedProductionWaterPull/);
   });

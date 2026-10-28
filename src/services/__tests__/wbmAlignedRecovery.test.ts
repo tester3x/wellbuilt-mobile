@@ -107,7 +107,7 @@ describe('aligned recovery: one secure canonical route/well source', () => {
       assignedRoutes: ['Gabriels'],
     });
     expect(session.driverId).toBe(MIKEZFOLD);
-    expect(mockCallable).toHaveBeenCalledWith('bootstrapWbmSession', {});
+    expect(mockCallable).toHaveBeenCalledWith('bootstrapWbmSession', { routeContractVersion: 1 });
     const wells = await loadWellConfig(true);
     expect(Object.keys(wells || {}).sort()).toEqual(['Gabriels 1', 'Watford 1']);
     expect(peekWellConfigCacheForTests().envelope?.driverId).toBe(MIKEZFOLD);
@@ -126,7 +126,7 @@ describe('aligned recovery: one secure canonical route/well source', () => {
       companyId: 'liquid-gold',
       authMethod: 'sso',
     });
-    expect(mockCallable).toHaveBeenCalledWith('bootstrapWbmSession', {});
+    expect(mockCallable).toHaveBeenCalledWith('bootstrapWbmSession', { routeContractVersion: 1 });
     const v = await fetchAssignmentClassified();
     expect(v.status).toBe('eligible');
     expect(v.routes).toEqual(['Gabriels']);
@@ -222,6 +222,7 @@ describe('aligned recovery: pull origin and pipeline preservation', () => {
       dateTimeUTC: '2026-08-20T17:42:02.991Z',
       idempotencyKey: '20260820_124211_Gabriel1_frr2t3',
     };
+    mockCallable.mockResolvedValue({ ok: true, key: packet.packetId, packetId: packet.packetId });
     await secureIngestPacket(packet);
     expect(mockCallable).toHaveBeenCalledWith('ingestWbmPull', { packet });
     expect(mockCallable.mock.calls[0][1]).not.toHaveProperty('assignedRoutes');

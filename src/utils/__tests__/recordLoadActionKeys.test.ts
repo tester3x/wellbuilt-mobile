@@ -274,7 +274,7 @@ describe('Record Load keypad: uniform Next + form-gated Done', () => {
 
   describe('19+20. edit mode: Done finishes entry only; Save Edit is the submit authority', () => {
     it('edit-mode Done bypasses the form gate (commit-only), never submits', () => {
-      expect(record).toMatch(/const keypadDoneEnabled = isEditMode\s*\?\s*true\s*:\s*isRecordLoadSubmitReady/);
+      expect(record).toMatch(/const keypadDoneEnabled = isEditMode\s*\?\s*true\s*:\s*routeType === 'freshwater'[^;]*: isRecordLoadSubmitReady/);
       expect(bblsBlock).toMatch(/if \(!isEditMode\) \{\s*void handleSubmit\(\{ barrels: formatted \}\);/);
     });
 

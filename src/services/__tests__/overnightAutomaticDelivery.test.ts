@@ -17,6 +17,10 @@ jest.mock('../firebaseListener',()=>({
  isListening:jest.fn(()=>false),unsubscribeAll:jest.fn(),
 }));
 jest.mock('../driverAuth',()=>({getDriverId:jest.fn(async()=> 'test-driver')}));
+// All server responses in this suite are supplied above. A background history
+// backfill must not escape into real auth/network code or outlive the test.
+jest.mock('@react-native-community/netinfo',()=>({__esModule:true,default:{fetch:jest.fn(async()=>({isConnected:true}))}}));
+jest.mock('../firebaseAuthSession',()=>({getValidIdToken:jest.fn(async()=>{throw new Error('test history has no auth session');})}));
 jest.mock('../firebase',()=>({
  fetchDriverOutgoingStatus:jest.fn(async()=>({driverId:'test-driver',responses:[mockRestResponse],unavailableWells:[]})),
  fetchIncomingVersion:jest.fn(async()=>7),fetchIncomingRevisionV2:jest.fn(async()=>mockRevision),
@@ -24,7 +28,26 @@ jest.mock('../firebase',()=>({
 jest.mock('../wellAlerts',()=>({scheduleWellAlert:jest.fn(async()=>{})}));
 
 describe('automatic ON delivery after new pulls',()=>{
+ afterEach(async()=>{await (await import('../pullHistory')).refreshFromServer();});
  beforeEach(()=>{jest.resetModules();Object.keys(mockStore).forEach(k=>delete mockStore[k]);mockRestResponse=null;mockRevision='initial';});
+ test('stopping during a revision fetch cannot arm a late completion-retry timer',async()=>{
+  jest.useFakeTimers();
+  const sync=await import('../backgroundSync');
+  const firebase=await import('../firebase');
+  let release!:(value:any)=>void;
+  const outgoing=firebase.fetchDriverOutgoingStatus as jest.Mock;
+  outgoing.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
+  try{
+   sync.startBackgroundSync();
+   mockCallbacks.revision('late-revision');
+   await jest.advanceTimersByTimeAsync(0);
+   expect(release).toBeDefined();
+   sync.stopBackgroundSync();
+   release({driverId:'test-driver',responses:[],unavailableWells:[]});
+   await jest.advanceTimersByTimeAsync(0);
+   expect(jest.getTimerCount()).toBe(0);
+  }finally{sync.stopBackgroundSync();jest.clearAllTimers();jest.useRealTimers();}
+ });
  test('four-tank inventory AFR changes after successive pulls through listener and revision recovery',async()=>{
   const sync=await import('../backgroundSync'),history=await import('../wellHistory');
   const screen=jest.fn();sync.onSyncStatusChange(screen);sync.startBackgroundSync();

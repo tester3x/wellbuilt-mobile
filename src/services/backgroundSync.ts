@@ -326,11 +326,14 @@ export async function syncOnForeground(): Promise<number> {
  * can drop. (The legacy incoming_version backup listener was retired 2026-09-08;
  * incoming_revision_v2 is its saturation-proof successor.)
  */
-function scheduleVersionCompletionRetry(): void {
+let syncGeneration = 0;
+function scheduleVersionCompletionRetry(generation: number): void {
+  if (generation !== syncGeneration) return;
   if (versionRetryTimer) return;
   const delay = VERSION_COMPLETION_RETRY_MS[0];
   versionRetryTimer = setTimeout(() => {
     versionRetryTimer = null;
+    if (generation !== syncGeneration) return;
     void runOutgoingStatusSync();
   }, delay);
   if (typeof (versionRetryTimer as NodeJS.Timeout).unref === 'function') {
@@ -347,6 +350,7 @@ export function startBackgroundSync(): void {
   }
 
   console.log('[BackgroundSync] Starting Firebase listeners');
+  const generation = ++syncGeneration;
 
   // METHOD 1: Subscribe to outgoing responses directly
   // Firebase will call our callback whenever data changes (if WebSocket is connected)
@@ -388,9 +392,10 @@ export function startBackgroundSync(): void {
   // Funnels into the SAME coalesced runner as METHOD 1's fetch path.
   void loadAppliedRevisionV2();
   revisionV2Unsubscribe = watchIncomingRevisionV2((token) => {
+    if (generation !== syncGeneration) return;
     console.log('[BackgroundSync] incoming_revision_v2 changed - fetching updated responses', token);
     void runOutgoingStatusSync().then(() => {
-      scheduleVersionCompletionRetry();
+      scheduleVersionCompletionRetry(generation);
     });
   });
 }
@@ -400,6 +405,9 @@ export function startBackgroundSync(): void {
  * Unsubscribes from Firebase listeners
  */
 export function stopBackgroundSync(): void {
+  // Invalidate delayed callbacks before clearing their current timers. A fetch
+  // that finishes after stop must not recreate a timer for the old listener.
+  ++syncGeneration;
   // Clean up old polling timer if it exists (legacy)
   if (syncTimer) {
     clearInterval(syncTimer);

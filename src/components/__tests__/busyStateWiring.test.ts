@@ -7,6 +7,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import ts from 'typescript';
 import en from '../../i18n/locales/en.json';
 import es from '../../i18n/locales/es.json';
 
@@ -68,7 +69,13 @@ describe('record.tsx — submit is guarded, instrumented, and overlay-covered', 
   test('a synchronous in-flight guard is set before the first await', () => {
     const submit = record.slice(record.indexOf('const handleSubmit'));
     const guardIdx = submit.indexOf('submitInFlightRef.current = true');
-    const firstAwait = submit.indexOf('await ');
+    const ast = ts.createSourceFile('submit.tsx', submit, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let firstAwait = Infinity;
+    const visit = (node: ts.Node) => {
+      if (ts.isAwaitExpression(node)) firstAwait = Math.min(firstAwait, node.getStart(ast));
+      ts.forEachChild(node, visit);
+    };
+    visit(ast); // Comments mentioning an await are not executable operations.
     expect(guardIdx).toBeGreaterThan(-1);
     expect(guardIdx).toBeLessThan(firstAwait); // guard precedes any await
   });

@@ -1,3 +1,4 @@
+import { platformDelivery } from '../platformDelivery';
 // Governed WB-M pull-edit client recovery (2026-08-26). Exercises the REAL
 // submit/persist/serialize/retry/receipt paths of editDelivery — no hand-built
 // mirror. Storage + network are mocked; the authenticated transport is mocked
@@ -56,6 +57,8 @@ const processedOriginal = { [`packets/processed/${PID}`]: { packetId: PID } };
 const sentUploadIds = () => mockedUploadEdit.mock.calls.map((c: any[]) => c[0].editEventId);
 
 beforeEach(async () => {
+    platformDelivery.setReachable(true);
+    platformDelivery.record({ ok: true });
   Object.keys(mockStore).forEach((k) => delete mockStore[k]);
   mockedUploadEdit.mockReset();
   mockedUploadEdit.mockResolvedValue({ wellName: 'Gunslinger 3' });
@@ -300,6 +303,7 @@ describe('WB-M governed edit — Thor 1 delivery/identity regressions (8/30/2026
     expect(mockedUploadEdit).toHaveBeenCalledTimes(0);
     expect(rawOps()[0].state).toBe('edit_pending');
     mockOnline.value = true;               // foreground/restart with connectivity
+    platformDelivery.setReachable(true); // native connectivity event in production
     await processEditOperations(makeFetch(processedOriginal), { forceOpId: rawOps()[0].opId });
     expect(mockedUploadEdit).toHaveBeenCalledTimes(1); // delivered promptly, not left pending
   });

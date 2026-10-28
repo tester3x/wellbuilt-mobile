@@ -916,14 +916,22 @@ export async function getPendingEditForWell(
 // A SINGLE self-rescheduling deadline timer (never continuous polling). It fires
 // only at the earliest pending edit's next backoff deadline, does nothing when
 // the queue is empty, and runs only while foregrounded + online + authed.
-let unregisterPlatformEdit:(()=>void)|null=null;
+// This queue already owns its receipt/transport deadline timer below. Do not
+// also register it with the platform queue scheduler: that creates a second
+// timer (including after an edit parks) with a different retry cadence.
+let unsubscribeFlush: (() => void) | null = null;
+let unsubscribeConnectivity: (() => void) | null = null;
 let _started = false;
 let _schedulerEnabled = false;
 let _deliveryTimer: ReturnType<typeof setTimeout> | null = null;
+let _scheduleGeneration = 0;
 let _fg = true, _online = true, _authed = true;
 let _deliveryFetch: typeof fetch | null = null;
 export function setDeliveryFetch(fn: typeof fetch | null): void { _deliveryFetch = fn; }
-const clearDeliveryTimer = (): void => { if (_deliveryTimer) { clearTimeout(_deliveryTimer); _deliveryTimer = null; } };
+const clearDeliveryTimer = (): void => {
+  ++_scheduleGeneration;
+  if (_deliveryTimer !== null) { clearTimeout(_deliveryTimer); _deliveryTimer = null; }
+};
 
 /** True while an op should still be auto-retried at some future deadline. */
 function retriesEventually(op: EditOperation): boolean {
@@ -969,8 +977,12 @@ export async function nextEditDeadline(nowMs: number): Promise<number | null> {
  *  unless enabled, foregrounded, online, authed, AND ≥1 op is pending. */
 export async function scheduleEditDelivery(): Promise<void> {
   clearDeliveryTimer();
+  const generation = _scheduleGeneration;
   if (!_schedulerEnabled || !_fg || !_online || !_authed) return;
   const dl = await nextEditDeadline(Date.now());
+  // Storage can finish after another schedule, a background transition or stop.
+  // Only the latest request may arm a timer; an old read cannot resurrect one.
+  if (generation !== _scheduleGeneration || !_schedulerEnabled || !_fg || !_online || !_authed) return;
   if (dl == null) return; // empty queue → zero wakeups
   const delay = delivery.wakeDelay([dl],_online);
   if(delay===null)return;
@@ -1018,7 +1030,8 @@ export function setDeliveryAuthed(authed: boolean): void {
 /** Test-only reset (and a clean shutdown hook). */
 export function stopEditDelivery(): void {
   clearDeliveryTimer();
-  unregisterPlatformEdit?.();unregisterPlatformEdit=null;
+  unsubscribeFlush?.(); unsubscribeFlush = null;
+  unsubscribeConnectivity?.(); unsubscribeConnectivity = null;
   _started = false; _schedulerEnabled = false; _fg = true; _online = true; _authed = true; _deliveryFetch = null;
 }
 
@@ -1029,13 +1042,9 @@ export function stopEditDelivery(): void {
 export function startEditDelivery(): void {
   if (_started) return;
   _started = true;
-  unregisterPlatformEdit=delivery.register('mobile-edits',{
-    pending:async()=>!_fg||!_authed?[]:(await loadOps()).filter(o=>o.state==='edit_pending'&&retriesEventually(o)).map(o=>opDeadline(o,Date.now())),
-    flush:async()=>{if(_fg&&_authed)return processEditOperations();},
-  });
   _schedulerEnabled = true;
-  onFlushComplete(() => { void deliverAndSchedule(); });
-  onConnectivityChange((online) => { setDeliveryOnline(online); });
+  unsubscribeFlush = onFlushComplete(() => { void deliverAndSchedule(); });
+  unsubscribeConnectivity = onConnectivityChange((online) => { setDeliveryOnline(online); });
   // Foreground gating is driven by the app root wiring AppState →
   // setDeliveryForeground(state === 'active'). Kept out of this module so the
   // scheduler stays pure/testable and never imports react-native directly.

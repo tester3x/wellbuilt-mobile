@@ -3071,7 +3071,12 @@ const styles = StyleSheet.create({
   },
   tankBadgeText: {
     color: 'white',
-    fontSize: scaledFont(0.013),
+    // This text shares the badge's scene transform: keep its size relative to
+    // the 18dp badge, never to the launch window or the tablet font clamp.
+    fontSize: 14,
+    lineHeight: 18,
+    includeFontPadding: false,
+    textAlign: 'center',
     fontWeight: '700',
   },
   bblsAvailableContainer: {

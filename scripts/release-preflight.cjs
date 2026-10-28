@@ -73,6 +73,7 @@ function state(heads) {
     signingCertificateSha256:known.signingCertificateSha256, knownVersionFloor:Math.max(known.versionCodeFloor,reserved)};
 }
 function verify(plan, allowOwnReservation=false) {
+  require('./retired-code-guard.cjs').assertRetiredCodePolicy(root);
   const heads=remoteHeads(); const s=state(heads);
   if(allowOwnReservation) {
     // Own version is already allocated; every OTHER reservation must still be below it.

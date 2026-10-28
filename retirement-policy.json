@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "activeBranch": "codex/wbm-stale-level-20261005",
+  "retiredBranches": [
+    {
+      "branch": "emergency/wbm-laptop-vc58-emergency-fix",
+      "instruction": "NEVER USE THIS BRANCH AGAIN",
+      "replacement": "codex/wbm-stale-level-20261005",
+      "reason": "Superseded historical lane, retained for isolated forensic review only; never merge/build wholesale."
+    }
+  ],
+  "retiredRuntimePaths": []
+}

@@ -26,3 +26,13 @@
 ## Mandatory cross-computer reconciliation
 
 Before every Android build on either desktop or laptop, follow [docs/android-release-reconciliation.md](docs/android-release-reconciliation.md) and run the local release gate. Commit/push, freshly fetch every GitHub branch, reconcile relevant other-machine work, check expected ancestry/full delta and combined-source tests, reserve the version remotely, and recheck movement immediately before building. Unpushed other-machine work is undiscoverable. Existing APKs are not evidence of full reconciliation. The current user-authorized workspace policy overrides older checkout/build notes. No app feature or new APK build is authorized by this instruction change alone.
+
+
+## Retired branches and code - mandatory before editing, merging or building
+
+- Read RETIRED_CODE.md and retirement-policy.json first where present. A notice saying **NEVER USE THIS BRANCH AGAIN** is a hard stop: do not develop, build, merge wholesale, copy its screen implementations or use it as a release source. Use the named active branch instead.
+- **NEVER RESTORE THIS CODE** applies to every registered retired UI/implementation, including a fallback or compatibility path that makes the retired screen reachable. Keep the approved replacement as the only implementation.
+- Git history and archive branches are reference/recovery material, never an alternate source of current features. Review isolated historical patches against current behavior; do not restore an old file to fix an unrelated issue.
+- Run `node scripts/retired-code-guard.cjs` where installed before release work. The local release gate runs it automatically and must stop on a retirement violation. Do not delete/disable a marker, remove a registered pattern, relabel a branch or weaken the guard to get a build through. Retirement changes require Mike's explicit instruction.
+- When retiring a path, remove its live callers/exports and duplicate renderer, record its replacement and a regression that fails if it becomes reachable again. Preserve domain/data compatibility separately; do not restore retired UI to read old records.
+- Keep instructions, branch notices and retirement registries committed/pushed so both computers see them. Never rewrite history or force-push to add a warning.

@@ -32,3 +32,12 @@ test('Fold cover keeps the ordinary unscaled layout',()=>{
  expect(tree.root.findByProps({testID:'well-phone-panel'}).props.style).toEqual({flex:1,minHeight:0});
  act(()=>tree.unmount());
 });
+
+test('panel fitting uses one native width/height measurement during a resize',()=>{
+ let tree!:TestRenderer.ReactTestRenderer;
+ act(()=>{tree=TestRenderer.create(React.createElement(WellPagerCard,{width:750,wideLayout:true,children:React.createElement('body')}));});
+ const host=tree.root.findAllByType('View' as any).find(node=>node.props.onLayout)!;
+ act(()=>host.props.onLayout({nativeEvent:{layout:{width:416,height:540}}}));
+ expect(tree.root.findByProps({testID:'well-phone-panel'}).props.style.transform).toEqual([{scale:foldPanelFit(416,540,true).scale}]);
+ act(()=>tree.unmount());
+});

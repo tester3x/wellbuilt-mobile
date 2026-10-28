@@ -150,3 +150,16 @@ test('well list uses native paging so Android focus cannot scroll it as a free-s
  let pager:ts.JsxOpeningElement|ts.JsxSelfClosingElement|undefined;function visit(n:ts.Node){if((ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))&&n.tagName.getText(ast)==='FlatList'&&n.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='testID'&&a.initializer?.getText(ast)==='"well-pager"'))pager=n;ts.forEachChild(n,visit);}visit(ast);
  expect(pager).toBeDefined();expect(pager!.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='pagingEnabled'&&!a.initializer)).toBe(true);
 });
+
+test('Fold root measurement corrects stale window dimensions before startup and pager render',()=>{
+ const setFoldWindow=jest.fn();
+ const measured=callback('handleRootLayout',{foldablePhoneLayout:true,setFoldWindow});
+ measured({nativeEvent:{layout:{width:750,height:780}}});
+ expect(setFoldWindow.mock.calls[0][0]({width:412,height:900})).toEqual({width:750,height:780});
+ const stable={width:750,height:780};expect(setFoldWindow.mock.calls[0][0](stable)).toBe(stable);
+ setFoldWindow.mockClear();callback('handleRootLayout',{foldablePhoneLayout:false,setFoldWindow})({nativeEvent:{layout:{width:700,height:900}}});expect(setFoldWindow).not.toHaveBeenCalled();
+ const {text}=variable('(tabs)/index.tsx','handleRootLayout');
+ expect(text).toContain('foldablePhoneLayout && foldWindow ? foldWindow : reportedWindow');
+ expect(text).toContain('<View style={styles.splashContainer} onLayout={handleRootLayout}>');
+ expect(text).toContain('<GestureHandlerRootView style={styles.container} onLayout={handleRootLayout}>');
+});

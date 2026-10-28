@@ -1653,7 +1653,17 @@ export default function MainScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
-  const windowSize=useWindowDimensions();
+  const reportedWindow=useWindowDimensions();
+  const [foldWindow,setFoldWindow]=useState<{width:number;height:number}|null>(null);
+  // Android's window event may lag the actual root after unfolding/resuming.
+  // Measure the root even during startup, before mounting any pager cells.
+  const windowSize=foldablePhoneLayout && foldWindow ? foldWindow : reportedWindow;
+  const handleRootLayout=useCallback((event: {nativeEvent:{layout:{width:number;height:number}}})=>{
+    if(!foldablePhoneLayout)return;
+    const {width,height}=event.nativeEvent.layout;
+    if(width<=0 || height<=0)return;
+    setFoldWindow(previous=>previous && Math.abs(previous.width-width)<0.5 && Math.abs(previous.height-height)<0.5 ? previous : {width,height});
+  },[]);
   const {columns,cardWidth,viewportHeight}=tankViewport(windowSize.width,windowSize.height);
   const styles=foldablePhoneLayout ? portraitStyles(wellContentWidth(cardWidth),wellContentWidth(cardWidth)*2.2) : columns===1 ? portraitStyles(windowSize.width,windowSize.height) : landscapeScreenStyles;
   const [visibleWellIndices,setVisibleWellIndices]=useState<number[]>([]);
@@ -2433,7 +2443,7 @@ export default function MainScreen() {
 
   if (!isReady) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.loadingContainer} onLayout={handleRootLayout}>
         <ActivityIndicator size="large" color="#60A5FA" />
       </View>
     );
@@ -2444,7 +2454,7 @@ export default function MainScreen() {
     // COLD/WARM START - Simple splash with logo
     if (!isFreshInstall) {
       return (
-        <View style={styles.splashContainer}>
+        <View style={styles.splashContainer} onLayout={handleRootLayout}>
           <Image
             source={require('../../assets/images/WellBuilt_Logo.png')}
             style={styles.splashLogo}
@@ -2479,7 +2489,7 @@ export default function MainScreen() {
     );
 
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.loadingContainer} onLayout={handleRootLayout}>
         <Text style={styles.setupTitle}>{t('home.settingUp')}</Text>
         <View style={styles.setupStepsContainer}>
           <StepItem label={t('home.stepAuth')} status={setupSteps.auth} />
@@ -2494,7 +2504,7 @@ export default function MainScreen() {
   // Empty state - no wells loaded (config fetch failed, offline on first load, etc.)
   if (wells.length === 0) {
     return (
-      <GestureHandlerRootView style={styles.container}>
+      <GestureHandlerRootView style={styles.container} onLayout={handleRootLayout}>
         <View style={styles.emptyStateContainer}>
           <Text style={styles.emptyStateIcon}>⚠️</Text>
           <Text style={styles.emptyStateTitle}>{t('homeExtra.noWellsLoaded')}</Text>
@@ -2569,7 +2579,7 @@ export default function MainScreen() {
   }
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <GestureHandlerRootView style={styles.container} onLayout={handleRootLayout}>
       {/* Independent portrait header and landscape toolbar; never mounted together. */}
       {columns===1 ? <>
       {/* Header with tappable well name and settings */}

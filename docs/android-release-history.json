@@ -3,7 +3,7 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 129,
+  "versionCodeFloor": 133,
   "observedAt": "2026-10-28T04:57:22.796198+00:00",
   "installedReports": [
     {
@@ -355,10 +355,30 @@
         "C:/dev/tmp/wbm132-rotation-frames-private.json",
         "C:/dev/tmp/wbm132-rotation-landscape-board-private.png"
       ]
+    },
+    {
+      "sourceCommit": "34dd9d7db31f6286070b8972c446e857e5c53366",
+      "versionCode": 133,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "929d27f3f08e73ec7a6a0f4b03ed922851d66d73e455e18943108f56c93d5d77",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-10-28T17:49:33.531284+00:00",
+      "localArtifact": "C:\\dev\\tmp\\WB-M133-34dd9d7.apk",
+      "method": "Registered-home local Android SDK/Gradle; account-device-test; arm64-v8a",
+      "embeddedPanelAndSliderMarkersVerified": true,
+      "reservation": "android-release-v133",
+      "checks": [
+        "135 suites/1380 tests",
+        "TypeScript noEmit",
+        "19 retirement/release regressions",
+        "Approved aapt/apksigner identity and embedded panel/slider markers"
+      ],
+      "verificationState": "S24 startup, locked/peek spacing and paging passed. ZFold installed133/2.1.0. Settled landscape shows both proportionate panels and all controls without scrolling, verified screenshot and native XML bounds. Initial unfolding/resume exposed stale cover-width cells; first rotation frame clipped header/hint before settling. Not accepted as a complete posture-transition pass. Follow-up root/native panel measurement fix queued."
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M132 built locally and installed on S24/ZFold at user request. S24 portrait/peek pass; Fold text/control visibility improved, but tank-size transitions remain staged and both-unlocked native gesture check interrupted by USB disconnect. Tablet132 install pending connection; current131. No complete native rotation pass claimed.",
+  "notes": "M133 local rollout tested; settled Fold geometry fits, but stale initial root dimensions require follow-up. Do not label the initial unfold/rotation behavior passed.",
   "failedReservations": [
     {
       "versionCode": 123,

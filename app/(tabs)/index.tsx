@@ -1523,7 +1523,7 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
               {showNextPull ? (
                 // Next Pull Ready - shows in same spot as slider info when locked
                 <>
-                  <Text style={styles.nextPullLabel}>{wellConfig?.routeType === 'freshwater' ? 'Minimum '+(wellConfig.allowedBottom==null?'unknown':formatFeetInches(wellConfig.allowedBottom))+' (no delivery)' : t('well.nextPull', 'Next Pull')}</Text>
+                  <Text style={styles.nextPullLabel}>{wellConfig?.routeType === 'freshwater' ? 'Minimum '+(wellConfig.allowedBottom==null?'unknown':formatFeetInches(wellConfig.allowedBottom))+' (no delivery)' : t('well.nextPull', 'Next Load')}</Text>
                   <Text style={[
                     styles.nextPullTime,
                     nextPullReady.isReady && styles.nextPullReady
@@ -2225,7 +2225,7 @@ export default function MainScreen() {
     if (isViewer) {
       alert.show(
         'View Only',
-        'Your account is view-only. Contact an admin to enable pull submissions.',
+        'Your account is view-only. Contact an admin to enable load submissions.',
         [{ text: 'OK' }]
       );
       return;
@@ -2627,7 +2627,7 @@ export default function MainScreen() {
           <TouchableOpacity style={styles.navButton} onPress={handlePullPress} disabled={isViewer}>
             <Text style={[styles.navIcon, styles.navIconAccent, isViewer && styles.navIconDisabled]}>🛢️</Text>
             <Text style={[styles.navLabel, styles.navLabelAccent, isViewer && styles.navLabelDisabled]}>
-              {isViewer ? t('homeExtra.viewOnly') : wellConfigMap?.[wells[actionIndex]]?.routeType === 'freshwater' ? 'Delivery' : t('nav.pull')}
+              {isViewer ? t('homeExtra.viewOnly') : t('nav.pull')}
             </Text>
             {columns>1 && <Text numberOfLines={1} style={{fontSize:12,color:'#C4A574',maxWidth:cardWidth-24}}>{wellConfigMap?.[wells[actionIndex]]?.displayName || wells[actionIndex]}</Text>}
             {currentWellHasDraft && !isViewer && (

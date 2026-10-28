@@ -55,10 +55,10 @@ describe('plural forms (EN/ES count patterns)', () => {
   });
 
   test('history pullsCount plural keys', () => {
-    expect((en as any).history.pullsCount_one).toBe('{{count}} pull');
-    expect((en as any).history.pullsCount_other).toBe('{{count}} pulls');
-    expect((es as any).history.pullsCount_one).toContain('extracción');
-    expect((es as any).history.pullsCount_other).toContain('extracciones');
+    expect((en as any).history.pullsCount_one).toBe('{{count}} load');
+    expect((en as any).history.pullsCount_other).toBe('{{count}} loads');
+    expect((es as any).history.pullsCount_one).toContain('carga');
+    expect((es as any).history.pullsCount_other).toContain('cargas');
   });
 
   test('manager count interpolations exist', () => {

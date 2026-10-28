@@ -606,7 +606,7 @@ export default function PerformanceDetailScreen() {
           }
           sections={[
             {
-              title: "pulls",
+              title: "loads",
               data: rows,
             },
           ]}

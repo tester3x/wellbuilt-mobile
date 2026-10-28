@@ -76,7 +76,8 @@ describe('Thor 1 first render / no swipe', () => {
   });
 
   it('no swipe is required to apply either state after a snapshot update', () => {
-    expect(index).toMatch(/Always apply the accepted snapshot/);
+    expect(index).toContain('setTargetFraction(fraction)');
+    expect(index).toContain('useWellLevelTransition');
     expect(index).toMatch(/syncOnForeground\(\)/);
   });
 });

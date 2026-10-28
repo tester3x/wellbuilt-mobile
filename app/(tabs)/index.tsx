@@ -45,6 +45,7 @@ import Animated, {
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
+import { useWellLevelTransition } from '../../src/hooks/useWellLevelTransition';
 import { useTankFlip } from '../../src/hooks/useTankFlip';
 import { TankFlipWater } from '../../src/components/TankFlipWater';
 import { roamingFishPosition, movementFishFacing, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
@@ -302,7 +303,7 @@ interface WellViewProps {
   isActive: boolean;
   cardWidth?: number;
   viewportHeight?: number;
-  getPreviousLevel: () => number; // Getter for previous well's level (0-1)
+  entryFraction: number; // Captured visible fraction of the departing well (0-1)
   onLevelChange?: (level: number) => void; // Report current level to parent
   refreshTrigger?: number; // Triggers data reload after sync
   onSliderActiveChange?: (active: boolean) => void; // Block FlatList scroll during slider use
@@ -313,7 +314,7 @@ interface WellViewProps {
   onToggleOvernightBbls?: () => void; // Toggle handler (persists to AsyncStorage)
 }
 
-const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, getPreviousLevel, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
+const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, entryFraction, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
@@ -337,8 +338,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   const [sliderPeeking, setSliderPeeking] = useState(false); // Tap to peek values without unlocking
   const [showTankMath, setShowTankMath] = useState(false); // Tap first metrics row → peek bbl/in • bbl/ft (~4s, all wells)
   // showOvernightBbls is now a prop from MainScreen (global toggle)
-  const hasAnimated = useRef(false);
-  const prevIsActive = useRef(isActive);
   const tankScale=tankSceneScale(cardWidth,viewportHeight,TANK_WIDTH,TANK_HEIGHT);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -428,6 +427,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   // stay correctly placed/afloat but stationary — no swim, no bob, no
   // drift, no pelican flight.
   const reducedMotion = useReducedMotion();
+  useWellLevelTransition({ fill: waterFraction, target: targetFraction, active: isActive,
+    entryFraction, draining: drainAnimationActive.current, reducedMotion });
 
   // App lifecycle: when the app goes inactive/background, EVERY wildlife
   // loop and timer is cancelled (no suspended pelican timeout can fire
@@ -470,33 +471,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
     if (!sceneActive || reducedMotion) { cancelAnimation(fishScatter); fishScatter.value = 0; }
     return () => { fishSceneActiveRef.current = false; cancelAnimation(fishScatter); fishScatter.value = 0; };
   }, [sceneActive, reducedMotion, fishScatter]);
-
-  // Handle animation when well becomes active - separate effect to ensure proper ordering
-  useEffect(() => {
-    // Only trigger when transitioning from inactive to active
-    if (isActive && !prevIsActive.current && levelSnapshot) {
-      // Calculate current level with flow estimate
-      // Formula: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
-      const flowMins = levelSnapshot.flowRateMinutes ?? wellConfig?.avgFlowRateMinutes ?? 0;
-      const currentLevel = estimatedSnapshotLevel(levelSnapshot, flowMins, Date.now(), tankHeightFeet);
-
-      const fraction = tankFillFraction(currentLevel, tankHeightFeet);
-      const prevLevel = getPreviousLevel();
-
-      // Start at previous well's level, animate to this well's level
-      waterFraction.value = prevLevel;
-      waterFraction.value = withTiming(fraction, {
-        duration: 800,
-        easing: Easing.inOut(Easing.ease),
-      });
-      hasAnimated.current = true;
-
-      // DON'T reset slider to current level - keep persisted position
-      // Slider position is loaded from storage in loadData
-    }
-
-    prevIsActive.current = isActive;
-  }, [isActive, levelSnapshot, wellConfig, getPreviousLevel, waterFraction, wellName]);
 
   // Cleanup animations and timers when component unmounts
   // Note: Empty dependency array - only runs on unmount, not on state changes
@@ -678,7 +652,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
             );
           }
 
-          hasAnimated.current = true;
           setIsLoadingInitial(false);
         } else if (drainAnimationActive.current) {
           // Drain animation still playing but backgroundSync already cleared the pending pull.
@@ -710,24 +683,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
 
             const fraction = tankFillFraction(currentLevel, tankHeightFeet);
 
-            // Always apply the accepted snapshot — including after a foreground
-            // sync on an already-mounted well. Do not wait for a later swipe.
-            if (!hasAnimated.current && isActive) {
-              const prevLevel = getPreviousLevel();
-              waterFraction.value = prevLevel;
-              waterFraction.value = withTiming(fraction, {
-                duration: 800,
-                easing: Easing.inOut(Easing.ease),
-              });
-            } else if (isActive) {
-              waterFraction.value = snapshot.isDown
-                ? fraction
-                : withTiming(fraction, { duration: 400, easing: Easing.out(Easing.ease) });
-            } else {
-              waterFraction.value = fraction;
-            }
-            hasAnimated.current = true;
-
+            // The transition hook owns ordinary water-height updates. Loading
+            // or refreshing a snapshot must not replace an entry animation.
             setTargetFraction(fraction);
           }
           setIsLoadingInitial(false);
@@ -754,7 +711,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
       isMounted = false;
       clearTimeout(safetyTimer);
     };
-  }, [wellName, refreshTrigger, isActive, getPreviousLevel, waterFraction]);
+  }, [wellName, refreshTrigger, waterFraction]);
 
   // Live level update based on flow rate (now stored in levelSnapshot)
   // Formula matches dashboard: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
@@ -779,11 +736,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
       const currentLevel = estimatedSnapshotLevel({ ...levelSnapshot, isDown: wellDown }, flowMins, Date.now(), tankHeightFeet);
       const fraction = tankFillFraction(currentLevel, tankHeightFeet);
 
-      // Smoothly update display
-      waterFraction.value = withTiming(fraction, {
-        duration: 500,
-        easing: Easing.linear,
-      });
+      // Queue the newest target without interrupting an entering well.
+      setTargetFraction(fraction);
     };
 
     // Initial update
@@ -1650,7 +1604,7 @@ export default function MainScreen() {
 
   // Track levels for ALL wells, not just the active one
   const wellLevels = useRef<{ [wellName: string]: number }>({});
-  const previousIndex = useRef(0);
+  const [entryFraction, setEntryFraction] = useState(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
   useEffect(()=>{setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
@@ -2245,6 +2199,12 @@ export default function MainScreen() {
     router.push('/summary');
   }, [router]);
 
+  // Freeze the actual displayed frame, not the destination's preloaded level.
+  const captureTransitionStart = useCallback(() => {
+    const fraction = wellLevels.current[wells[currentIndex]];
+    if (Number.isFinite(fraction)) setEntryFraction(Math.max(0, Math.min(1, fraction)));
+  }, [wells, currentIndex]);
+
   // Handle well change from swipe
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   
@@ -2255,12 +2215,12 @@ export default function MainScreen() {
       const newIndex = viewableItems[0].index;
       // Save current as previous BEFORE updating to new
       if (newIndex !== currentIndex) {
-        console.log('[Main] Swipe: currentIndex', currentIndex, '→', newIndex, ', setting previousIndex to', currentIndex);
-        previousIndex.current = currentIndex;
+        console.log('[Main] Swipe: currentIndex', currentIndex, '→', newIndex);
+        captureTransitionStart();
       }
       setCurrentIndex(newIndex);
     }
-  }, [currentIndex]);
+  }, [currentIndex, captureTransitionStart]);
 
   const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
 
@@ -2276,7 +2236,7 @@ export default function MainScreen() {
   const confirmPicker = () => {
     // Save current as previous before changing
     if (tempSelectedIndex !== currentIndex) {
-      previousIndex.current = currentIndex;
+      captureTransitionStart();
     }
     setCurrentIndex(tempSelectedIndex);
     flatListRef.current?.scrollToIndex({ index: tempSelectedIndex, animated: true });
@@ -2287,16 +2247,6 @@ export default function MainScreen() {
     setTempSelectedIndex(currentIndex);
     setShowPicker(false);
   };
-
-  // Get the level of the well we're coming FROM (the previous well)
-  const getPreviousLevel = useCallback(() => {
-    const prevWellName = wells[previousIndex.current];
-    const level = prevWellName && wellLevels.current[prevWellName] !== undefined 
-      ? wellLevels.current[prevWellName] 
-      : 0.5;
-    console.log('[Main] getPreviousLevel: prevWell=', prevWellName, 'level=', level);
-    return level;
-  }, [wells]);
 
   // Update level for a specific well - called by ALL wells, not just active
   const handleLevelChange = useCallback((wellName: string, level: number) => {
@@ -2371,13 +2321,13 @@ export default function MainScreen() {
       <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{paddingBottom:16}} nestedScrollEnabled showsVerticalScrollIndicator>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight}
         isActive={visibleWellIndices.includes(index)}
-        getPreviousLevel={getPreviousLevel} onLevelChange={level=>handleLevelChange(item,level)}
+        entryFraction={entryFraction} onLevelChange={level=>handleLevelChange(item,level)}
         refreshTrigger={refreshTrigger} onSliderActiveChange={setSliderActive} loadBbls={loadBbls}
         onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
       </ScrollView>
     </View>
-  ),[cardWidth,viewportHeight,visibleWellIndices,actionIndex,wellConfigMap,getPreviousLevel,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  ),[cardWidth,viewportHeight,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
 
   if (!isReady) {
@@ -2536,6 +2486,7 @@ export default function MainScreen() {
         decelerationRate="fast"
         style={{flex:1,minHeight:0}}
         showsHorizontalScrollIndicator={false}
+        onScrollBeginDrag={captureTransitionStart}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         getItemLayout={getItemLayout}
@@ -2650,7 +2601,7 @@ export default function MainScreen() {
                     <Pressable style={styles.androidWheelRow} onPress={() => {
                       const originalIndex = wells.indexOf(item);
                       if (originalIndex < 0) return;
-                      previousIndex.current = currentIndex;
+                      captureTransitionStart();
                       setCurrentIndex(originalIndex);
                       flatListRef.current?.scrollToIndex({index: originalIndex, animated: true});
                       setShowPicker(false);
@@ -2709,7 +2660,7 @@ export default function MainScreen() {
                         onPress={() => {
                           if (index === tempSelectedIndex) {
                             // Tap on highlighted well - select it and close
-                            previousIndex.current = currentIndex;
+                            captureTransitionStart();
                             setCurrentIndex(tempSelectedIndex);
                             flatListRef.current?.scrollToIndex({ index: tempSelectedIndex, animated: true });
                             setShowPicker(false);

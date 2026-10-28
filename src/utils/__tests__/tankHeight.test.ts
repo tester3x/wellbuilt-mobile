@@ -77,13 +77,13 @@ test('actual shared freshwater slider increases positive delivery and retains ca
 test.each([false, true])('height edits rescale a stationary/down=%s tank without another pull or timer', down => {
   const { ast, find } = screen('(tabs)/index.tsx');
   const effect = find(n => ts.isCallExpression(n) && n.expression.getText(ast) === 'useEffect' && n.arguments[0].getText(ast).includes('setInterval(updateEstimate, LIVE_UPDATE_MS)')) as ts.CallExpression;
-  const water = { value: 0 }, timer = jest.fn();
+  const setTargetFraction = jest.fn(), timer = jest.fn();
   const scope = { levelSnapshot: { levelFeet: 10, timestamp: now, flowRateMinutes: 0 }, wellDown: down,
     drainAnimationActive: { current: false }, tankHeightFeet: 20, estimatedSnapshotLevel, tankFillFraction,
-    waterFraction: water, withTiming: (value: number) => value, Easing: { linear: 0 }, liveUpdateRef: { current: null },
+    setTargetFraction, liveUpdateRef: { current: null },
     setInterval: timer, clearInterval: jest.fn(), LIVE_UPDATE_MS: 30000 };
-  execute(effect.arguments[0].getText(ast), scope)(); expect(water.value).toBe(0.5);
-  execute(effect.arguments[0].getText(ast), { ...scope, tankHeightFeet: 25 })(); expect(water.value).toBe(0.4);
+  execute(effect.arguments[0].getText(ast), scope)(); expect(setTargetFraction).toHaveBeenLastCalledWith(0.5);
+  execute(effect.arguments[0].getText(ast), { ...scope, tankHeightFeet: 25 })(); expect(setTargetFraction).toHaveBeenLastCalledWith(0.4);
   expect(timer).not.toHaveBeenCalled();
 });
 

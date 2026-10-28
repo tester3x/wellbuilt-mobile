@@ -6,6 +6,7 @@ import { thresholdTime } from '@tester3x/water-hauling';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getFreshWaterSupply } from '../../src/services/freshWaterSupply';
 import { tankViewport, tankSceneScale } from '../../src/ui/tankViewport';
+import { wellPagerBuffer } from '../../src/ui/wellPagerBuffer';
 import { resolveTankHeight, tankFillFraction } from '../../src/utils/tankHeight';
 import { LevelTimeSlider as Slider } from '../../components/LevelTimeSlider';
 import { Ionicons } from '@expo/vector-icons';
@@ -1699,6 +1700,9 @@ export default function MainScreen() {
     setSliderActive(activeSliders.current.size > 0);
   }, []);
   const [wells, setWells] = useState<string[]>([]);
+  const pagerWidthRange=useRef({min:cardWidth,max:cardWidth});
+  const pagerBuffer=wellPagerBuffer(currentIndex,wells.length,windowSize.width,windowSize.height,pagerWidthRange.current);
+  pagerWidthRange.current=pagerBuffer.widths;
   const actionIndex=Math.max(0,Math.min(focusedIndex ?? currentIndex,wells.length-1));
   const visibleWellRef = useRef({ well: wells[currentIndex], index: currentIndex });
   visibleWellRef.current = { well: wells[currentIndex], index: currentIndex };
@@ -2622,8 +2626,8 @@ export default function MainScreen() {
         getItemLayout={getItemLayout}
         initialScrollIndex={Math.min(currentIndex, Math.max(0, wells.length - 1))}
         removeClippedSubviews={false}
-        maxToRenderPerBatch={2}
-        windowSize={3}
+        maxToRenderPerBatch={pagerBuffer.maxToRenderPerBatch}
+        windowSize={pagerBuffer.windowSize}
         initialNumToRender={2}
         updateCellsBatchingPeriod={16}
         extraData={[currentIndex,focusedIndex,visibleWellIndices,cardWidth,showOvernightBbls]}

@@ -36,3 +36,12 @@ The user's subsequent terminology direction is queued in source: visible work-re
 
 
 Final cover-screen result: the user physically closed the Fold. After bringing the existing WB M task forward, the original single-well layout was visible at1080x2520. An attempted system landscape selection left WB M in portrait. No app restart was needed. Original auto-rotate/user_rotation1/0 were restored. All requested layout/device checks are complete;125 is installed on all three devices. The later queued Load terminology source passes the full129 suites/1337 tests and TypeScript, and is explicitly excluded from the installed125 APK.
+
+
+## Queued follow-up: stationary planner and clear unlock hint
+
+The user's portrait screenshots show the selected-level/date stack is taller than the Next Load stack, so a min-height alone allows the slider to shift when peeking. The landscape screenshot also shows the hint crossing the thumb. The slider's flex:1 container was not reserving its complete54dp height inside its wrapper/row, leaving the44dp thumb outside the row's layout bounds.
+
+SliderInfoSlot now keeps both label stacks mounted, measures both from initial layout, and reserves their maximum height with a64dp minimum. Changing which stack is visible changes opacity/accessibility only, not the reserved height; smaller later measurements do not collapse the slot. The slider row and wrapper explicitly reserve54dp, and the slider container no longer flexes to a smaller height. The hint has8dp separation below that complete row. Portrait can shrink the tank section only when extra control space requires it, using the actual measured tank slot while preserving the rendered level text and information target sizes; this prevents the controls overflowing into system navigation. The current queued English label remains Next Load.
+
+Focused tests measure the hidden larger panel before toggling peek/relock, assert the reserved height remains unchanged, and evaluate actual row/wrapper/thumb style geometry in phone and tablet modes. Full-suite and TypeScript results are in the private wbm-spacing logs. These are queued source corrections, not a new APK or native-device pass; M125 remains installed. No local/cloud build was started for this follow-up. Verify label/marker/track/hint bounds across locked, peeked, unlocked and relocked states on the next meaningful authorized build.

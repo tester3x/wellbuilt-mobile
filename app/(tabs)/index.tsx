@@ -1,3 +1,4 @@
+import {SliderInfoSlot} from '../../components/SliderInfoSlot';
 import {PortraitWellLayout,LandscapeWellLayout} from '../../components/WellCardLayouts';
 import { thresholdTime } from '@tester3x/water-hauling';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -342,7 +343,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   const [tankSlotHeight, setTankSlotHeight] = useState(0);
   const [tankSlotWidth,setTankSlotWidth] = useState(cardWidth);
   const portraitTankHeight=cardWidth>=600 ? viewportHeight*0.42 : cardWidth*0.70*1.2;
-  const tankScale=wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : portraitTankHeight/TANK_HEIGHT;
+  const tankScale=wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT;
   const sceneScale=Math.max(0.01,tankScale);
   const styles=wideLayout ? {
     ...wideWellStyles,
@@ -352,7 +353,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
     tankInfoTouchTarget:{...wideWellStyles.tankInfoTouchTarget,top:INTERIOR_TOP-18/sceneScale,right:INTERIOR_RIGHT-19/sceneScale+TANK_WIDTH*0.08,width:44/sceneScale,height:44/sceneScale},
     tankInfoBadge:{...wideWellStyles.tankInfoBadge,width:18/sceneScale,height:18/sceneScale,borderRadius:9/sceneScale},
     tankInfoBadgeText:{...wideWellStyles.tankInfoBadgeText,fontSize:15/sceneScale},
-  } : portraitStyles(cardWidth,viewportHeight);
+  } : portraitStyles(cardWidth,viewportHeight,sceneScale);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
@@ -1268,7 +1269,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   };
 
   const tankPanel=(
-<View style={[styles.tankSection,!wideLayout && {height:portraitTankHeight}]} onLayout={event => {
+<View style={[styles.tankSection,!wideLayout && {height:portraitTankHeight,flexShrink:1,minHeight:0}]} onLayout={event => {
           const {height,width} = event.nativeEvent.layout;
           setTankSlotWidth(previous=>Math.abs(previous-width)>0.5 ? width : previous);
           setTankSlotHeight(previous => Math.abs(previous-height)>0.5 ? height : previous);
@@ -1519,9 +1520,8 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
         return (
           <View style={[styles.sliderContainer, wellDown && styles.sliderDisabled]}>
             {/* Info container - shows either Next Pull (when locked) or Slider level (when active) */}
-            <View style={styles.sliderInfoContainer}>
-              {showNextPull ? (
-                // Next Pull Ready - shows in same spot as slider info when locked
+            <SliderInfoSlot showPrimary={showNextPull} style={styles.sliderInfoContainer}
+              primary={(
                 <>
                   <Text style={styles.nextPullLabel}>{wellConfig?.routeType === 'freshwater' ? 'Minimum '+(wellConfig.allowedBottom==null?'unknown':formatFeetInches(wellConfig.allowedBottom))+' (no delivery)' : t('well.nextPull', 'Next Load')}</Text>
                   <Text style={[
@@ -1531,8 +1531,8 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
                     {nextPullReady.text}
                   </Text>
                 </>
-              ) : (
-                // Slider level and ready-at text - fades in/out
+              )}
+              secondary={(
                 <Animated.View style={[styles.sliderInfoInner, sliderInfoStyle]}>
                   <View style={styles.sliderValueRow}>
                     <Text style={[styles.sliderValue, wellDown && styles.textDisabled]}>{wellConfig?.routeType === 'freshwater' ? planningFeet == null ? 'Unknown' : formatFeetInches(planningFeet+Math.min(sliderFeet,tankHeightFeet-planningFeet)) : formatFeetInches(sliderFeet)}</Text>
@@ -1550,7 +1550,7 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
                   </Text>
                 </Animated.View>
               )}
-            </View>
+            />
 
             <View style={styles.sliderRowContainer}>
               {/* Level markers row - above slider, aligned with Pull/Fill words (not arrows) */}
@@ -3215,6 +3215,7 @@ const styles = StyleSheet.create({
   },
   sliderInfoInner: {
     alignItems: 'center',
+    width: '100%',
   },
   sliderValueRow: {
     flexDirection: 'row',
@@ -3236,16 +3237,18 @@ const styles = StyleSheet.create({
     alignItems: isTablet ? 'center' : undefined, // Center the constrained slider on tablets
   },
   sliderRow: {
+    height: 54,
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     width: isTablet ? '70%' : '100%', // Constrain slider width on tablets
   },
   sliderWrapper: {
     flex: 1,
+    height: 54,
   },
   slider: {
-    flex: 1,
-    height: Platform.OS === 'android' ? 54 : 48,
+    height: 54,
     marginHorizontal: 8,
   },
   sliderThumb: {
@@ -3615,15 +3618,15 @@ const wideWellStyles = {
   nextPullLabel: {...styles.nextPullLabel,fontSize:12},
   nextPullTime: {...styles.nextPullTime,fontSize:22},
   readyAt: {...styles.readyAt,fontSize:14,marginTop:4},
-  unlockHint: {...styles.unlockHint,fontSize:12,marginTop:6},
+  unlockHint: {...styles.unlockHint,fontSize:12,marginTop:8},
 };
 
 /** Original pre-dual-card portrait layout (81efeb3), evaluated with the current
  * portrait window. Never imports landscape's font/track sizing into portrait.
  */
-function portraitStyles(width:number,height:number) {
+function portraitStyles(width:number,height:number,renderScale?:number) {
   const tablet=width>=600;
-  const scale=(tablet?height*0.42:width*0.70*1.2)/TANK_HEIGHT;
+  const scale=renderScale ?? (tablet?height*0.42:width*0.70*1.2)/TANK_HEIGHT;
   const font=(fraction:number)=>Math.round(tablet?Math.min(fraction*height*0.6,fraction*800):fraction*height);
   return {
     ...baseWellStyles,
@@ -3652,7 +3655,7 @@ function portraitStyles(width:number,height:number) {
     lastPullLabel:{...baseWellStyles.lastPullLabel,fontSize:font(0.013)},
     lastPullInfo:{...baseWellStyles.lastPullInfo,fontSize:font(0.015)},
     sliderContainer:{...baseWellStyles.sliderContainer,paddingHorizontal:height*0.02,marginTop:height*(tablet?0.01:0.012),paddingBottom:height*(tablet?0.03:0.02)},
-    sliderInfoContainer:{...baseWellStyles.sliderInfoContainer,minHeight:tablet?55:height*0.065,marginBottom:height*0.005},
+    sliderInfoContainer:{...baseWellStyles.sliderInfoContainer,minHeight:64,marginBottom:height*0.005},
     sliderRow:{...baseWellStyles.sliderRow,width:(tablet?'70%':'100%') as '70%'|'100%'},
     sliderMarkersRow:{...baseWellStyles.sliderMarkersRow,width:(tablet?'70%':'100%') as '70%'|'100%'},
     sliderArrowLeft:{...baseWellStyles.sliderArrowLeft,fontSize:font(0.014)},
@@ -3666,7 +3669,7 @@ function portraitStyles(width:number,height:number) {
     nextPullLabel:{...baseWellStyles.nextPullLabel,fontSize:font(0.014)},
     nextPullTime:{...baseWellStyles.nextPullTime,fontSize:font(0.026)},
     readyAt:{...baseWellStyles.readyAt,fontSize:font(0.018),marginTop:height*(tablet?0.005:0.008)},
-    unlockHint:{...baseWellStyles.unlockHint,fontSize:font(0.013),marginTop:height*0.02},
+    unlockHint:{...baseWellStyles.unlockHint,fontSize:font(0.013),marginTop:8},
     navIcon:{...baseWellStyles.navIcon,fontSize:Math.round(height*0.025)},
     navLabel:{...baseWellStyles.navLabel,fontSize:Math.round(height*0.012)},
     bottomNav:{...baseWellStyles.bottomNav,paddingTop:height*(tablet?0.02:0.015),paddingHorizontal:tablet?width*0.15:height*0.02},

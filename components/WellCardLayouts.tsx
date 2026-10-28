@@ -13,7 +13,7 @@ type Panels = {
 /** Original portrait hierarchy: intrinsic tank/statistics above the planner. */
 export function PortraitWellLayout({tank,statistics,delivery,planning,rootStyle,topStyle}:Panels) {
   return <View testID="portrait-well-layout" style={[rootStyle,{width:'100%',minHeight:0}]}>
-    <View style={topStyle}>{tank}{statistics}</View>{delivery}{planning}
+    <View style={[topStyle,{flexShrink:1,minHeight:0}]}>{tank}{statistics}</View>{delivery}{planning}
   </View>;
 }
 

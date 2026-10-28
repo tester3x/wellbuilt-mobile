@@ -320,6 +320,10 @@ interface WellViewProps {
 
 const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, wideLayout = false, entryFraction, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
+  useEffect(()=>{
+    console.log('[WellPager] mount',wellName);
+    return ()=>console.log('[WellPager] unmount',wellName);
+  },[wellName]);
   const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
   const [deliveryAt,setDeliveryAt]=useState<Date | null>(null);

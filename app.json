@@ -48,7 +48,7 @@
         "INTERNET"
       ],
       "package": "com.wellbuiltmobile.app",
-      "versionCode": 121
+      "versionCode": 122
     },
     "web": {
       "output": "static",

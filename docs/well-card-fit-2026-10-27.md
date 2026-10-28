@@ -1,0 +1,7 @@
+# Well card viewport correction
+
+During verification of the user-requested local WB M update, the user identified an unwanted blue focus outline and vertical scrolling on S24 and unfolded Fold. These came from the combined two-card layout: it wrapped every WellView in a ScrollView, replaced its flexible root with flex:0, and calculated tank scale from the whole window rather than the remaining card space.
+
+The card now has a fixed flexible viewport with no vertical ScrollView or focus border. Metadata, statistics and slider keep their natural space. The middle tank slot takes the remainder and measures it through onLayout; the complete tank scene scales into that slot and current card width. Its absolute scene does not impose an unscaled minimum on Yoga. There is no minimum scale that can push controls offscreen. Folding/resizing relays the new slot measurement without changing water/level transition ownership.
+
+Validation before the corrective local APK: TypeScript passes; full Jest with detectOpenHandles passes 125 suites / 1319 tests. Geometry cases cover phone portrait, Fold cover/unfolded, tablet landscape, short landscape, exhausted slots and repeated resizing. The actual card renderer test verifies both wells retain their own controls with no ScrollView or border. Native fit, touch-target positioning and swipe checks remain required on the corrective APK; the prior M121 native swipe pass does not prove this layout correction.

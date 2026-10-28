@@ -16,7 +16,6 @@ import {
   DeviceEventEmitter,
   Dimensions,
   useWindowDimensions,
-  ScrollView,
   FlatList,
   Image,
   Modal,
@@ -338,7 +337,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   const [sliderPeeking, setSliderPeeking] = useState(false); // Tap to peek values without unlocking
   const [showTankMath, setShowTankMath] = useState(false); // Tap first metrics row → peek bbl/in • bbl/ft (~4s, all wells)
   // showOvernightBbls is now a prop from MainScreen (global toggle)
-  const tankScale=tankSceneScale(cardWidth,viewportHeight,TANK_WIDTH,TANK_HEIGHT);
+  const [tankSlotHeight, setTankSlotHeight] = useState(0);
+  const tankScale=tankSceneScale(cardWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
@@ -1239,12 +1239,18 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   };
 
   return (
-    <View style={[styles.wellView,{width:'100%',flex:0,justifyContent:'flex-start'}]}>
+    <View style={[styles.wellView,{width:'100%',minHeight:0}]}>
       {/* Top section - tank and stats */}
       <View style={styles.topSection}>
         {/* Tank - double-tap for Performance, long-press to hide well */}
-        <View style={[styles.tankSection,{height:TANK_HEIGHT*tankScale}]}>
-        <Pressable style={{transform:[{scale:tankScale}]}} onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
+        <View style={styles.tankSection} onLayout={event => {
+          const height = event.nativeEvent.layout.height;
+          setTankSlotHeight(previous => Math.abs(previous-height)>0.5 ? height : previous);
+        }}>
+        <View style={{position:'absolute',width:TANK_WIDTH,height:TANK_HEIGHT,
+          left:'50%',top:'50%',marginLeft:-TANK_WIDTH/2,marginTop:-TANK_HEIGHT/2,
+          opacity:tankSlotHeight>0 ? 1 : 0,transform:[{scale:tankScale}]}}>
+        <Pressable onPressIn={event => { fishTouchedRef.current = false; handleFishTouch(event.nativeEvent.locationX, event.nativeEvent.locationY); }}
           onPress={() => { if (!fishTouchedRef.current) handleNormalTankTap(); }}
           onLongPress={() => { if (!fishTouchedRef.current) handleTankLongPress(); }} delayLongPress={500}>
         <View pointerEvents="none" style={styles.tankOuter} onLayout={event => { const { x, y } = event.nativeEvent.layout; tankTouchOffset.current = { x: x + INTERIOR_LEFT, y: y + INTERIOR_TOP }; }}>
@@ -1362,6 +1368,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
           onPress={() => { lastTankTapTimeRef.current = 0; setShowTankInfo(true); }}>
           <View style={styles.tankInfoBadge}><Text style={styles.tankInfoBadgeText}>i</Text></View>
         </Pressable>
+        </View>
         {showTankInfo && isActive && <TankInfoModal wellName={wellName}
           fallback={(wellConfig || {}) as unknown as TankConfig}
           onClose={() => { lastTankTapTimeRef.current = 0; setShowTankInfo(false); }}
@@ -2312,20 +2319,20 @@ export default function MainScreen() {
   }, [wells, currentIndex, alert, t]);
 
   const renderWell = useCallback(({ item, index }: { item: string; index: number }) => (
-    <View style={{width:cardWidth,flex:1,minHeight:0,borderWidth:1,borderColor:actionIndex===index?'#2563EB':'transparent'}} onTouchStart={()=>setFocusedIndex(index)}>
+    <View style={{width:cardWidth,flex:1,minHeight:0}} onTouchStart={()=>setFocusedIndex(index)}>
       <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
         <Text style={{color:getRouteColor(wellConfigMap?.[item]?.route || ''),fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.route || '\u00a0'}</Text>
         <Text style={{color:'#F9FAFB',fontSize:18,fontWeight:'700'}} numberOfLines={1}>{wellConfigMap?.[item]?.displayName || item}</Text>
         <Text style={{color:'#9CA3AF',fontSize:12}} numberOfLines={1}>{wellConfigMap?.[item]?.operator || '\u00a0'}</Text>
       </TouchableOpacity>
-      <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{paddingBottom:16}} nestedScrollEnabled showsVerticalScrollIndicator>
+      <View style={{flex:1,minHeight:0}}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight}
         isActive={visibleWellIndices.includes(index)}
         entryFraction={entryFraction} onLevelChange={level=>handleLevelChange(item,level)}
         refreshTrigger={refreshTrigger} onSliderActiveChange={setSliderActive} loadBbls={loadBbls}
         onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
-      </ScrollView>
+      </View>
     </View>
   ),[cardWidth,viewportHeight,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
@@ -2848,10 +2855,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   topSection: {
+    flex: 1,
+    minHeight: 0,
     alignItems: 'center',
     paddingTop: isTablet ? spacing.md : SCREEN_HEIGHT * 0.01,
   },
   tankSection: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
@@ -3046,6 +3058,7 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
   },
   statsSection: {
+    flexShrink: 0,
     alignItems: 'center',
     marginTop: isTablet ? spacing.xs : SCREEN_HEIGHT * 0.005,
     marginBottom: 0,
@@ -3093,6 +3106,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   sliderContainer: {
+    flexShrink: 0,
     alignItems: 'center',
     paddingHorizontal: spacing.md,
     marginTop: isTablet ? spacing.sm : SCREEN_HEIGHT * 0.012,

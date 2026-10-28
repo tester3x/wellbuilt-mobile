@@ -37,16 +37,20 @@ test('actual movement and release handlers commit the same normalized selected v
  const expression=(change!.initializer as ts.JsxExpression).expression!;
  execute(expression.getText(source),scope)([12.13]);expect(selected).toBe(12.25);
 });
-test.each([[800,1000],[1000,600],[360,800]])('actual card renderer gives each visible well its own scrollable header/stats/slider at %sx%s', (width,height)=>{
+test.each([[800,1000],[1000,600],[360,800]])('actual card renderer keeps each well and its controls in a fixed viewport at %sx%s', (width,height)=>{
  const {columns,cardWidth,viewportHeight}=tankViewport(width,height);const {node,ast}=variable('(tabs)/index.tsx','renderWell');const call=node.initializer as ts.CallExpression;
  const scope={React,View:'View',Text:'Text',TouchableOpacity:'TouchableOpacity',ScrollView:'ScrollView',WellView:'WellView',cardWidth,viewportHeight,visibleWellIndices:[0,1],actionIndex:0,wellConfigMap:{Left:{route:'Route',operator:'Operator'},Right:{route:'Route',operator:'Operator'}},getRouteColor:()=>'',setFocusedIndex:()=>{},openPicker:()=>{},entryFraction:0,handleLevelChange:()=>{},refreshTrigger:0,setSliderActive:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}};
  const render=execute(call.arguments[0].getText(ast),scope);let tree!:TestRenderer.ReactTestRenderer;
  act(()=>{tree=TestRenderer.create(React.createElement(React.Fragment,null,render({item:'Left',index:0}),render({item:'Right',index:1})));});
- const cards=tree.root.findAllByType('WellView' as any);expect(cards.map(c=>c.props.wellName)).toEqual(['Left','Right']);expect(cards.every(c=>c.props.isActive)).toBe(true);expect(cards.every(c=>c.props.cardWidth===width/columns)).toBe(true);expect(tree.root.findAllByType('ScrollView' as any)).toHaveLength(2);expect(words(tree.toJSON())).toContain('Left');expect(words(tree.toJSON())).toContain('Right');
+ const cards=tree.root.findAllByType('WellView' as any);expect(cards.map(c=>c.props.wellName)).toEqual(['Left','Right']);expect(cards.every(c=>c.props.isActive)).toBe(true);expect(cards.every(c=>c.props.cardWidth===width/columns)).toBe(true);expect(tree.root.findAllByType('ScrollView' as any)).toHaveLength(0);expect(words(tree.toJSON())).toContain('Left');expect(words(tree.toJSON())).toContain('Right');
+ for (const card of tree.root.findAllByType('View' as any).filter(v=>v.props.onTouchStart)) {
+  expect(card.props.style).toMatchObject({flex:1,minHeight:0});
+  expect(card.props.style.borderColor).toBeUndefined();
+ }
  expect(tankSceneScale(cardWidth,viewportHeight,300,360)*300).toBeLessThanOrEqual(cardWidth-24);act(()=>tree.unmount());
 });
 
-test('actual main card host has one shared Settings action, live widths and a bounded scroll viewport',()=>{
+test('actual main card host has one shared Settings action and live widths',()=>{
  const {text}=variable('(tabs)/index.tsx','renderWell');const ast=ts.createSourceFile('home.tsx',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
  const main=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='MainScreen') as ts.FunctionDeclaration;
  const root=(main.body!.statements.filter(ts.isReturnStatement).at(-1)!).expression!;

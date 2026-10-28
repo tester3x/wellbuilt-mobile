@@ -1,6 +1,6 @@
 # Combined laptop/desktop Mobile source checkpoint
 
-Update: the formerly failing suites have been investigated and fixed in the later [test recovery checkpoint](mobile-test-recovery-2026-10-27.md). All 121 suites / 1300 tests now pass with clean process exit. The historical failure counts below describe the earlier merge, not the current test result. The 20 unchanged TypeScript diagnostics and pending native acceptance remain documented separately.
+Update: the formerly failing suites have been fixed in the later [test recovery checkpoint](mobile-test-recovery-2026-10-27.md), followed by [TypeScript cleanup](mobile-typecheck-cleanup-2026-10-27.md). TypeScript now passes and all 122 suites / 1303 tests pass with clean process exit. The failure counts below describe the earlier merge. Native acceptance of the new source remains pending an authorized build.
 
 Merged desktop Water Hauling source through 1cdc7e8 and release-preflight policy 7a268ed into laptop codex/wbm-stale-level-20261005. Laptop histories through 62c0442 and desktop histories are preserved without reset or force push. Remaining differences against desktop's app runtime source are documentation/policy only; no laptop application code overwrote the desktop freshwater work. AGENTS.md keeps the newer registered-home rule plus both reconciliation instructions.
 

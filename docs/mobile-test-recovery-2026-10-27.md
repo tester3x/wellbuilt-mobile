@@ -1,5 +1,7 @@
 # Mobile test recovery, October 27
 
+Later follow-up: the 20 existing TypeScript diagnostics recorded below were corrected in [Mobile TypeScript cleanup](mobile-typecheck-cleanup-2026-10-27.md). TypeScript now passes, and the expanded full run passes 122 suites / 1303 tests. The results below remain the historical test-recovery checkpoint.
+
 Started from combined desktop/laptop checkpoint c682c03 on codex/wbm-stale-level-20261005. Fresh fetch found the desktop release/wbm-vc60-zombie-recovery-20260926 branch at the same checkpoint. User authorized investigation and fixes, explicitly no build.
 
 The baseline reproduced 13 failing suites / 26 failing tests, with 107 suites / 1260 tests passing. The failures were not all application defects.

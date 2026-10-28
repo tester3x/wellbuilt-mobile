@@ -37,7 +37,7 @@ function hashChangelog(entry: ChangelogEntry | null | undefined): string {
     entry.version,
     entry.title,
     entry.date,
-    ...entry.changes.map(c => `${c.type}:${c.audience}:${c.description}`)
+    ...entry.changes.map(c => `${c.type}:${c.audience}:${c.descriptionKey}`)
   ].join('|');
 
   // Simple hash function (djb2)

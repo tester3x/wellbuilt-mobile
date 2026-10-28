@@ -30,6 +30,10 @@ export function WhatsNewModal({ visible, changelog, onDismiss }: WhatsNewModalPr
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [dontShowAgain, setDontShowAgain] = useState(false);
+  const handleDismiss = () => {
+    onDismiss(dontShowAgain);
+    setDontShowAgain(false);
+  };
 
   if (!changelog) return null;
 
@@ -53,7 +57,7 @@ export function WhatsNewModal({ visible, changelog, onDismiss }: WhatsNewModalPr
       visible={visible}
       animationType="fade"
       transparent
-      onRequestClose={onDismiss}
+      onRequestClose={handleDismiss}
     >
       <View style={styles.overlay}>
         <View style={[
@@ -121,10 +125,7 @@ export function WhatsNewModal({ visible, changelog, onDismiss }: WhatsNewModalPr
           {/* Dismiss Button */}
           <TouchableOpacity
             style={styles.dismissButton}
-            onPress={() => {
-              onDismiss(dontShowAgain);
-              setDontShowAgain(false); // Reset for next time
-            }}
+            onPress={handleDismiss}
             activeOpacity={0.8}
           >
             <Text style={styles.dismissButtonText}>{t('whatsNew.gotIt')}</Text>

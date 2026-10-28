@@ -32,9 +32,10 @@ describe('P0-8 incompatible paths are gated, not outages', () => {
 
   it('manager does not attach the API key as RTDB auth', () => {
     expect(manager).not.toMatch(/auth=\$\{FIREBASE_API_KEY\}/);
-    expect(manager).toMatch(/MANAGER_AVAILABLE/);
+    expect(manager).toMatch(/export default function ManagerScreen/);
     expect(manager).toMatch(/updateRequired/);
-    expect(manager).toMatch(/update_required/);
+    expect(manager).not.toMatch(/ManagerScreenInner|firebaseGet|firebasePut|firebaseDelete/);
+    expect(manager).not.toMatch(/services\//);
   });
 
   it('firebaseStatus does not throw-as-offline', () => {

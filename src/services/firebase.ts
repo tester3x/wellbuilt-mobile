@@ -20,7 +20,7 @@ const COLL_INCOMING = "packets/incoming";
 const COLL_OUTGOING = "packets/outgoing";
 const INCOMING_VERSION_PATH = "packets/incoming_version";
 
-// Reuse existing interfaces from onedrive.ts
+// Canonical packet interfaces used by authenticated Firebase delivery.
 export interface TankPacket {
   packetId: string;
   requestType: 'pull';        // Required by Dashboard processIncomingPull — packets without this are skipped

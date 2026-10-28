@@ -2504,7 +2504,8 @@ export default function MainScreen() {
   // Empty state - no wells loaded (config fetch failed, offline on first load, etc.)
   if (wells.length === 0) {
     return (
-      <GestureHandlerRootView style={styles.container} onLayout={handleRootLayout}>
+      <GestureHandlerRootView style={styles.container}>
+      <View style={styles.container} collapsable={false} onLayout={handleRootLayout}>
         <View style={styles.emptyStateContainer}>
           <Text style={styles.emptyStateIcon}>⚠️</Text>
           <Text style={styles.emptyStateTitle}>{t('homeExtra.noWellsLoaded')}</Text>
@@ -2574,12 +2575,14 @@ export default function MainScreen() {
           onBackToSuite={() => { void backToSuite(); }}
           bottomInset={insets.bottom}
         />
+      </View>
       </GestureHandlerRootView>
     );
   }
 
   return (
-    <GestureHandlerRootView style={styles.container} onLayout={handleRootLayout}>
+    <GestureHandlerRootView style={styles.container}>
+      <View style={styles.container} collapsable={false} onLayout={handleRootLayout}>
       {/* Independent portrait header and landscape toolbar; never mounted together. */}
       {columns===1 ? <>
       {/* Header with tappable well name and settings */}
@@ -2852,7 +2855,8 @@ export default function MainScreen() {
 
       {/* Confirmation alert */}
       <alert.AlertComponent />
-    </GestureHandlerRootView>
+    </View>
+      </GestureHandlerRootView>
   );
 }
 

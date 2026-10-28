@@ -161,5 +161,6 @@ test('Fold root measurement corrects stale window dimensions before startup and 
  const {text}=variable('(tabs)/index.tsx','handleRootLayout');
  expect(text).toContain('foldablePhoneLayout && foldWindow ? foldWindow : reportedWindow');
  expect(text).toContain('<View style={styles.splashContainer} onLayout={handleRootLayout}>');
- expect(text).toContain('<GestureHandlerRootView style={styles.container} onLayout={handleRootLayout}>');
+ expect(text).toContain('<View style={styles.container} collapsable={false} onLayout={handleRootLayout}>');
+ expect(text).not.toContain('<GestureHandlerRootView style={styles.container} onLayout={handleRootLayout}>');
 });

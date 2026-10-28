@@ -6,7 +6,8 @@
       "branch": "emergency/wbm-laptop-vc58-emergency-fix",
       "instruction": "NEVER USE THIS BRANCH AGAIN",
       "replacement": "codex/wbm-stale-level-20261005",
-      "reason": "Superseded historical lane, retained for isolated forensic review only; never merge/build wholesale."
+      "reason": "Superseded historical lane, retained for isolated forensic review only; never merge/build wholesale.",
+      "noticeCommit": "02678857e65c21df53a21f9eeabaa285e0dc16bb"
     }
   ],
   "retiredRuntimePaths": []

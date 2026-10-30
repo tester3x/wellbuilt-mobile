@@ -28,7 +28,7 @@ test('the same phone frame produces identical text and slider dimensions in each
     for(const key of ['statLeft','statRight','sliderRow','sliderValue','unlockHint','wellName','operatorName'])expect(open[key]).toEqual(cover[key]);
     expect(open.sliderRow.width).toBe('100%');
   }
-  expect(source).toContain('const styles=foldablePhoneLayout ? {');
+  expect(source).toContain('const styles=useMemo(()=>foldablePhoneLayout ? {');
   expect(source).toContain('...portraitStyles(contentWidth,contentWidth*2.2,sceneScale)');
   expect(source).toContain('fittedFold ? portraitTankHeight/TANK_HEIGHT');
   expect(source).toContain('fittedFold ? {height:portraitTankHeight,flexGrow:0,flexShrink:0}');

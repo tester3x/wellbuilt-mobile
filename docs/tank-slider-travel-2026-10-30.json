@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-30",
+  "checkout": "C:/dev/wbm-stale-level-20261005",
+  "branch": "codex/wbm-stale-level-20261005",
+  "problem": "Portrait tank slider travels only 35% of finger distance, forcing repeated drags at screen edges.",
+  "change": "Default drag gain 0.35 -> 1.0. Preserve panel-scale compensation, existing caller snapping, bounds, touch ownership and release callbacks. Landscape already uses 1.0.",
+  "checks": {
+    "focusedJest": "4 suites / 35 tests passed; actual installed slider responder exercised at scales 1, 0.6, 0.75 and 0.9 including both endpoints and reversal in a single gesture.",
+    "typescript": "passed",
+    "retirementGuard": "passed",
+    "diffCheck": "passed"
+  },
+  "state": "Committed source correction; no APK or device change in this task."
+}

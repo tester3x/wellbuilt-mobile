@@ -1,7 +1,7 @@
 import { Slider, type SliderProps } from '@miblanchard/react-native-slider';
 
-// Give each existing level step almost three times as much finger travel.
-export const LEVEL_TIME_DRAG_GAIN = 0.35;
+// Follow finger travel directly; fine value steps remain owned by the caller.
+export const LEVEL_TIME_DRAG_GAIN = 1;
 export type LevelTimeSliderProps = SliderProps & { dragGain?: number; layoutScale?: number };
 
 /** Retain the installed slider's rendering, bounds, stepping and callbacks. */

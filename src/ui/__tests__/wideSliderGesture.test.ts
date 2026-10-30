@@ -45,16 +45,30 @@ test.each([20,25])('wide %s-foot slider follows continuous drag without a grab j
  expect(slider._handlePanResponderRequestEnd()).toBe(false);
 });
 
-test('phone slider retains its existing precision gain',()=>{
+test('phone slider follows finger travel directly',()=>{
  const slider=new LevelTimeSlider({...base.Slider.defaultProps,minimumValue:0,maximumValue:20,value:10,trackClickable:false});
  slider.state.containerSize={width:244,height:54};slider.state.thumbSize={width:44,height:44};
  slider._handlePanResponderGrant({nativeEvent:{locationX:122,locationY:27}});
- expect(slider._getValue({dx:40,dy:0})).toBeCloseTo(11.4);
+ expect(slider._getValue({dx:40,dy:0})).toBeCloseTo(14);
 });
 
 test.each([0.6,0.75,0.9,1])('Fold scale %s preserves physical slider travel relative to the track',layoutScale=>{
  const slider=new LevelTimeSlider({...base.Slider.defaultProps,minimumValue:0,maximumValue:20,value:10,trackClickable:false,layoutScale});
  slider.state.containerSize={width:244,height:54};slider.state.thumbSize={width:44,height:44};
  slider._handlePanResponderGrant({nativeEvent:{locationX:122,locationY:27}});
- expect(slider._getValue({dx:40*layoutScale,dy:0})).toBeCloseTo(11.4);
+ expect(slider._getValue({dx:40*layoutScale,dy:0})).toBeCloseTo(14);
+});
+
+
+test.each([1,0.6,0.75,0.9])('one continuous drag reaches both limits at panel scale %s',layoutScale=>{
+ const change=jest.fn(),complete=jest.fn();
+ const slider=new LevelTimeSlider({...base.Slider.defaultProps,minimumValue:0,maximumValue:20,step:0.01,value:10,trackClickable:false,layoutScale,onValueChange:change,onSlidingComplete:complete});
+ slider.state.containerSize={width:244,height:54};slider.state.thumbSize={width:44,height:44};
+ slider._handlePanResponderGrant({nativeEvent:{locationX:122,locationY:27}});
+ for(const [dx,expected] of [[0,10],[100,20],[-100,0],[25,12.5]]){
+  slider._handlePanResponderMove(null,{dx:dx*layoutScale,dy:0});
+  expect(change.mock.lastCall[0][0]).toBeCloseTo(expected);
+ }
+ slider._handlePanResponderEnd(null,{dx:25*layoutScale,dy:0});
+ expect(complete.mock.lastCall[0][0]).toBeCloseTo(12.5);
 });

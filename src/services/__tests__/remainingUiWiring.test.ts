@@ -139,7 +139,7 @@ test('resize viewability arriving before JS dimensions is ignored without an act
  const pagerInteraction={current:false},pagerResizing={current:false};
  callback('onViewableItemsChanged',{viewportChanged:false,pagerInteraction,pagerResizing,currentIndex:9,setCurrentIndex,setVisibleWellIndices,setFocusedIndex:jest.fn(),captureTransitionStart,console})({viewableItems:[{index:2},{index:3}]});
  expect(setCurrentIndex).not.toHaveBeenCalled();expect(setVisibleWellIndices).not.toHaveBeenCalled();expect(captureTransitionStart).not.toHaveBeenCalled();
- callback('handlePagerDrag',{pagerInteraction,pagerResizing,captureTransitionStart})();expect(pagerInteraction.current).toBe(true);
+ callback('handlePagerDrag',{pagerInteraction,pagerResizing,captureTransitionStart,currentIndex:9})();expect(pagerInteraction.current).toBe(true);
  const handlePagerPosition=jest.fn();
  callback('handlePagerSettled',{pagerInteraction,handlePagerPosition})({nativeEvent:{contentOffset:{x:0}}});
  expect(handlePagerPosition).toHaveBeenCalledTimes(1);expect(pagerInteraction.current).toBe(false);

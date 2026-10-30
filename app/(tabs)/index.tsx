@@ -51,6 +51,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useWellLevelTransition } from '../../src/hooks/useWellLevelTransition';
+import { TankReadout } from '../../src/components/TankReadout';
 import { useWellLevelDisplay } from '../../src/hooks/useWellLevelDisplay';
 import type { SharedValue } from 'react-native-reanimated';
 import { useTankFlip } from '../../src/hooks/useTankFlip';
@@ -355,7 +356,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   const portraitTankHeight=foldablePhoneLayout ? contentWidth*0.70*1.2 : cardWidth>=600 ? viewportHeight*0.42 : cardWidth*0.70*1.2;
   const tankScale=fittedFold ? portraitTankHeight/TANK_HEIGHT : foldablePhoneLayout ? (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT : wideLayout ? tankSceneScale(tankSlotWidth,tankSlotHeight,TANK_WIDTH,TANK_HEIGHT,true) : (tankSlotHeight>0 ? Math.min(portraitTankHeight,tankSlotHeight) : portraitTankHeight)/TANK_HEIGHT;
   const sceneScale=Math.max(0.01,tankScale);
-  const styles=foldablePhoneLayout ? {
+  const styles=useMemo(()=>foldablePhoneLayout ? {
     ...portraitStyles(contentWidth,contentWidth*2.2,sceneScale),
     tankBadge:fittedFold?{...baseWellStyles.tankBadge,width:18/sceneScale,height:18/sceneScale,borderRadius:9/sceneScale}:baseWellStyles.tankBadge,
     tankBadgeText:fittedFold?{...baseWellStyles.tankBadgeText,fontSize:14/sceneScale,lineHeight:18/sceneScale}:baseWellStyles.tankBadgeText,
@@ -368,7 +369,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     tankInfoTouchTarget:{...wideWellStyles.tankInfoTouchTarget,top:INTERIOR_TOP-18/sceneScale,right:INTERIOR_RIGHT-19/sceneScale+TANK_WIDTH*0.08,width:44/sceneScale,height:44/sceneScale},
     tankInfoBadge:{...wideWellStyles.tankInfoBadge,width:18/sceneScale,height:18/sceneScale,borderRadius:9/sceneScale},
     tankInfoBadgeText:{...wideWellStyles.tankInfoBadgeText,fontSize:15/sceneScale},
-  } : portraitStyles(cardWidth,viewportHeight,sceneScale);
+  } : portraitStyles(cardWidth,viewportHeight,sceneScale),[contentWidth,sceneScale,fittedFold,wideLayout,cardWidth,viewportHeight]);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
@@ -477,7 +478,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     return () => sub.remove();
   }, []);
   const sceneActive = isActive && appForeground;
-  const displayFeet = useWellLevelDisplay(waterFraction, tankHeightFeet, sceneActive, entryFraction, entryPrepared);
+  const displayFeet = useWellLevelDisplay(waterFraction, tankHeightFeet, sceneActive, entryFraction, entryPrepared, 1000 / 6);
   const fishSceneActiveRef = useRef(false);
   const fluidInverted = useSharedValue(false);
   const fluidOrientation = useSharedValue(0);
@@ -931,9 +932,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
   // Calculate display values
   const numTanks = wellConfig?.numTanks ?? 1;
-  const currentLevelDisplay = levelSnapshot?.unavailable
-    ? t('common.unavailable')
-    : formatFeetInches(displayFeet);
   
   // BBLs per foot — Dashboard-saved effective bbl/ft (override or derived from
   // capacity/height/activeTanks), same source of truth as Record Load.
@@ -941,7 +939,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   
   // Calculate BBLs available (from current level down to load line)
   const loadLine = wellConfig?.loadLine ?? 0;
-  const bblsAvailable = Math.max(Math.round((displayFeet - loadLine) * bblsPerFoot), 0);
   
   // Flow rate display (now from levelSnapshot, not separately cached)
   const flowRate = levelSnapshot?.flowRate ?? wellConfig?.avgFlowRate ?? 'N/A';
@@ -1198,14 +1195,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   // Number floats half in/half out of water - positioned from TOP of interior
   const numberStyle = useAnimatedStyle(() => {
     if (wellDown) {
-      return { top: DOWN_NUMBER_TOP };
+      return { transform: [{ translateY: DOWN_NUMBER_TOP }] };
     }
     // Water surface is at this distance from TOP of interior
     const waterTop = INTERIOR_HEIGHT * (1 - waterFraction.value);
     // Clamp so number stays visible even at very low/high levels
     const clampedTop = Math.max(INTERIOR_HEIGHT * 0.15, Math.min(INTERIOR_HEIGHT * 0.75, waterTop));
     // Offset to center the number on the water line (half above, half below)
-    return { top: clampedTop - NUMBER_OFFSET };
+    return { transform: [{ translateY: clampedTop - NUMBER_OFFSET }] };
   });
   
   // Waiting message
@@ -1351,9 +1348,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
             )}
 
             <Animated.View pointerEvents="none" style={[styles.numberContainer, numberStyle]}>
-              <Text style={levelSnapshot?.unavailable ? styles.tankUnavailableLabel : styles.tankNumber}>
-                {currentLevelDisplay}
-              </Text>
+              <TankReadout fill={waterFraction} height={tankHeightFeet} kind="level" entryFraction={entryFraction}
+                unavailable={levelSnapshot?.unavailable ? t('common.unavailable') : null}
+                style={levelSnapshot?.unavailable ? styles.tankUnavailableLabel : styles.tankNumber} />
             </Animated.View>
           </View>
           <View pointerEvents="none" style={styles.tankFrame}>
@@ -1375,7 +1372,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
           
           {/* BBLs available */}
           <View style={styles.bblsAvailableContainer}>
-            <Text style={styles.bblsAvailableText}>{levelSnapshot?.unavailable ? '--' : bblsAvailable} {t('units.bbl')}</Text>
+            <TankReadout fill={waterFraction} height={tankHeightFeet} kind="bbl" entryFraction={entryFraction}
+              loadLine={loadLine} bblPerFoot={bblsPerFoot} unit={t('units.bbl')}
+              unavailable={levelSnapshot?.unavailable ? '-- '+t('units.bbl') : null} style={styles.bblsAvailableText} />
           </View>
         </View>
         </Pressable>
@@ -3187,6 +3186,7 @@ const styles = StyleSheet.create({
   },
   numberContainer: {
     position: 'absolute',
+    top: 0,
     left: 15,
     right: 0,
     alignItems: 'center',

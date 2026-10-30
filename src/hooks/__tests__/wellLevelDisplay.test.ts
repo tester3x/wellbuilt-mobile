@@ -116,3 +116,14 @@ test('a busy JS thread receives one latest-value delivery instead of a backlog o
   expect(shown).toBe(15);
   act(()=>tree.unmount());
 });
+
+
+test('forecast sampling can be sparse while native readouts keep following the UI fill',()=>{
+ const fill={value:.2} as any;let shown=0;let tree!:TestRenderer.ReactTestRenderer;
+ function Tank(){shown=useWellLevelDisplay(fill,20,true,.2,true,1000/6);return null;}
+ act(()=>{tree=TestRenderer.create(React.createElement(Tank));});
+ act(()=>mockFrameCallback({timestamp:0}));
+ fill.value=.4;act(()=>mockFrameCallback({timestamp:40}));expect(shown).toBe(4);
+ fill.value=.7;act(()=>mockFrameCallback({timestamp:180}));expect(shown).toBe(14);
+ act(()=>tree.unmount());
+});

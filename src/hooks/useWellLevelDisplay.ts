@@ -4,7 +4,7 @@ import { runOnJS, useFrameCallback, useSharedValue, type SharedValue, type Frame
 /** Water remains UI-thread driven. Sample the React labels at most 30 times
  * per second, only for visible tanks. A final frame is delivered even after
  * withTiming stops, without quantizing the level used by the calculations. */
-export function useWellLevelDisplay(fill: SharedValue<number>, height: number, active: boolean, entryFraction: number, prepared = true) {
+export function useWellLevelDisplay(fill: SharedValue<number>, height: number, active: boolean, entryFraction: number, prepared = true, sampleIntervalMs = 1000 / 30) {
   const [feet, setFeet] = useState(() => entryFraction * height);
   const generation = useRef(0);
   const sampleGeneration = useSharedValue(0);
@@ -23,14 +23,14 @@ export function useWellLevelDisplay(fill: SharedValue<number>, height: number, a
     const fraction = fill.value;
     const previous = sent.value;
     if (previous.fraction === fraction && previous.height === height) return;
-    if (info.timestamp - previous.at < 1000 / 30) return;
+    if (info.timestamp - previous.at < sampleIntervalMs) return;
     sent.value = { fraction, at: info.timestamp, height };
     latest.value = { feet: fraction * height, generation: sampleGeneration.value };
     if (!queued.value) {
       queued.value = true;
       runOnJS(publish)();
     }
-  }, [fill, height, sent, publish, sampleGeneration, latest, queued]);
+  }, [fill, height, sent, publish, sampleGeneration, latest, queued, sampleIntervalMs]);
   const frame = useFrameCallback(sample, false);
   useLayoutEffect(() => {
     // The transition owner queues this same seed to the UI thread. A synchronous

@@ -3,7 +3,7 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 140,
+  "versionCodeFloor": 141,
   "observedAt": "2026-10-30T04:35:11.679Z",
   "installedReports": [
     {
@@ -589,10 +589,44 @@
         "C:/dev/tmp/wbm140-build-private.log",
         "C:/dev/tmp/wbm141-first-water-before-private.log"
       ]
+    },
+    {
+      "sourceCommit": "f21023a3a7cc9012edcbecb3b679971332d7e563",
+      "versionCode": 141,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "829e4cc4f0dd2e1e1b732ecce6aa2c44658bf76a382be9f3ba5792c6675dada0",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-10-30T04:45:40.911585+00:00",
+      "localArtifact": "C:\\dev\\tmp\\WB-M141-f21023a.apk",
+      "method": "Registered-home local Android SDK/Gradle; account-device-test; arm64-v8a",
+      "embeddedPanelAndSliderMarkersVerified": true,
+      "reservation": "android-release-v141",
+      "checks": [
+        "139 suites /1399 tests",
+        "TypeScript noEmit",
+        "Account recovery regressions",
+        "19 release/retirement regressions",
+        "Strict all-head/reservation/forced bundle/postbuild gates",
+        "Approved package/signature",
+        "S24 installed base APK matches",
+        "Actual native synchronous UI props readback true"
+      ],
+      "verificationState": "S24 in-place install and launch verified. Rapid and reversal samples show no prior zero/empty flashes, but visible number/water lag remains. Busy-JS regression proves3 old UI samples queued; next source coalesces one pending delivery to latest UI sample. Fast trace61/310 janky19.68percent p9553ms, not a smoothness pass. Fold remains135; rollout held. No operational data writes.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm141-release-private.json",
+        "C:/dev/tmp/wbm141-build-private.log",
+        "C:/dev/tmp/wbm141-fast-private.mp4",
+        "C:/dev/tmp/wbm141-reversals-private.mp4",
+        "C:/dev/tmp/wbm141-gfx-private.txt",
+        "C:/dev/tmp/wbm141-native-log-private.txt",
+        "C:/dev/tmp/wbm141-R5CX15HEGQB-installed-private.apk",
+        "C:/dev/tmp/wbm142-coalescing-before-private.log"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M140 built but withheld before installation due reproducible first-frame constructor defect; S24 remains139, Fold135. User authorizes local repair/build/test iterations until S24 passes, then Fold. No cloud or operational data changes.",
+  "notes": "M141 S24 only: no zero flashes in recorded samples but number/water lag remains; next candidate coalesces UI-to-JS samples. Fold135. Standing local repair/build/test authorization retained.",
   "failedReservations": [
     {
       "versionCode": 123,

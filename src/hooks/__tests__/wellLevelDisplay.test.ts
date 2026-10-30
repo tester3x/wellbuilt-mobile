@@ -96,3 +96,23 @@ test('an offscreen card publishes its staged fill on activation before any frame
   expect(shown.at(-1)).toBeCloseTo(6.75);
   act(()=>tree.unmount());
 });
+
+
+test('a busy JS thread receives one latest-value delivery instead of a backlog of old frames',()=>{
+  const fill={value:.2} as any;let shown=0;
+  function Tank(){shown=useWellLevelDisplay(fill,20,true,.2);return null;}
+  let tree!:TestRenderer.ReactTestRenderer;
+  act(()=>{tree=TestRenderer.create(React.createElement(Tank));});
+  mockDefer=true;
+  act(()=>mockFrameCallback({timestamp:0}));
+  fill.value=.4;act(()=>mockFrameCallback({timestamp:40}));
+  fill.value=.7;act(()=>mockFrameCallback({timestamp:80}));
+  expect(mockQueue).toHaveLength(1);
+  act(()=>{mockQueue.splice(0).forEach(deliver=>deliver());});
+  expect(shown).toBe(14);
+  fill.value=.75;act(()=>mockFrameCallback({timestamp:120}));
+  expect(mockQueue).toHaveLength(1);
+  act(()=>{mockQueue.splice(0).forEach(deliver=>deliver());});
+  expect(shown).toBe(15);
+  act(()=>tree.unmount());
+});

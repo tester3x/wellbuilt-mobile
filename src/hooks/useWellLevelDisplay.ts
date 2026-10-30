@@ -8,9 +8,15 @@ export function useWellLevelDisplay(fill: SharedValue<number>, height: number, a
   const [feet, setFeet] = useState(() => entryFraction * height);
   const generation = useRef(0);
   const sampleGeneration = useSharedValue(0);
-  const publish = useCallback((nextFeet: number, sampledGeneration: number) => {
-    if (sampledGeneration === generation.current) setFeet(nextFeet);
-  }, []);
+  const latest = useSharedValue({ feet: entryFraction * height, generation: 0 });
+  const queued = useSharedValue(false);
+  const publish = useCallback(() => {
+    // At most one bridge task may wait behind JS rendering. Consume the newest
+    // UI sample, not a historical frame that would replay after a fast swipe.
+    const sample = latest.value;
+    queued.value = false;
+    if (sample.generation === generation.current) setFeet(sample.feet);
+  }, [latest, queued]);
   const sent = useSharedValue({ fraction: -1, at: -Infinity, height: 0 });
   const sample = useCallback((info: FrameInfo) => {
     'worklet';
@@ -19,8 +25,12 @@ export function useWellLevelDisplay(fill: SharedValue<number>, height: number, a
     if (previous.fraction === fraction && previous.height === height) return;
     if (info.timestamp - previous.at < 1000 / 30) return;
     sent.value = { fraction, at: info.timestamp, height };
-    runOnJS(publish)(fraction * height, sampleGeneration.value);
-  }, [fill, height, sent, publish, sampleGeneration]);
+    latest.value = { feet: fraction * height, generation: sampleGeneration.value };
+    if (!queued.value) {
+      queued.value = true;
+      runOnJS(publish)();
+    }
+  }, [fill, height, sent, publish, sampleGeneration, latest, queued]);
   const frame = useFrameCallback(sample, false);
   useLayoutEffect(() => {
     // The transition owner queues this same seed to the UI thread. A synchronous

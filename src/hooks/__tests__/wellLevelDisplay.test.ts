@@ -12,6 +12,27 @@ jest.mock('react-native-reanimated',()=>({
 }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
 afterEach(()=>{mockDefer=false;mockQueue=[];});
+
+test('the staged label uses the captured seed even before the queued UI write runs',()=>{
+  const fill={value:0} as any;let shown=0;
+  function Tank({seed,active=false}:{seed:number;active?:boolean}){
+    shown=useWellLevelDisplay(fill,20,active,seed);return null;
+  }
+  let tree!:TestRenderer.ReactTestRenderer;
+  // Reanimated applies the transition owner's JS assignment on a later UI task.
+  // Reading fill here still returns0 even though the queued assignment is.73.
+  act(()=>{tree=TestRenderer.create(React.createElement(Tank,{seed:.73}));});
+  expect(shown).toBeCloseTo(14.6);
+  act(()=>tree.update(React.createElement(Tank,{seed:.73,active:true})));
+  expect(shown).toBeCloseTo(14.6);
+  fill.value=.73;
+  act(()=>mockFrameCallback({timestamp:0}));
+  expect(shown).toBeCloseTo(14.6);
+  // Next gesture queues.27 while a synchronous getter still sees the old.73.
+  act(()=>tree.update(React.createElement(Tank,{seed:.27})));
+  expect(shown).toBeCloseTo(5.4);
+  act(()=>tree.unmount());
+});
 test('samples visible labels at 30Hz, delivers the final level, stops offscreen work',()=>{
   const fill={value:0.2} as any;
   const shown:number[]=[];
@@ -71,7 +92,7 @@ test('an offscreen card publishes its staged fill on activation before any frame
   expect(shown.at(-1)).toBeCloseTo(14.6);
   act(()=>tree.update(React.createElement(Tank,{active:false})));
   fill.value=.27;
-  act(()=>tree.update(React.createElement(Tank,{active:true,height:25})));
+  act(()=>tree.update(React.createElement(Tank,{active:true,height:25,entryFraction:.27})));
   expect(shown.at(-1)).toBeCloseTo(6.75);
   act(()=>tree.unmount());
 });

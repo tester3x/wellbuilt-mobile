@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 136,
-  "observedAt": "2026-10-30T03:32:46.402Z",
+  "versionCodeFloor": 137,
+  "observedAt": "2026-10-30T03:43:34.154Z",
   "installedReports": [
     {
       "app": "WB-T",
@@ -469,10 +469,41 @@
         "C:/dev/tmp/wbm136-gfx-private.txt",
         "C:/dev/tmp/wbm136-R5CX15HEGQB-installed-private.apk"
       ]
+    },
+    {
+      "sourceCommit": "3aad64b7603faf0030b473ff042ccb96792bba43",
+      "versionCode": 137,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "a0fe2f9b75c8fa280e6fb86a6b9c712b72bfd67f6e81d0880a060d5080e7778b",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-10-30T03:40:05.451713+00:00",
+      "localArtifact": "C:\\dev\\tmp\\WB-M137-3aad64b.apk",
+      "method": "Registered-home local Android SDK/Gradle; account-device-test; arm64-v8a",
+      "embeddedPanelAndSliderMarkersVerified": true,
+      "reservation": "android-release-v137",
+      "checks": [
+        "137 suites /1388 tests before build",
+        "TypeScript noEmit",
+        "Account recovery regressions",
+        "19 retirement/release regressions",
+        "Strict source/all-head/reservation/forced bundle/postbuild gates",
+        "aapt package/version and approved signing certificate",
+        "S24 installed base APK independently matches artifact"
+      ],
+      "verificationState": "FAILED S24 native acceptance. Video reproduces transient0ft/0BBL on first incoming Gabriel2/3 despite nonzero staged water. No blank body reproduced. Fast trace56/320 janky17.50percent p95 65ms; different start from136, not controlled improvement evidence. ZFold remains135 and rollout held. Layout-phase synchronous shared-value getter can return the old value before queued UI seed assignment; direct captured-seed correction and delayed-UI-write regression prepared after this immutable build. No operational data writes.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm137-release-private.json",
+        "C:/dev/tmp/wbm137-build-private.log",
+        "C:/dev/tmp/wbm137-fast-private.mp4",
+        "C:/dev/tmp/wbm137-gfx-private.txt",
+        "C:/dev/tmp/wbm137-R5CX15HEGQB-installed-private.apk",
+        "C:/dev/tmp/wbm137-ui-queue-regression-before-private.log"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M136 installed on S24 only and FAILED transient-zero label/native acceptance; ZFold remains M135. Reservation136 consumed permanently. Follow-up source correction requires another explicit APK request and S24 acceptance before Fold rollout.",
+  "notes": "M137 installed on S24 only and FAILED transient-zero label acceptance. ZFold remains135. Reservations136/137 consumed. Direct-seed correction queued, not included in137; new explicit local build authorization required under AGENTS.md before another APK.",
   "failedReservations": [
     {
       "versionCode": 123,

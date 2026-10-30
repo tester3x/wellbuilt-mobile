@@ -119,3 +119,22 @@ This correction is source-only until another explicitly authorized APK. M136 is
 not approved for ZFold rollout. One fast S24 trace had57/280 janky frames20.36percent,
 95th61ms; its start differed from the earlier baseline, so it is not a controlled
 before/after comparison or evidence of improved smoothness.
+
+## M137 native rejection: queued UI seed versus synchronous getter
+
+M137 source3aad64b7603faf0030b473ff042ccb96792bba43 was built locally under
+android-release-v137 and installed on S24 only; installed base APK SHA256 matches
+the artifact. ZFold remains135. Acceptance FAILED again: the video shows Gabriel2
+and3 with0ft/0BBL while staged water is nonzero, before labels catch up. No blank
+body was reproduced. The fast trace has56/320 janky frames17.50percent, p95 65ms;
+its different starting range prevents a controlled comparison or smoothness pass.
+
+The layout-phase correction still read fill.value synchronously after the
+transition owner queued its seed assignment. The queued UI write had not yet run,
+so the getter could return the old zero and overwrite the correctly initialized
+label. Previous mocks assigned shared values immediately and missed this ordering.
+A new regression leaves the getter at0 while the seed is.73; it fails against
+M137 with expected14.6ft/received0. The follow-up uses the already captured seed
+directly for staging, then samples actual animated fill on UI frames. It does not
+read a shared value during layout. Queued old-sample generation fencing remains.
+The correction is source-only pending a new explicitly authorized APK/native test.

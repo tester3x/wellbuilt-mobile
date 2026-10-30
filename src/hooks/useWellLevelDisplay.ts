@@ -23,13 +23,12 @@ export function useWellLevelDisplay(fill: SharedValue<number>, height: number, a
   }, [fill, height, sent, publish, sampleGeneration]);
   const frame = useFrameCallback(sample, false);
   useLayoutEffect(() => {
-    // Offscreen water is staged by the transition owner's layout effect. Its
-    // label must catch up before this card is painted, rather than showing the
-    // mount-time zero until a UI frame crosses back to React.
-    // Stage neighbours too: they are already exposed during a drag before the
-    // pager marks them active. This runs once per seed/activation, not per frame.
+    // The transition owner queues this same seed to the UI thread. A synchronous
+    // fill.value read here can still see the PREVIOUS UI value before that task
+    // runs. Use the captured seed directly, including for neighbours exposed
+    // during a drag before the pager marks them active.
     sampleGeneration.value = ++generation.current;
-    setFeet(fill.value * height);
+    setFeet(entryFraction * height);
     if (active) {
       sent.value = { fraction: -1, at: -Infinity, height: 0 };
     }

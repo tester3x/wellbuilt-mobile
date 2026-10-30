@@ -532,9 +532,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
   // Load data and check for pending pull on mount/refresh
   useEffect(() => {
-    // Neighbours preload before they slide into view. Distant mounted buffer
-    // cells stay idle; entering the preparation range reads the latest cache.
-    if (!entryPrepared) return;
+    // Preload the existing pager buffer, independently of the smaller animation
+    // preparation range. A quick fling can reach a neighbour before reads finish
+    // if data loading waits for the selection/viewability threshold.
     let isMounted = true;
     const loadData = async () => {
       try {
@@ -729,7 +729,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
       isMounted = false;
       clearTimeout(safetyTimer);
     };
-  }, [wellName, refreshTrigger, waterFraction, entryPrepared]);
+  }, [wellName, refreshTrigger, waterFraction]);
 
   // Live level update based on flow rate (now stored in levelSnapshot)
   // Formula matches dashboard: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)

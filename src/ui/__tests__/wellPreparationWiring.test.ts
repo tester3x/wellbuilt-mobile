@@ -23,8 +23,13 @@ test.each([1,2])('actual pager admits only current/adjacent panels for %s column
     expect(admitted).toEqual(columns===1?[7,8,9]:[6,7,8,9,10,11]);
   }
 });
-test('distant cells exit the actual data effect before performing any reads',()=>{
+test('data warmup starts in the mounted buffer even outside animation preparation',()=>{
   const effect=nodes(n=>ts.isCallExpression(n)&&n.expression.getText(ast)==='useEffect'&&n.arguments[0]?.getText(ast).includes('readWellDisplayData'))[0] as ts.CallExpression;
-  // Any access to config/storage/network would fail because nothing else exists.
-  expect(execute(effect.arguments[0],{entryPrepared:false})()).toBeUndefined();
+  const getWellConfig=jest.fn(()=>new Promise(()=>{}));
+  const cleanup=execute(effect.arguments[0],{entryPrepared:false,wellName:'A',
+    lastPullWellRef:{current:'A'},getWellConfig,setTimeout:jest.fn(),clearTimeout:jest.fn(),console})();
+  expect(getWellConfig).toHaveBeenCalledWith('A');expect(typeof cleanup).toBe('function');cleanup();
+  // Crossing the animation range itself must not restart/cancel the data load.
+  const dependencies=effect.arguments[1] as ts.ArrayLiteralExpression;
+  expect(dependencies.elements.map(n=>n.getText(ast))).not.toContain('entryPrepared');
 });

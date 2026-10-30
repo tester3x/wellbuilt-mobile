@@ -180,3 +180,30 @@ Combined source includes the queued direct-seed zero-label correction, but remai
 unverified on hardware. S24 M137 is still rejected; ZFold remains135. The next
 authorized local build must inspect first incoming frames, reversals, sync during
 swipes, both directions/ends, foreground/picker and Fold posture before acceptance.
+
+## M138 native rejection and separation of warmup from animation
+
+M138 was built locally from aca6388df027a57d40cc6c360798a698d7f72625 under
+android-release-v138. S24 R5CX15HEGQB installed138/2.1.0 and its pulled base APK
+matches40e265303a5981301c30e57498443a9b195382000911e332f3456f4a93ecf3a8.
+Existing signer/package preserved. ZFold RFGL23VJCED remains135; not installed.
+
+Acceptance FAILED: rapid-swipe frames expose Loading/No flow data and occasional
+zero text on newly encountered cards. Settled values recover. No wholly missing
+body reproduced. Timing improved in the same-script trace from137's56/320 janky
+frames/p9565ms to138's46/333/p9542ms, but this is not a smoothness acceptance pass.
+The recording and scoped native mount logs are retained privately. No real loads,
+history entries, AFR/tank settings, accounts or server resources were changed.
+
+The initial e3e55b1 preparation change conflated two different ranges: the mounted
+data warmup buffer and the nearby animated cells. Waiting until a card becomes an
+immediate neighbour starts reads too late during a fast fling. The follow-up keeps
+the existing full mounted-buffer data warmup; only water/label seed resets remain
+limited to nearby tanks. Crossing the nearby range no longer cancels/restarts a
+data load. Targeted sync refresh, concurrent independent reads and pending-drain
+ownership remain. This supersedes the earlier section's statement that distant
+mounted cells skip data reads: they now preload data but skip animation resets.
+
+A regression executes the actual data effect with preparation=false and proves
+warmup still starts, and verifies the preparation flag is not a data-effect
+dependency. This is queued source after138 and is not yet natively verified.

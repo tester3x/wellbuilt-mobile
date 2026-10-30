@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 137,
-  "observedAt": "2026-10-30T03:43:34.154Z",
+  "versionCodeFloor": 138,
+  "observedAt": "2026-10-30T04:19:23.450Z",
   "installedReports": [
     {
       "app": "WB-T",
@@ -500,10 +500,42 @@
         "C:/dev/tmp/wbm137-R5CX15HEGQB-installed-private.apk",
         "C:/dev/tmp/wbm137-ui-queue-regression-before-private.log"
       ]
+    },
+    {
+      "sourceCommit": "aca6388df027a57d40cc6c360798a698d7f72625",
+      "versionCode": 138,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "40e265303a5981301c30e57498443a9b195382000911e332f3456f4a93ecf3a8",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-10-30T04:15:20.254819+00:00",
+      "localArtifact": "C:\\dev\\tmp\\WB-M138-aca6388.apk",
+      "method": "Registered-home local Android SDK/Gradle; account-device-test; arm64-v8a",
+      "embeddedPanelAndSliderMarkersVerified": true,
+      "reservation": "android-release-v138",
+      "checks": [
+        "139 suites /1397 tests before build",
+        "TypeScript noEmit",
+        "Account recovery regressions",
+        "19 retirement/release regressions",
+        "Strict source/all-head/reservation/forced bundle/postbuild gates",
+        "aapt package/version and approved signing certificate",
+        "S24 installed base APK independently matches artifact"
+      ],
+      "verificationState": "FAILED S24 rapid-swipe acceptance. Frames show Loading/No flow data and occasional0ft/0BBL on newly encountered buffer cards. Settled levels recover; no wholly missing body reproduced. Data warmup was incorrectly gated by the narrow animation preparation range. Follow-up separates full mounted-buffer data warmup from nearby animation staging; not in this build. Fast trace46/333 janky13.81percent p95 42ms, improved against137 same-script sample56/320 p9565ms but not a smoothness pass. ZFold remains135; rollout held. No operational data writes.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm138-release-private.json",
+        "C:/dev/tmp/wbm138-build-private.log",
+        "C:/dev/tmp/wbm138-fast-private.mp4",
+        "C:/dev/tmp/wbm138-reversals-private.mp4",
+        "C:/dev/tmp/wbm138-gfx-private.txt",
+        "C:/dev/tmp/wbm138-native-log-private.txt",
+        "C:/dev/tmp/wbm138-R5CX15HEGQB-installed-private.apk"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M137 installed on S24 only and FAILED transient-zero label acceptance. ZFold remains135. Reservations136/137 consumed. Direct-seed correction queued, not included in137; new explicit local build authorization required under AGENTS.md before another APK.",
+  "notes": "M138 installed on S24 only and FAILED rapid-swipe data readiness. ZFold remains135. Reservations136/137/138 consumed. Buffer warmup correction is queued after138, not included. Another APK requires explicit current authorization under AGENTS.md.",
   "failedReservations": [
     {
       "versionCode": 123,

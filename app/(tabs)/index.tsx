@@ -1069,20 +1069,23 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   // while moving right. Per-fish freq/phase/range come from the stable ref.
   const fa = aliveEgg.fish[0], fb = aliveEgg.fish[1], fc = aliveEgg.fish[2];
   const fishMoveA = useAnimatedStyle(() => {
+    if (!sceneActive || aliveEgg.kind !== 'fish') return { opacity: 0 };
     const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[0], fishEscape.value[0], fishScatter.value, reducedMotion);
     return { ...p, left: p.left - 17, top: p.top - 17 };
   });
   const fishMoveB = useAnimatedStyle(() => {
+    if (!sceneActive || aliveEgg.kind !== 'fish') return { opacity: 0 };
     const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[1], fishEscape.value[1], fishScatter.value, reducedMotion);
     return { ...p, left: p.left - 17, top: p.top - 17 };
   });
   const fishMoveC = useAnimatedStyle(() => {
+    if (!sceneActive || aliveEgg.kind !== 'fish') return { opacity: 0 };
     const p = roamingFishPosition(INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value, fluidInverted.value, fluidOrientation.value, swim.value, aliveEgg.fish[2], fishEscape.value[2], fishScatter.value, reducedMotion);
     return { ...p, left: p.left - 17, top: p.top - 17 };
   });
   const fishFacing = useSharedValue([-1, -1, -1]);
   useAnimatedReaction(
-    () => ({
+    () => !sceneActive || aliveEgg.kind !== 'fish' ? null : ({
       angle: fluidOrientation.value,
       positions: [fa, fb, fc].map((fish, i) => roamingFishPosition(
         INTERIOR_WIDTH, INTERIOR_HEIGHT, waterFraction.value, fluidOffsets.value,
@@ -1091,7 +1094,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
       )),
     }),
     (current, previous) => {
-      if (!previous || Math.abs(current.angle - previous.angle) > 0.02) return;
+      if (!current || !previous || Math.abs(current.angle - previous.angle) > 0.02) return;
       fishFacing.value = current.positions.map((position, i) =>
         position.opacity && previous.positions[i].opacity
           ? movementFishFacing(previous.positions[i], position, current.angle, fishFacing.value[i])
@@ -1348,7 +1351,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
             )}
 
             <Animated.View pointerEvents="none" style={[styles.numberContainer, numberStyle]}>
-              <TankReadout fill={waterFraction} height={tankHeightFeet} kind="level" entryFraction={entryFraction}
+              <TankReadout fill={waterFraction} height={tankHeightFeet} kind="level" entryFraction={entryFraction} active={sceneActive} prepared={entryPrepared}
                 unavailable={levelSnapshot?.unavailable ? t('common.unavailable') : null}
                 style={levelSnapshot?.unavailable ? styles.tankUnavailableLabel : styles.tankNumber} />
             </Animated.View>
@@ -1372,7 +1375,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
           
           {/* BBLs available */}
           <View style={styles.bblsAvailableContainer}>
-            <TankReadout fill={waterFraction} height={tankHeightFeet} kind="bbl" entryFraction={entryFraction}
+            <TankReadout fill={waterFraction} height={tankHeightFeet} kind="bbl" entryFraction={entryFraction} active={sceneActive} prepared={entryPrepared}
               loadLine={loadLine} bblPerFoot={bblsPerFoot} unit={t('units.bbl')}
               unavailable={levelSnapshot?.unavailable ? '-- '+t('units.bbl') : null} style={styles.bblsAvailableText} />
           </View>

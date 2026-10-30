@@ -1,8 +1,7 @@
 import React from 'react';
-import { TextInput, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
-import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
-
-const AnimatedReadout = Animated.createAnimatedComponent(TextInput);
+import { Text, type StyleProp, type TextStyle } from 'react-native';
+import { type SharedValue } from 'react-native-reanimated';
+import { useWellLevelDisplay } from '../hooks/useWellLevelDisplay';
 
 export function tankReadoutText(fraction: number, height: number, kind: 'level'|'bbl', loadLine: number, bblPerFoot: number, unit: string, unavailable: string | null): string {
   'worklet';
@@ -13,18 +12,11 @@ export function tankReadoutText(fraction: number, height: number, kind: 'level'|
   return Math.floor(total/12) + "'" + (inches ? inches + '"' : '');
 }
 
-/** Read-only native text follows the same UI value as the water, with no JS frame queue. */
-export const TankReadout = React.memo(function TankReadout({fill,height,kind,loadLine=0,bblPerFoot=0,unit='',unavailable=null,entryFraction,style}: {
+/** Only this small counter re-renders on samples; the tank scene and its physics stay untouched. */
+export const TankReadout = React.memo(function TankReadout({fill,height,kind,loadLine=0,bblPerFoot=0,unit='',unavailable=null,entryFraction,active,prepared,style}: {
   fill: SharedValue<number>; height: number; kind: 'level'|'bbl'; loadLine?: number; bblPerFoot?: number;
-  unit?: string; unavailable?: string|null; entryFraction: number; style: StyleProp<TextStyle>;
+  unit?: string; unavailable?: string|null; entryFraction: number; active: boolean; prepared: boolean; style: StyleProp<TextStyle>;
 }) {
-  const animatedProps = useAnimatedProps(() => {
-    const text = tankReadoutText(fill.value,height,kind,loadLine,bblPerFoot,unit,unavailable);
-    return {text,defaultValue:text};
-  });
-  return <AnimatedReadout animatedProps={animatedProps}
-    defaultValue={tankReadoutText(entryFraction,height,kind,loadLine,bblPerFoot,unit,unavailable)}
-    editable={false} caretHidden showSoftInputOnFocus={false} pointerEvents="none"
-    underlineColorAndroid="transparent" style={[style,styles.text]} />;
+  const feet=useWellLevelDisplay(fill,height,active,entryFraction,prepared);
+  return <Text pointerEvents="none" style={style}>{tankReadoutText(feet/height,height,kind,loadLine,bblPerFoot,unit,unavailable)}</Text>;
 });
-const styles=StyleSheet.create({text:{width:'100%',padding:0,margin:0,textAlign:'center',includeFontPadding:false}});

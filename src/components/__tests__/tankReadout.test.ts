@@ -1,24 +1,28 @@
 import React from 'react';
 import TestRenderer,{act} from 'react-test-renderer';
 import {TankReadout,tankReadoutText} from '../TankReadout';
-let mockUpdates:Array<()=>{text:string;defaultValue:string}>=[];
-jest.mock('react-native',()=>({TextInput:'TextInput',StyleSheet:{create:(s:any)=>s}}));
+let mockFrame:(info:{timestamp:number})=>void;
+const mockFrameControl={setActive:jest.fn()};
+jest.mock('react-native',()=>({Text:'NativeText'}));
 jest.mock('react-native-reanimated',()=>({
-  __esModule:true,default:{createAnimatedComponent:()=> 'NativeReadout'},
-  useAnimatedProps:(updater:any)=>{mockUpdates.push(updater);return {};},
+ useSharedValue:(value:unknown)=>React.useRef({value}).current,
+ useFrameCallback:(fn:any)=>{mockFrame=fn;return mockFrameControl;},
+ runOnJS:(fn:any)=>fn,
 }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
-beforeEach(()=>{mockUpdates=[];});
 
-test.each([20,25])('native readout follows %s-foot canonical water without React renders',height=>{
- const fill={value:.5} as any;let tree!:TestRenderer.ReactTestRenderer;
- act(()=>{tree=TestRenderer.create(React.createElement(TankReadout,{fill,height,kind:'level',entryFraction:.5,style:{fontSize:24}}));});
- const update=mockUpdates[0];expect(update().text).toBe(tankReadoutText(.5,height,'level',0,0,'',null));
- fill.value=.73;expect(update().text).toBe(tankReadoutText(.73,height,'level',0,0,'',null));
- expect(mockUpdates).toHaveLength(1); // No React frame publication is needed.
- const input=tree.root.findByType('NativeReadout' as any);
- expect(input.props.editable).toBe(false);expect(input.props.pointerEvents).toBe('none');
- act(()=>tree.unmount());
+test.each([20,25])('only the small %s-foot counter renders when water changes',height=>{
+ const fill={value:.5} as any;let tree!:TestRenderer.ReactTestRenderer;let sceneRenders=0;
+ function Scene(){sceneRenders++;return React.createElement(TankReadout,{fill,height,kind:'level',entryFraction:.5,active:true,prepared:true,style:{fontSize:24}});}
+ act(()=>{tree=TestRenderer.create(React.createElement(Scene));});
+ const text=()=>tree.root.findByType('NativeText' as any).props.children;
+ expect(text()).toBe(tankReadoutText(.5,height,'level',0,0,'',null));
+ fill.value=.73;act(()=>mockFrame({timestamp:0}));
+ expect(text()).toBe(tankReadoutText(.73,height,'level',0,0,'',null));
+ fill.value=.4;act(()=>mockFrame({timestamp:40}));
+ expect(text()).toBe(tankReadoutText(.4,height,'level',0,0,'',null));
+ expect(sceneRenders).toBe(1);
+ act(()=>tree.unmount());expect(mockFrameControl.setActive).toHaveBeenLastCalledWith(false);
 });
 test('readout preserves floor inches and exact whole feet',()=>{
  expect(tankReadoutText(.5,20,'level',0,0,'',null)).toBe("10'");

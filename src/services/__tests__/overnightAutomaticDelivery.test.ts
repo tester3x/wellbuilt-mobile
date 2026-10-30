@@ -59,7 +59,7 @@ describe('automatic ON delivery after new pulls',()=>{
      -Number(pipelineSequence[index].response.bbls24hrs))).toBeLessThanOrEqual(1);
    expect(JSON.parse(mockStore['@wellbuilt_level_snapshots']).ExampleBank.flowRateMinutes)
      .toBe(snapshot!.flowRateMinutes);
-   expect(screen).toHaveBeenLastCalledWith(false);
+   expect(screen).toHaveBeenLastCalledWith(false,['ExampleBank']);
   };
   try{
    await mockCallbacks.initial({response_ExampleBank:pipelineSequence[0].response});assertDaily(0);
@@ -93,7 +93,7 @@ describe('automatic ON delivery after new pulls',()=>{
    // Same bank/rate conversion used by the well card: 60 BBL/ft.
    expect(Math.round(60*1440/snapshot!.flowRateMinutes!)).toBe(daily);
    expect(JSON.parse(mockStore['@wellbuilt_level_snapshots']).Example.flowRateMinutes).toBe(minutes);
-   expect(screen).toHaveBeenLastCalledWith(false);
+   expect(screen).toHaveBeenLastCalledWith(false,['Example']);
   };
   try{
    await mockCallbacks.initial({response_Example:response(0,'24:00:00','60')});assertRate(1440,60);
@@ -116,7 +116,7 @@ describe('automatic ON delivery after new pulls',()=>{
    for(const [i,expected]of [[1,160],[2,250],[3,81]]){
     await mockCallbacks.update('Example',{...sequence[i].response,isEdit:false});
     expect(history.getLevelSnapshotSync('Example')).toMatchObject({overnightBblsDay:expected,lastPullDateTimeUTC:sequence[i].response.lastPullDateTimeUTC});
-    expect(screen).toHaveBeenLastCalledWith(false);
+    expect(screen).toHaveBeenLastCalledWith(false,['Example']);
    }
    const saved=JSON.parse(mockStore['@wellbuilt_level_snapshots']).Example;
    expect(saved).toMatchObject({overnightBblsDay:81,levelFeet:10,overnightEstimatedTime:false});

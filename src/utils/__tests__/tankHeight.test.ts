@@ -43,9 +43,9 @@ test.each([20, 25])('actual tank screen converts water fraction and clamps slide
   const { ast, find } = screen('(tabs)/index.tsx');
   const variable = (name: string) => find(n => ts.isVariableDeclaration(n) && n.name.getText(ast) === name) as ts.VariableDeclaration;
   const display = jest.fn((fill, fullHeight) => fill.value*fullHeight), saved = jest.fn(), slider = jest.fn();
-  const shown=execute(variable('displayFeet').initializer!.getText(ast), { tankHeightFeet: height, waterFraction:{value:10/height},sceneActive:true,entryFraction:.3,useWellLevelDisplay:display });
+  const shown=execute(variable('displayFeet').initializer!.getText(ast), { tankHeightFeet: height, waterFraction:{value:10/height},sceneActive:true,entryFraction:.3,entryPrepared:true,useWellLevelDisplay:display });
   expect(shown).toBe(10);
-  expect(display).toHaveBeenCalledWith({value:10/height},height,true,.3);
+  expect(display).toHaveBeenCalledWith({value:10/height},height,true,.3,true);
   const callback = variable('handleSliderChange').initializer as ts.CallExpression;
   execute(callback.arguments[0].getText(ast), { tankHeightFeet: height, wellConfig: { loadLine: 1.33, allowedBottom: 3 }, displayFeet: 10,
     setSliderFeet: slider, saveSliderPosition: saved, wellName: 'Test' })(30);

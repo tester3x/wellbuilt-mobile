@@ -11,7 +11,7 @@ const ast = ts.createSourceFile('index.tsx', source, ts.ScriptTarget.Latest, tru
 let effect = '';
 function visit(node: ts.Node) {
   if (ts.isCallExpression(node) && node.expression.getText(ast) === 'useEffect'
-      && node.arguments[0]?.getText(ast).includes('const pending = await getPendingPull(wellName)')) {
+      && node.arguments[0]?.getText(ast).includes('readWellDisplayData(wellName, config)')) {
     effect = node.arguments[0].getText(ast);
   }
   ts.forEachChild(node, visit);
@@ -30,10 +30,9 @@ function harness(snapshot: unknown = null, previousWell = 'Olson') {
   const setLastPullInfo = jest.fn(value => { shown = value; });
   const scope = {
     resolveTankHeight,
-    wellName: 'Olson', lastPullWellRef: { current: previousWell },
+    wellName: 'Olson', entryPrepared:true, lastPullWellRef: { current: previousWell },
     getWellConfig: jest.fn(() => config), setWellConfig: jest.fn(),
-    getLevelSnapshot: jest.fn(async () => snapshot), setLevelSnapshot: jest.fn(),
-    getPendingPull: jest.fn(async () => null), getWellPull: jest.fn(async () => null),
+    readWellDisplayData: jest.fn(async () => ({snapshot,pending:null,pull:null,slider:10})), setLevelSnapshot: jest.fn(),
     setPullRecord: jest.fn(), getBblPerFootSync: () => 51,
     setLastPullInfo, getSliderPosition: jest.fn(async () => 10), setSliderFeet: jest.fn(),
     drainAnimationActive: { current: false }, startingLevelFromSnapshot: () => 0,

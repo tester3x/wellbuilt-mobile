@@ -138,3 +138,45 @@ M137 with expected14.6ft/received0. The follow-up uses the already captured seed
 directly for staging, then samples actual animated fill on UI frames. It does not
 read a shared value during layout. Queued old-sample generation fencing remains.
 The correction is source-only pending a new explicitly authorized APK/native test.
+
+## Preparing neighbours and reducing sync work
+
+Following the user's question about swipe data loading, traced the ordinary
+production-water path: cached config/snapshots/history/sliders, local pending-pull
+storage, local elapsed-time estimation. Background listeners/foreground recovery
+update the cache separately; catalogue refresh runs every60seconds. A normal swipe
+does not initiate a production-water level fetch. Freshwater supply is different:
+its snapshot reader calls getWbmFreshWaterTankGroups; it is not made offline or
+durably cached by this repair.
+
+Previously every mounted buffer cell reset its water when the shared entry seed
+changed, and any completed sync reloaded every card's data. Preparation is now
+limited to the visible group plus its previous/next group: at most3 portrait cells
+or6 dual-panel cells. The existing native pager/window/resize buffer is unchanged.
+Distant cells skip data reads and seed resets; entering the preparation range
+loads current inputs before activation where timing permits. Active pending-pull
+drains remain authoritative even when their card leaves that range.
+
+The independent snapshot, pending-pull, history and slider reads run concurrently,
+then the screen publishes them only after pending-pull ownership is known. This
+joins reads for presentation; it is not a transactional database snapshot.
+Production-water reads retain their existing local/cache source. Freshwater may
+still fetch when it enters this preparation range, including on a later revisit;
+there is no claim that all swiping is network-free for that route type.
+
+Sync completion reports affected well names. Direct packet updates refresh that
+well's card; bulk restoration and unavailable-well responses refresh their listed
+wells. Empty/initial status notifications no longer trigger a full reload. Explicit
+focus/manual-refresh paths remain. Card tap handlers receive their own well name
+without allocating a new per-card wrapper callback each parent render.
+
+Validation:139suites/1397tests pass with detectOpenHandles, TypeScript passes,
+changed-runtime lint0errors/23warnings, retirement guard and diff check pass.
+Regressions cover concurrent preparation waiting for pending ownership, failed
+reads, neighbour admission, no distant seed writes, pending-drain continuity,
+actual screen refresh targeting, and existing automatic overnight/AFR delivery.
+No APK/version reservation/install/deployment or operational writes in this step.
+Combined source includes the queued direct-seed zero-label correction, but remains
+unverified on hardware. S24 M137 is still rejected; ZFold remains135. The next
+authorized local build must inspect first incoming frames, reversals, sync during
+swipes, both directions/ends, foreground/picker and Fold posture before acceptance.

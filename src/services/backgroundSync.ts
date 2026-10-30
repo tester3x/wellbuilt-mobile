@@ -49,11 +49,11 @@ let justDidSync = false; // Skip initial load if we just synced via REST
 let versionRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Sync status listeners - UI can subscribe to know when sync is happening
-type SyncStatusListener = (syncing: boolean) => void;
+type SyncStatusListener = (syncing: boolean, changedWells: readonly string[]) => void;
 const syncListeners = new Set<SyncStatusListener>();
 
-const notifyListeners = (syncing: boolean) => {
-  syncListeners.forEach(listener => listener(syncing));
+const notifyListeners = (syncing: boolean, changedWells: readonly string[] = []) => {
+  syncListeners.forEach(listener => listener(syncing, changedWells));
 };
 
 /**
@@ -63,7 +63,7 @@ const notifyListeners = (syncing: boolean) => {
 export function onSyncStatusChange(listener: SyncStatusListener): () => void {
   syncListeners.add(listener);
   // Immediately notify of current state
-  listener(isSyncing);
+  listener(isSyncing, []);
   return () => syncListeners.delete(listener);
 }
 
@@ -269,6 +269,7 @@ const runOutgoingStatusSync = createCoalescedRunner(async (): Promise<number> =>
   notifyListeners(true);
 
   let count = 0;
+  const changedWells = new Set<string>();
   try {
     const { fetchDriverOutgoingStatus, fetchIncomingVersion, fetchIncomingRevisionV2 } = await import('./firebase');
     const { markLevelUnavailable } = await import('./wellHistory');
@@ -278,11 +279,13 @@ const runOutgoingStatusSync = createCoalescedRunner(async (): Promise<number> =>
       saveResponses: async (responses) => {
         for (const response of responses as ResponsePacket[]) {
           await processResponsePacket(response);
+          if (response?.wellName) changedWells.add(response.wellName);
         }
       },
       saveUnavailable: async (wells) => {
         for (const wellName of wells) {
           await markLevelUnavailable(wellName);
+          changedWells.add(wellName);
         }
       },
       markApplied: markIncomingVersionApplied,
@@ -298,7 +301,7 @@ const runOutgoingStatusSync = createCoalescedRunner(async (): Promise<number> =>
   }
 
   isSyncing = false;
-  notifyListeners(false);
+  notifyListeners(false, [...changedWells]);
   justDidSync = true;
   return count;
 });
@@ -360,7 +363,7 @@ export function startBackgroundSync(): void {
       console.log('[BackgroundSync] Response updated via listener:', wellName);
       notifyListeners(true);  // Signal sync starting
       await processResponsePacket(response);
-      notifyListeners(false); // Signal sync complete - triggers UI refresh
+      notifyListeners(false, [response?.wellName || wellName]);
     },
     // onInitial - called once with all current data
     async (allResponses: Record<string, any>) => {
@@ -375,14 +378,16 @@ export function startBackgroundSync(): void {
       isSyncing = true;
       notifyListeners(true);
 
+      const changedWells = new Set<string>();
       for (const key of Object.keys(allResponses)) {
         if (key.startsWith('response_')) {
           await processResponsePacket(allResponses[key]);
+          if (allResponses[key]?.wellName) changedWells.add(allResponses[key].wellName);
         }
       }
 
       isSyncing = false;
-      notifyListeners(false);
+      notifyListeners(false, [...changedWells]);
     }
   );
 

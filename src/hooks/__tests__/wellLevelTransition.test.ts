@@ -45,6 +45,35 @@ function mount(overrides: Partial<Props> = {}) {
 }
 beforeEach(() => { jest.clearAllMocks(); });
 
+test('distant buffer tanks stay idle until admitted to the neighbour preparation range',()=>{
+  const h=mount({prepared:false});
+  expect(h.fill.writes).toEqual([]);
+  expect(mockCancel).not.toHaveBeenCalled();
+  h.update({entryFraction:.55,target:.75});
+  expect(h.fill.writes).toEqual([]);
+  expect(mockCancel).not.toHaveBeenCalled();
+  h.update({prepared:true});
+  expect(h.fill.value).toBe(.55);
+  expect(mockTiming).not.toHaveBeenCalled();
+  h.update({active:true});
+  expect(h.fill.animation).toMatchObject({target:.75,config:{duration:1000}});
+  h.fill.sample(.62);h.update({prepared:false,active:false});
+  const writes=h.fill.writes.length;
+  h.update({entryFraction:.91});
+  expect(h.fill.writes).toHaveLength(writes);
+  expect(h.fill.value).toBe(.62);
+  h.unmount();
+});
+
+test('leaving the preparation range cannot cancel an authoritative pull drain',()=>{
+  const h=mount({active:true});h.fill.sample(.4);
+  h.fill.writes.length=0;mockCancel.mockClear();
+  h.update({active:false,prepared:false,draining:true,entryFraction:.9,target:.1});
+  h.update({entryFraction:.6});
+  expect(h.fill.writes).toEqual([]);expect(mockCancel).not.toHaveBeenCalled();
+  h.unmount();
+});
+
 test('preloaded destination starts at the departing frame and refresh cannot shorten entry', () => {
   const h = mount();
   expect(h.fill.value).toBe(0.2); // Already staged before the new card becomes visible.

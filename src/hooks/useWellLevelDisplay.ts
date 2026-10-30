@@ -4,7 +4,7 @@ import { runOnJS, useFrameCallback, useSharedValue, type SharedValue, type Frame
 /** Water remains UI-thread driven. Sample the React labels at most 30 times
  * per second, only for visible tanks. A final frame is delivered even after
  * withTiming stops, without quantizing the level used by the calculations. */
-export function useWellLevelDisplay(fill: SharedValue<number>, height: number, active: boolean, entryFraction: number) {
+export function useWellLevelDisplay(fill: SharedValue<number>, height: number, active: boolean, entryFraction: number, prepared = true) {
   const [feet, setFeet] = useState(() => entryFraction * height);
   const generation = useRef(0);
   const sampleGeneration = useSharedValue(0);
@@ -28,11 +28,11 @@ export function useWellLevelDisplay(fill: SharedValue<number>, height: number, a
     // runs. Use the captured seed directly, including for neighbours exposed
     // during a drag before the pager marks them active.
     sampleGeneration.value = ++generation.current;
-    setFeet(entryFraction * height);
+    if (prepared || active) setFeet(entryFraction * height);
     if (active) {
       sent.value = { fraction: -1, at: -Infinity, height: 0 };
     }
-  }, [active, fill, height, entryFraction, sent, sampleGeneration]);
+  }, [active, fill, height, entryFraction, sent, sampleGeneration, prepared]);
   useEffect(() => {
     frame.setActive(active);
     return () => frame.setActive(false);

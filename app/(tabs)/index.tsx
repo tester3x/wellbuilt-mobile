@@ -85,11 +85,8 @@ import { downNumberTopPx } from '../../src/ui/downNumberLayout';
 // Response processing handled entirely by backgroundSync
 // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
 import { getWellConfig, WellConfig, loadWellConfig, fetchDriverRouteAssignment, scopedWellsForDisplay, lastWellConfigError, getBblPerFootSync } from '../../src/services/wellConfig';
+import { readWellDisplayData } from '../../src/services/wellDisplayData';
 import {
-  getLevelSnapshot,
-  getPendingPull,
-  getSliderPosition,
-  getWellPull,
   LevelSnapshot,
   PendingPull,
   saveSliderPosition,
@@ -307,6 +304,7 @@ const parseFlowRateToMinutes = (flowRate: string): number => {
 interface WellViewProps {
   wellName: string;
   isActive: boolean;
+  entryPrepared: boolean;
   cardWidth?: number;
   viewportHeight?: number;
   wideLayout?: boolean;
@@ -315,13 +313,13 @@ interface WellViewProps {
   refreshTrigger?: number; // Triggers data reload after sync
   onSliderActiveChange?: (active: boolean, wellName: string) => void; // Block FlatList scroll during slider use
   loadBbls?: number; // Load size in bbls for "next load ready" calculation
-  onTankDoubleTap?: () => void; // Navigate to performance screen on tank double-tap
-  onTankLongPress?: () => void; // Long press to hide well from My Wells
+  onTankDoubleTap?: (wellName: string) => void; // Navigate to this tank's performance
+  onTankLongPress?: (wellName: string) => void; // Hide this well from My Wells
   showOvernightBbls?: boolean; // Global toggle for overnight vs segment bbls/day
   onToggleOvernightBbls?: () => void; // Toggle handler (persists to AsyncStorage)
 }
 
-const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, wideLayout = false, entryFraction, registerFill, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
+const WellView = React.memo(function WellView({ wellName, isActive, entryPrepared, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, wideLayout = false, entryFraction, registerFill, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
   useEffect(()=>{
     console.log('[WellPager] mount',wellName);
@@ -466,7 +464,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
   // drift, no pelican flight.
   const reducedMotion = useReducedMotion();
   useWellLevelTransition({ fill: waterFraction, target: targetFraction, active: isActive,
-    entryFraction, draining: drainAnimationActive.current, reducedMotion, layoutKey:`${cardWidth}:${viewportHeight}:${wideLayout}` });
+    entryFraction, draining: drainAnimationActive.current, reducedMotion, prepared: entryPrepared, layoutKey:`${cardWidth}:${viewportHeight}:${wideLayout}` });
 
   // App lifecycle: when the app goes inactive/background, EVERY wildlife
   // loop and timer is cancelled (no suspended pelican timeout can fire
@@ -478,7 +476,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
     return () => sub.remove();
   }, []);
   const sceneActive = isActive && appForeground;
-  const displayFeet = useWellLevelDisplay(waterFraction, tankHeightFeet, sceneActive, entryFraction);
+  const displayFeet = useWellLevelDisplay(waterFraction, tankHeightFeet, sceneActive, entryFraction, entryPrepared);
   const fishSceneActiveRef = useRef(false);
   const fluidInverted = useSharedValue(false);
   const fluidOrientation = useSharedValue(0);
@@ -534,6 +532,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
 
   // Load data and check for pending pull on mount/refresh
   useEffect(() => {
+    // Neighbours preload before they slide into view. Distant mounted buffer
+    // cells stay idle; entering the preparation range reads the latest cache.
+    if (!entryPrepared) return;
     let isMounted = true;
     const loadData = async () => {
       try {
@@ -549,19 +550,15 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
         // Load well config - MUST await since it's async
         const config = await getWellConfig(wellName);
         if (!isMounted) return;
+        const { snapshot, pending, pull, slider: savedSliderPos } = await readWellDisplayData(wellName, config);
+        if (!isMounted) return;
         setWellConfig(config);
         const tankHeightFeet = resolveTankHeight(config?.tankHeight);
-
-        // Load level snapshot (flow rate is now stored with snapshot, not separately)
-        const snapshot = await getLevelSnapshot(wellName, config);
-        if (!isMounted) return;
 
         // Pre-check for pending pull BEFORE setting levelSnapshot.
         // setLevelSnapshot triggers the live update useEffect — if there's a pending pull,
         // we need drainAnimationActive=true BEFORE that effect runs, otherwise
         // the live update starts a competing 500ms animation (the "double animation" bug).
-        const pending = await getPendingPull(wellName);
-        if (!isMounted) return;
         if (pending) {
           drainAnimationActive.current = true;
         }
@@ -574,8 +571,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
         }
 
         // Load last pull record
-        const pull = await getWellPull(wellName);
-        if (!isMounted) return;
         setPullRecord(pull);
 
         // Calculate bblsPerFoot for level calculations — use the Dashboard-saved
@@ -634,8 +629,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
         }
 
         // Load persisted slider position (keeps driver's last setting)
-        const savedSliderPos = await getSliderPosition(wellName);
-        if (!isMounted) return;
         setSliderFeet(Math.min(savedSliderPos, tankHeightFeet));
 
         // Use pending pull from pre-check above (already fetched before setLevelSnapshot)
@@ -736,7 +729,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
       isMounted = false;
       clearTimeout(safetyTimer);
     };
-  }, [wellName, refreshTrigger, waterFraction]);
+  }, [wellName, refreshTrigger, waterFraction, entryPrepared]);
 
   // Live level update based on flow rate (now stored in levelSnapshot)
   // Formula matches dashboard: currentLevel = bottomLevel + (minutesSincePull / flowRateMinutes)
@@ -1226,22 +1219,22 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
       // Double-tap detected - navigate to performance
       if (onTankDoubleTap) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        onTankDoubleTap();
+        onTankDoubleTap(wellName);
       }
       lastTankTapTimeRef.current = 0; // Reset to prevent triple-tap
     } else {
       // First tap - just record the time
       lastTankTapTimeRef.current = now;
     }
-  }, [onTankDoubleTap]);
+  }, [onTankDoubleTap, wellName]);
 
   // Handle tank long press - hide well from My Wells
   const handleTankLongPress = useCallback(() => {
     if (onTankLongPress) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      onTankLongPress();
+      onTankLongPress(wellName);
     }
-  }, [onTankLongPress]);
+  }, [onTankLongPress, wellName]);
 
   const fishTouchedRef = useRef(false);
   const tankTouchOffset = useRef({ x: INTERIOR_LEFT, y: INTERIOR_TOP });
@@ -1692,6 +1685,7 @@ export default function MainScreen() {
     sync: 'pending' as 'pending' | 'active' | 'done',
   });
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [wellRefreshes, setWellRefreshes] = useState<Record<string, number>>({});
   const [pickerScrolling, setPickerScrolling] = useState(false);
   const [sliderActive, setSliderActive] = useState(false);
   const activeSliders = useRef(new Set<string>());
@@ -1920,11 +1914,15 @@ export default function MainScreen() {
 
   // Subscribe to background sync status for UI indicator
   useEffect(() => {
-    const unsubscribe = onSyncStatusChange((syncing) => {
+    const unsubscribe = onSyncStatusChange((syncing, changedWells) => {
       setIsBackgroundSyncing(syncing);
-      // Trigger refresh when sync completes
-      if (!syncing) {
-        setRefreshTrigger(prev => prev + 1);
+      // A single changed packet must not reload every mounted well card.
+      if (!syncing && changedWells.length) {
+        setWellRefreshes(previous => {
+          const next = { ...previous };
+          for (const name of new Set(changedWells)) next[name] = (next[name] || 0) + 1;
+          return next;
+        });
       }
     });
     return unsubscribe;
@@ -2418,13 +2416,13 @@ export default function MainScreen() {
   const renderPortraitWell = useCallback(({ item, index }: {item:string;index:number}) => (
     <WellPagerCard width={cardWidth} wideLayout={false}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={false}
-        isActive={index===currentIndex} entryFraction={entryFraction}
-        registerFill={registerWellFill} refreshTrigger={refreshTrigger}
+        isActive={index===currentIndex} entryPrepared={index>=currentIndex-columns && index<currentIndex+2*columns} entryFraction={entryFraction}
+        registerFill={registerWellFill} refreshTrigger={refreshTrigger+(wellRefreshes[item] || 0)}
         onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
-        onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
+        onTankDoubleTap={handleTankDoubleTap} onTankLongPress={handleTankLongPress}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
     </WellPagerCard>
-  ),[cardWidth,viewportHeight,currentIndex,entryFraction,registerWellFill,refreshTrigger,handleSliderActiveChange,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  ),[cardWidth,viewportHeight,currentIndex,columns,entryFraction,registerWellFill,refreshTrigger,wellRefreshes,handleSliderActiveChange,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const renderLandscapeWell = useCallback(({ item, index }: { item: string; index: number }) => (
     <WellPagerCard width={cardWidth} wideLayout={true} onFocus={()=>setFocusedIndex(index)} header={
       <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
@@ -2434,12 +2432,13 @@ export default function MainScreen() {
       </TouchableOpacity>}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={true}
         isActive={index===currentIndex || index===currentIndex+1}
+        entryPrepared={index>=currentIndex-columns && index<currentIndex+2*columns}
         entryFraction={entryFraction} registerFill={registerWellFill}
-        refreshTrigger={refreshTrigger} onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
-        onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
+        refreshTrigger={refreshTrigger+(wellRefreshes[item] || 0)} onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
+        onTankDoubleTap={handleTankDoubleTap} onTankLongPress={handleTankLongPress}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
     </WellPagerCard>
-  ),[cardWidth,viewportHeight,columns,currentIndex,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,registerWellFill,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  ),[cardWidth,viewportHeight,columns,currentIndex,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,registerWellFill,refreshTrigger,wellRefreshes,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const renderWell = columns===1 ? renderPortraitWell : renderLandscapeWell;
   const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
 

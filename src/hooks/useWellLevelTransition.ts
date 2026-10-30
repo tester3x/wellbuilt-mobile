@@ -9,10 +9,11 @@ const clamp = (value: number) => Math.max(0, Math.min(1, value));
  * Offscreen cards are staged at the departing tank's captured visible fraction,
  * not their preloaded destination. Refresh/live targets cannot cut entry short.
  */
-export function useWellLevelTransition({ fill, target, active, entryFraction, draining, reducedMotion, layoutKey }: {
+export function useWellLevelTransition({ fill, target, active, entryFraction, draining, reducedMotion, layoutKey, prepared = true }: {
   fill: SharedValue<number>; target: number | null; active: boolean;
   entryFraction: number; draining: boolean; reducedMotion: boolean;
   layoutKey?:string;
+  prepared?:boolean;
 }) {
   const state = useRef({ active: false, initialized: false, entering: false, generation: 0,
     target, draining, reducedMotion, layoutKey });
@@ -37,7 +38,8 @@ export function useWellLevelTransition({ fill, target, active, entryFraction, dr
     const current = state.current;
     const resized=current.layoutKey!==layoutKey;
     current.layoutKey=layoutKey;
-    const entered = active && !current.active;
+    const wasActive = current.active;
+    const entered = active && !wasActive;
     current.active = active;
     if (draining) {
       ++current.generation;
@@ -58,8 +60,8 @@ export function useWellLevelTransition({ fill, target, active, entryFraction, dr
       ++current.generation;
       current.entering = false;
       current.initialized = false;
-      cancelAnimation(fill);
-      fill.value = clamp(entryFraction);
+      if (wasActive || prepared) cancelAnimation(fill);
+      if (prepared) fill.value = clamp(entryFraction);
       return;
     }
     if (entered || !current.initialized) {
@@ -89,7 +91,7 @@ export function useWellLevelTransition({ fill, target, active, entryFraction, dr
         duration: REFRESH_DURATION_MS, easing: Easing.inOut(Easing.ease),
       });
     }
-  }, [active, target, entryFraction, draining, reducedMotion, fill, finishEntry, layoutKey]);
+  }, [active, target, entryFraction, draining, reducedMotion, fill, finishEntry, layoutKey, prepared]);
 
   useLayoutEffect(() => () => {
     ++state.current.generation;

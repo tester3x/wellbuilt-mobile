@@ -15,6 +15,14 @@ function visit(node: ts.Node) {
 visit(ast);
 if (!callback) throw new Error('Swipe capture callback missing');
 
+test('newly mounted buffer water starts at the captured fraction before layout effects run',()=>{
+  let initial='';function find(node:ts.Node){if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='waterFraction')initial=node.initializer!.getText(ast);ts.forEachChild(node,find);}find(ast);
+  const fill=runInNewContext(ts.transpileModule('const fill='+initial,{
+    compilerOptions:{target:ts.ScriptTarget.ES2020},
+  }).outputText+'\nfill',{entryFraction:.63,useSharedValue:(value:number)=>({value})});
+  expect(fill.value).toBe(.63);
+});
+
 test('swipe captures the drawn departing level, independent of destination preload or later frames', () => {
   const levels = { Previous: {value:0.63}, Destination: {value:0.15} };
   let captured = 0;

@@ -3,7 +3,7 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 139,
+  "versionCodeFloor": 140,
   "observedAt": "2026-10-30T04:35:11.679Z",
   "installedReports": [
     {
@@ -562,10 +562,37 @@
         "C:/dev/tmp/wbm139-gfx-private.txt",
         "C:/dev/tmp/wbm139-R5CX15HEGQB-installed-private.apk"
       ]
+    },
+    {
+      "sourceCommit": "2aa217f9b4bf4197f567ca4b313e9573d332acf5",
+      "versionCode": 140,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "14dabb1062b33e5b102dc0953225763ff8521aafe26336614949ada7b9d1995d",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-10-30T04:40:26.263389+00:00",
+      "localArtifact": "C:\\dev\\tmp\\WB-M140-2aa217f.apk",
+      "method": "Registered-home local Android SDK/Gradle; account-device-test; arm64-v8a",
+      "embeddedPanelAndSliderMarkersVerified": true,
+      "reservation": "android-release-v140",
+      "checks": [
+        "139 suites /1398 tests",
+        "TypeScript noEmit",
+        "Account recovery regressions",
+        "19 release/retirement regressions",
+        "Strict all-head/reservation/forced bundle/postbuild gates",
+        "aapt package/version and approved signing certificate"
+      ],
+      "verificationState": "Built and verified, withheld before installation: new actual-source constructor regression proves newly mounted buffer water initializes at0 instead of captured entry fraction. S24 remains139, ZFold135. Fix carried into next candidate. Android synchronous UI props flag confirmed enabled in C++ build model; actual-device flag/touch validation still pending.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm140-release-private.json",
+        "C:/dev/tmp/wbm140-build-private.log",
+        "C:/dev/tmp/wbm141-first-water-before-private.log"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M139 S24 only failed brief zero/empty frames; Fold135. User now explicitly authorizes scoped local repair/build/test iterations until S24 passes, then Fold rollout. Preserve every reservation and signer; no cloud/data changes.",
+  "notes": "M140 built but withheld before installation due reproducible first-frame constructor defect; S24 remains139, Fold135. User authorizes local repair/build/test iterations until S24 passes, then Fold. No cloud or operational data changes.",
   "failedReservations": [
     {
       "versionCode": 123,

@@ -403,7 +403,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   // Removed: waitingForResponseRef - no longer waiting for responses
 
   // MUST declare waterFraction before effects that use it
-  const waterFraction = useSharedValue(0);
+  const waterFraction = useSharedValue(entryFraction);
   useEffect(() => registerFill?.(wellName, waterFraction), [registerFill, wellName, waterFraction]);
 
   // ── Alive-tank easter egg (cosmetic only — never touches tank math) ──

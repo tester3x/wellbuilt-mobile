@@ -90,3 +90,32 @@ Compare native frame recordings/timing under the same conditions, then test Fold
 cover/unfolded portrait/landscape, both sliders and pending-drain continuity.
 Do not submit a real load to test animation. User-requested new APK authorization
 and normal source/signing/version reconciliation are still required.
+
+## M136 native rejection and queued label correction
+
+M136 was built locally from c49f7e60e0ff746f09b6ce364002de2bb1b15739,
+reserved as android-release-v136, and installed in place on S24 R5CX15HEGQB.
+The installed base APK hash matches the recorded artifact. The ZFold remains135.
+
+Native acceptance FAILED: the user observed at least seven incoming wells briefly
+show0ft, then catch up to the correct level while their water was already drawn.
+The recording independently reproduces this, including nonzero water with0ft,
+0BBL and a temporary incorrect forecast. No stored levels were changed. Across
+38 settled swipe attempts,39 sampled bodies rendered, but this does not excuse
+the label failure or prove the original intermittent blank issue fixed.
+
+The label sampler initialized React state to0 and only sampled active cards.
+Offscreen neighbours were staged with the departing water fraction but kept
+their old/zero label until activation and the asynchronous frame-to-JS callback.
+They are visible during the drag before the60percent active threshold. The
+queued correction seeds the initial label from the entry fraction, synchronizes
+staged neighbours in the layout phase on seed changes and activation, and rejects
+queued samples from a previous staging generation. Frame sampling remains
+bounded to visible/foreground cards; water/drain authority is unchanged.
+
+Regression tests cover first paint without a frame callback, an offscreen staged
+neighbour before activation, height changes, re-entry and delayed old samples.
+This correction is source-only until another explicitly authorized APK. M136 is
+not approved for ZFold rollout. One fast S24 trace had57/280 janky frames20.36percent,
+95th61ms; its start differed from the earlier baseline, so it is not a controlled
+before/after comparison or evidence of improved smoothness.

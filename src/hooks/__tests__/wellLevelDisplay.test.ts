@@ -3,18 +3,22 @@ import TestRenderer,{act} from 'react-test-renderer';
 import {useWellLevelDisplay} from '../useWellLevelDisplay';
 let mockFrameCallback:(info:{timestamp:number})=>void;
 const mockFrame={setActive:jest.fn()};
+let mockDefer=false;
+let mockQueue:Array<()=>void>=[];
 jest.mock('react-native-reanimated',()=>({
   useSharedValue:(value:unknown)=>React.useRef({value}).current,
   useFrameCallback:(callback:any)=>{mockFrameCallback=callback;return mockFrame;},
-  runOnJS:(fn:any)=>fn,
+  runOnJS:(fn:any)=>(...args:any[])=>mockDefer?mockQueue.push(()=>fn(...args)):fn(...args),
 }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
+afterEach(()=>{mockDefer=false;mockQueue=[];});
 test('samples visible labels at 30Hz, delivers the final level, stops offscreen work',()=>{
   const fill={value:0.2} as any;
   const shown:number[]=[];
-  function Tank({active}:{active:boolean}){shown.push(useWellLevelDisplay(fill,20,active));return null;}
+  function Tank({active}:{active:boolean}){shown.push(useWellLevelDisplay(fill,20,active,.2));return null;}
   let tree!:TestRenderer.ReactTestRenderer;
   act(()=>{tree=TestRenderer.create(React.createElement(Tank,{active:true}));});
+  expect(shown.at(-1)).toBe(4); // First paint cannot wait for the frame sampler.
   act(()=>mockFrameCallback({timestamp:0}));
   const subscribed=mockFrameCallback!;
   expect(shown.at(-1)).toBe(4);
@@ -28,4 +32,46 @@ test('samples visible labels at 30Hz, delivers the final level, stops offscreen 
   act(()=>tree.update(React.createElement(Tank,{active:false})));
   expect(mockFrame.setActive).toHaveBeenLastCalledWith(false);
   act(()=>tree.unmount());expect(mockFrame.setActive).toHaveBeenLastCalledWith(false);
+});
+
+test('a queued sample from the previous visit cannot overwrite the new staged label',()=>{
+  const fill={value:.2} as any;let shown=0;
+  function Tank({active,seed}:{active:boolean;seed:number}){
+    shown=useWellLevelDisplay(fill,20,active,seed);return null;
+  }
+  let tree!:TestRenderer.ReactTestRenderer;
+  act(()=>{tree=TestRenderer.create(React.createElement(Tank,{active:true,seed:.2}));});
+  mockDefer=true;
+  act(()=>mockFrameCallback({timestamp:0}));
+  fill.value=.73;
+  act(()=>tree.update(React.createElement(Tank,{active:false,seed:.73})));
+  expect(shown).toBeCloseTo(14.6);
+  act(()=>{mockQueue.splice(0).forEach(deliver=>deliver());});
+  expect(shown).toBeCloseTo(14.6);
+  act(()=>tree.update(React.createElement(Tank,{active:true,seed:.73})));
+  fill.value=.8;
+  act(()=>mockFrameCallback({timestamp:34}));
+  act(()=>{mockQueue.splice(0).forEach(deliver=>deliver());});
+  expect(shown).toBe(16);
+  act(()=>tree.unmount());
+});
+
+test('an offscreen card publishes its staged fill on activation before any frame callback',()=>{
+  const fill={value:0} as any;
+  const shown:number[]=[];
+  function Tank({active,height=20,entryFraction=0}:{active:boolean;height?:number;entryFraction?:number}){
+    shown.push(useWellLevelDisplay(fill,height,active,entryFraction));return null;
+  }
+  let tree!:TestRenderer.ReactTestRenderer;
+  act(()=>{tree=TestRenderer.create(React.createElement(Tank,{active:false}));});
+  fill.value=.73; // Transition owner stages departing water while offscreen.
+  act(()=>tree.update(React.createElement(Tank,{active:false,entryFraction:.73})));
+  expect(shown.at(-1)).toBeCloseTo(14.6); // Visible edge of an incoming card.
+  act(()=>tree.update(React.createElement(Tank,{active:true,entryFraction:.73})));
+  expect(shown.at(-1)).toBeCloseTo(14.6);
+  act(()=>tree.update(React.createElement(Tank,{active:false})));
+  fill.value=.27;
+  act(()=>tree.update(React.createElement(Tank,{active:true,height:25})));
+  expect(shown.at(-1)).toBeCloseTo(6.75);
+  act(()=>tree.unmount());
 });

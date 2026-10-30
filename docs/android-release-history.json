@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 135,
-  "observedAt": "2026-10-28T04:57:22.796198+00:00",
+  "versionCodeFloor": 136,
+  "observedAt": "2026-10-30T03:32:46.402Z",
   "installedReports": [
     {
       "app": "WB-T",
@@ -438,10 +438,41 @@
         "C:/dev/tmp/wbm135-zfold-page-from-left-private.png",
         "C:/dev/tmp/wbm135-zfold-page-from-right-private.png"
       ]
+    },
+    {
+      "sourceCommit": "c49f7e60e0ff746f09b6ce364002de2bb1b15739",
+      "versionCode": 136,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "9cdebd44309b4478669f852312cea0f42c0bf385b47915c40be134793b24b8e9",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-10-30T03:27:04.981145+00:00",
+      "localArtifact": "C:\\dev\\tmp\\WB-M136-c49f7e6.apk",
+      "method": "Registered-home local Android SDK/Gradle; account-device-test; arm64-v8a",
+      "embeddedPanelAndSliderMarkersVerified": true,
+      "reservation": "android-release-v136",
+      "checks": [
+        "137 suites / 1386 tests before build",
+        "TypeScript noEmit",
+        "Account recovery regressions",
+        "19 retirement/release regressions",
+        "Strict all-head reconciliation/reservation/forced bundle/postbuild source checks",
+        "aapt package/version and existing apksigner certificate",
+        "S24 installed base APK SHA256 independently matches artifact"
+      ],
+      "verificationState": "FAILED S24 native acceptance: incoming wells temporarily show 0ft/0BBL before catching up despite nonzero drawn water. User observed at least seven; recording independently reproduces. 38 settled swipe attempts /39 captured bodies had no blank, but does not prove intermittent blank solved. Fast trace57/280 janky20.36percent p95 61ms is not controlled against baseline. ZFold remains135; rollout held. Label staging correction queued after this immutable build. No operational data writes.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm136-release-private.json",
+        "C:/dev/tmp/wbm136-build-private.log",
+        "C:/dev/tmp/wbm136-s24-swipes-private/results.json",
+        "C:/dev/tmp/wbm136-fast-private.mp4",
+        "C:/dev/tmp/wbm136-gfx-private.txt",
+        "C:/dev/tmp/wbm136-R5CX15HEGQB-installed-private.apk"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M135 local source91b6cc2 installed with exact hashes on both phones. Settled Fold proportions/fit and physical sliders/paging pass. Staged rotation delay and carried level on return remain explicitly unaccepted; do not claim fully smooth rotation or complete display correctness.",
+  "notes": "M136 installed on S24 only and FAILED transient-zero label/native acceptance; ZFold remains M135. Reservation136 consumed permanently. Follow-up source correction requires another explicit APK request and S24 acceptance before Fold rollout.",
   "failedReservations": [
     {
       "versionCode": 123,

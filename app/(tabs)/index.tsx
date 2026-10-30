@@ -478,7 +478,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
     return () => sub.remove();
   }, []);
   const sceneActive = isActive && appForeground;
-  const displayFeet = useWellLevelDisplay(waterFraction, tankHeightFeet, sceneActive);
+  const displayFeet = useWellLevelDisplay(waterFraction, tankHeightFeet, sceneActive, entryFraction);
   const fishSceneActiveRef = useRef(false);
   const fluidInverted = useSharedValue(false);
   const fluidOrientation = useSharedValue(0);

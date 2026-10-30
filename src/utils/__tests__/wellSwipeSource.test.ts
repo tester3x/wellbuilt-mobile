@@ -31,3 +31,18 @@ test('swipe captures the drawn departing level, independent of destination prelo
   expect(source).toContain('onScrollBeginDrag={handlePagerDrag}');
   expect(source).toContain('entryFraction={entryFraction}');
 });
+
+test('drag origin follows the native visible offset even if JavaScript selection is ahead',()=>{
+  let drag:ts.CallExpression|undefined;
+  function find(node:ts.Node){if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='handlePagerDrag')drag=node.initializer as ts.CallExpression;ts.forEachChild(node,find);}find(ast);
+  expect(drag).toBeDefined();
+  const captureTransitionStart=jest.fn();
+  const action=runInNewContext(ts.transpileModule('const drag='+drag!.arguments[0].getText(ast),{
+    compilerOptions:{target:ts.ScriptTarget.ES2020},
+  }).outputText+'\ndrag',{pagerInteraction:{current:false},pagerResizing:{current:false},
+    captureTransitionStart,wells:['A','B','C'],cardWidth:360,currentIndex:2});
+  action({nativeEvent:{contentOffset:{x:361}}});expect(captureTransitionStart).toHaveBeenLastCalledWith(1);
+  action({nativeEvent:{contentOffset:{x:-50}}});expect(captureTransitionStart).toHaveBeenLastCalledWith(0);
+  action({nativeEvent:{contentOffset:{x:9999}}});expect(captureTransitionStart).toHaveBeenLastCalledWith(2);
+  action();expect(captureTransitionStart).toHaveBeenLastCalledWith(2);
+});

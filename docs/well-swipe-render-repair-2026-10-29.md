@@ -207,3 +207,31 @@ mounted cells skip data reads: they now preload data but skip animation resets.
 A regression executes the actual data effect with preparation=false and proves
 warmup still starts, and verifies the preparation flag is not a data-effect
 dependency. This is queued source after138 and is not yet natively verified.
+
+## M139 rejection and native-origin/native-render follow-up
+
+M139 source28de513c4471ff30720240478285517384dc78fe was locally built and
+installed on S24, with an independent installed base APK hash matching
+2953d0e4a685d66d168ebe27b7337318d136a1005a347eaea5019f7df5942ae6.
+Loading flashes disappeared in the rapid trace, but brief zero/empty water frames
+remain during interrupted paging. Acceptance FAILED; ZFold remains135. Timing
+65/271 janky23.99percent/p9557ms is not accepted as smooth. No operational writes.
+
+The drag-start callback previously ignored native contentOffset and selected the
+departing fill by the JavaScript currentIndex. The follow-up takes the bounded
+native visible index when the event provides an offset; picker/manual capture
+keeps its explicit/current-index behavior. A regression covers JS selection ahead
+of the native visible well. Origin traces retain selected/native index and fill
+for the next native diagnosis; this is a candidate correction, not hardware proof.
+
+Installed Reanimated is4.1.6 (package range~4.1.1), with Android synchronous props
+disabled in prior native build models. Enable ANDROID_SYNCHRONOUSLY_UPDATE_UI_PROPS
+through its supported package.json staticFeatureFlags configuration. Gradle reads
+this directly and rebuilds native C++; no dependency/runtime upgrade or replacement
+signer. This bypasses Fabric layout commits for non-layout transforms/opacity,
+including the64 clipped water columns. See primary [performance guidance](https://docs.swmansion.com/react-native-reanimated/docs/guides/performance/)
+and [static flags](https://docs.swmansion.com/react-native-reanimated/docs/guides/feature-flags/).
+The documented touch/style synchronization implications require native slider,
+tank-info/navigation and modal controls tests. Do not enable unrelated experimental
+React Native release levels or later-version flags. A startup native flag readback
+and native build model must confirm the intended flag before acceptance.

@@ -80,5 +80,10 @@
     "ts-jest": "^29.4.12",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "reanimated": {
+    "staticFeatureFlags": {
+      "ANDROID_SYNCHRONOUSLY_UPDATE_UI_PROPS": true
+    }
+  }
 }

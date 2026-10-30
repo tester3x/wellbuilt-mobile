@@ -40,6 +40,7 @@ import { GestureHandlerRootView, TapGestureHandler, State } from 'react-native-g
 import Animated, {
   cancelAnimation,
   Easing,
+  getStaticFeatureFlag,
   useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
@@ -1630,6 +1631,9 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
 
 // Main screen
 export default function MainScreen() {
+  useEffect(()=>{
+    if(typeof getStaticFeatureFlag==='function')console.log('[WellRenderFastProps]',getStaticFeatureFlag('ANDROID_SYNCHRONOUSLY_UPDATE_UI_PROPS'));
+  },[]);
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -2277,8 +2281,9 @@ export default function MainScreen() {
   }, [router]);
 
   // Freeze the actual displayed frame, not the destination's preloaded level.
-  const captureTransitionStart = useCallback(() => {
-    const fraction = wellLevels.current[wells[currentIndex]]?.value;
+  const captureTransitionStart = useCallback((fromIndex=currentIndex) => {
+    const fraction = wellLevels.current[wells[fromIndex]]?.value;
+    console.log('[WellSwipeOrigin]', {fromIndex,selectedIndex:currentIndex,well:wells[fromIndex],fraction});
     if (Number.isFinite(fraction)) setEntryFraction(Math.max(0, Math.min(1, fraction)));
   }, [wells, currentIndex]);
 
@@ -2301,11 +2306,14 @@ export default function MainScreen() {
     }
   }, [currentIndex, viewportChanged]);
 
-  const handlePagerDrag=useCallback(()=>{
+  const handlePagerDrag=useCallback((event?:{nativeEvent:{contentOffset:{x:number}}})=>{
     pagerInteraction.current=true;
     pagerResizing.current=false;
-    captureTransitionStart();
-  },[captureTransitionStart]);
+    const offset=event?.nativeEvent.contentOffset.x;
+    const fromIndex=typeof offset==='number' && Number.isFinite(offset)
+      ? Math.max(0,Math.min(wells.length-1,Math.round(offset/cardWidth))) : currentIndex;
+    captureTransitionStart(fromIndex);
+  },[captureTransitionStart,wells.length,cardWidth,currentIndex]);
 
   const handlePagerPosition=useCallback((event:{nativeEvent:{contentOffset:{x:number}}})=>{
     if(!pagerInteraction.current || pagerResizing.current || !wells.length)return;

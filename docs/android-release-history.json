@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 138,
-  "observedAt": "2026-10-30T04:19:23.450Z",
+  "versionCodeFloor": 139,
+  "observedAt": "2026-10-30T04:35:11.679Z",
   "installedReports": [
     {
       "app": "WB-T",
@@ -532,10 +532,40 @@
         "C:/dev/tmp/wbm138-native-log-private.txt",
         "C:/dev/tmp/wbm138-R5CX15HEGQB-installed-private.apk"
       ]
+    },
+    {
+      "sourceCommit": "28de513c4471ff30720240478285517384dc78fe",
+      "versionCode": 139,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "2953d0e4a685d66d168ebe27b7337318d136a1005a347eaea5019f7df5942ae6",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-10-30T04:30:28.949644+00:00",
+      "localArtifact": "C:\\dev\\tmp\\WB-M139-28de513.apk",
+      "method": "Registered-home local Android SDK/Gradle; account-device-test; arm64-v8a",
+      "embeddedPanelAndSliderMarkersVerified": true,
+      "reservation": "android-release-v139",
+      "checks": [
+        "139 suites /1397 tests before build",
+        "TypeScript noEmit",
+        "Account recovery regressions",
+        "19 retirement/release regressions",
+        "Strict all-head/reservation/forced bundle/postbuild gates",
+        "aapt and approved signing certificate",
+        "S24 installed base APK hash matches artifact"
+      ],
+      "verificationState": "FAILED S24 rapid-swipe acceptance. Loading overlays are gone in the repeated trace, but brief zero/empty water frames remain during interrupted paging. Trace65/271 janky23.99percent p9557ms; no smoothness pass. ZFold remains135. Next candidate captures origin from native offset and enables installed Reanimated Android synchronous non-layout update path, with native flag/touch checks required. No operational data writes.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm139-release-private.json",
+        "C:/dev/tmp/wbm139-build-private.log",
+        "C:/dev/tmp/wbm139-fast-private.mp4",
+        "C:/dev/tmp/wbm139-gfx-private.txt",
+        "C:/dev/tmp/wbm139-R5CX15HEGQB-installed-private.apk"
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M138 installed on S24 only and FAILED rapid-swipe data readiness. ZFold remains135. Reservations136/137/138 consumed. Buffer warmup correction is queued after138, not included. Another APK requires explicit current authorization under AGENTS.md.",
+  "notes": "M139 S24 only failed brief zero/empty frames; Fold135. User now explicitly authorizes scoped local repair/build/test iterations until S24 passes, then Fold rollout. Preserve every reservation and signer; no cloud/data changes.",
   "failedReservations": [
     {
       "versionCode": 123,

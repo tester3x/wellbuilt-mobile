@@ -33,6 +33,7 @@ function screen() {
     resultingLevel: jest.fn(() => 12),
     queueFreshWaterDelivery: jest.fn(async () => ({})),
     flushFreshWaterDeliveries: jest.fn(async () => ({ sent: 1, pending: 0 })),
+    clearDraft: jest.fn(async () => {}), resetFormAfterDurableSave: jest.fn(),
     router: { back: jest.fn() }, alert: { show: jest.fn() },
     setIsSending: jest.fn(), t: (key: string) => key,
     resolveWellDownForSubmit: jest.fn(() => ({ wellDown: false, wellDownIsAuthoritative: false })),
@@ -55,6 +56,9 @@ test('two taps while freshwater config loads produce only one durable delivery',
   await first;
   expect(scope.queueFreshWaterDelivery).toHaveBeenCalledTimes(1);
   expect(scope.flushFreshWaterDeliveries).toHaveBeenCalledTimes(1);
+  expect(scope.clearDraft).toHaveBeenCalledTimes(1);
+  expect(scope.resetFormAfterDurableSave).toHaveBeenCalledTimes(1);
+  expect(scope.router.back).toHaveBeenCalledTimes(1);
   expect(scope.submitInFlightRef.current).toBe(false);
   expect(scope.setIsSending).toHaveBeenLastCalledWith(false);
 });
@@ -88,4 +92,12 @@ test('production-water validation also unlocks without sending a delivery', asyn
   expect(scope.alert.show).toHaveBeenCalled();
   expect(scope.submitInFlightRef.current).toBe(false);
   expect(scope.queueFreshWaterDelivery).not.toHaveBeenCalled();
+});
+
+
+test('failed durable FW queue keeps the draft; a confirmed local save clears it',async()=>{
+ const {scope,submit}=screen();
+ scope.queueFreshWaterDelivery.mockRejectedValueOnce(new Error('storage failed'));
+ await submit();expect(scope.clearDraft).not.toHaveBeenCalled();expect(scope.resetFormAfterDurableSave).not.toHaveBeenCalled();
+ await submit();expect(scope.clearDraft).toHaveBeenCalledTimes(1);expect(scope.resetFormAfterDurableSave).toHaveBeenCalledTimes(1);
 });

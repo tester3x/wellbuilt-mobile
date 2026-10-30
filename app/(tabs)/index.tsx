@@ -2213,28 +2213,25 @@ export default function MainScreen() {
     }, [isInitialSyncing, appForegroundCount])
   );
 
-  // Check for draft when current well changes (separate from focus effect)
-  useEffect(() => {
+  // Recheck on return from Record, even when the selected well has not changed.
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    setCurrentWellHasDraft(false);
     if (wells.length > 0 && actionIndex >= 0 && actionIndex < wells.length) {
-      const wellName = wells[actionIndex];
-      const key = getDraftKey(wellName);
+      const key = getDraftKey(wells[actionIndex]);
       AsyncStorage.getItem(key).then(draftJson => {
-        if (!draftJson) {
-          setCurrentWellHasDraft(false);
-          return;
-        }
+        if (cancelled) return;
         try {
-          const draft = JSON.parse(draftJson);
-          const ageMs = Date.now() - draft.savedAt;
-          const maxAgeMs = 4 * 60 * 60 * 1000; // 4 hours
-          const hasDraftData = ageMs < maxAgeMs && (draft.level || draft.barrels);
-          setCurrentWellHasDraft(hasDraftData);
+          const draft = draftJson ? JSON.parse(draftJson) : null;
+          const ageMs = draft ? Date.now() - draft.savedAt : Infinity;
+          setCurrentWellHasDraft(!!draft && ageMs >= 0 && ageMs < 4 * 60 * 60 * 1000 && !!(draft.level || draft.barrels));
         } catch {
           setCurrentWellHasDraft(false);
         }
-      });
+      }).catch(() => { if (!cancelled) setCurrentWellHasDraft(false); });
     }
-  }, [wells, actionIndex]);
+    return () => { cancelled = true; };
+  }, [wells, actionIndex]));
 
   // Note: Well loading is now handled entirely by useFocusEffect above
   // It runs when initial sync completes (isInitialSyncing changes) AND on screen focus

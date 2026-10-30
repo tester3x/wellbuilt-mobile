@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-30",
+  "checkout": "C:/dev/wbm-stale-level-20261005",
+  "branch": "codex/wbm-stale-level-20261005",
+  "problem": "Cleared Record form leaves pencil on Home; freshwater durable save also retains old draft.",
+  "changes": [
+    "Recheck draft indicator on screen focus as well as well change; cancel stale async results.",
+    "Clear surrenders keypad and empties synchronous committed refs.",
+    "Serialize storage removal behind pending writes; invalidate delayed save/restore callbacks.",
+    "Freshwater successful local queue save clears draft and form before transport; failed durable queue retains draft."
+  ],
+  "checks": {
+    "jest": "143 suites / 1429 tests passed; --forceExit used for known lingering async handles.",
+    "typescript": "passed",
+    "retirementGuard": "passed",
+    "diffCheck": "passed"
+  },
+  "limits": [
+    "No claim of server acceptance for the user screenshot; 12ft at10:28 projects to477 BBL at12:15 at the shown rate.",
+    "No new APK or device change yet."
+  ]
+}

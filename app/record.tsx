@@ -243,6 +243,10 @@ function RecordScreenInner() {
     checkViewer();
   }, [router]);
 
+  const draftStorageQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftGenerationRef = useRef(0);
+
   // Save draft to storage (debounced) - per-well key
   const saveDraft = useCallback(async () => {
     if (isEditMode || !wellName) return; // Don't save drafts in edit mode
@@ -258,7 +262,9 @@ function RecordScreenInner() {
 
     try {
       const key = getDraftKey(wellName);
-      await AsyncStorage.setItem(key, JSON.stringify(draft));
+      const write = draftStorageQueueRef.current.then(() => AsyncStorage.setItem(key, JSON.stringify(draft)));
+      draftStorageQueueRef.current = write.catch(() => undefined);
+      await write;
       console.log('[Record] Draft saved for', wellName);
     } catch (err) {
       console.warn('[Record] Failed to save draft:', err);
@@ -268,9 +274,14 @@ function RecordScreenInner() {
   // Clear draft from storage for this well
   const clearDraft = useCallback(async () => {
     if (!wellName) return;
+    draftGenerationRef.current++;
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = null;
     try {
       const key = getDraftKey(wellName);
-      await AsyncStorage.removeItem(key);
+      const remove = draftStorageQueueRef.current.then(() => AsyncStorage.removeItem(key));
+      draftStorageQueueRef.current = remove.catch(() => undefined);
+      await remove;
       console.log('[Record] Draft cleared for', wellName);
     } catch (err) {
       console.warn('[Record] Failed to clear draft:', err);
@@ -288,6 +299,9 @@ function RecordScreenInner() {
           text: t('record.clear'),
           style: "destructive",
           onPress: async () => {
+            keypad.closeKeypad();
+            committedLevelRef.current = '';
+            committedBarrelsRef.current = '';
             setLevel('');
             setBarrels('');
             setDateTime(new Date());
@@ -303,7 +317,7 @@ function RecordScreenInner() {
         }
       ]
     );
-  }, [isAlreadyDown, clearDraft, alert]);
+  }, [isAlreadyDown, clearDraft, alert, keypad]);
 
   // Load draft on mount (only for new pulls, not edits) - per-well key
   useEffect(() => {
@@ -313,8 +327,9 @@ function RecordScreenInner() {
 
       try {
         const key = getDraftKey(wellName);
+        const generation = draftGenerationRef.current;
         const draftJson = await AsyncStorage.getItem(key);
-        if (!draftJson) return;
+        if (generation !== draftGenerationRef.current || !draftJson) return;
 
         const draft: DraftData = JSON.parse(draftJson);
 
@@ -361,11 +376,16 @@ function RecordScreenInner() {
     // Only save if there's something to save
     if (!level && !barrels) return;
 
+    const generation = draftGenerationRef.current;
     const timer = setTimeout(() => {
-      saveDraft();
+      if (generation === draftGenerationRef.current) void saveDraft();
     }, 500); // Debounce 500ms
+    draftSaveTimerRef.current = timer;
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (draftSaveTimerRef.current === timer) draftSaveTimerRef.current = null;
+    };
   }, [level, barrels, dateTime, wellDown, saveDraft, isEditMode]);
 
   // Initialize edit mode values
@@ -620,6 +640,8 @@ function RecordScreenInner() {
         }
         try {
           await queueFreshWaterDelivery({groupId:config.inventoryGroupId,deliveredBbl:quantity,measuredBeforeFeet:current ?? undefined,deliveredAtUTC:dateTime.toISOString(),wellDown:downCommand});
+          await clearDraft();
+          resetFormAfterDurableSave();
           await flushFreshWaterDeliveries();
           router.back();
         } catch(error) { alert.show('Delivery saved status',String(error)); }

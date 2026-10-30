@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
+    "test:account-recovery": "node tools/test-accountGateSignIn.cjs && node tools/test-accountPublication.cjs",
     "release:survey": "node scripts/release-preflight.cjs survey",
     "release:check": "node scripts/release-preflight.cjs check",
     "release:gate:test": "node --test scripts/release-preflight.test.cjs",

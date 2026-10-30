@@ -3,7 +3,9 @@ import {getFunctions,httpsCallable} from 'firebase/functions';
 import {getFirebaseApp,getFirebaseAuth,waitForAuthUser} from './firebaseAuthSession';
 import {createDeviceAccountClient,type DeviceAccountNative} from './deviceAccount.generated';
 const native=require('../../modules/wellbuilt-platform') as DeviceAccountNative|null;
-export const mobileDeviceAccount=createDeviceAccountClient(native,async(name,data)=>(await httpsCallable(getFunctions(getFirebaseApp(),'us-central1'),name,{timeout:15000})(data)).data);
+// A cold shared-login function exceeded 18s in the field. The old 15s
+// deadline discarded a successful server grant before it reached the device.
+export const mobileDeviceAccount=createDeviceAccountClient(native,async(name,data)=>(await httpsCallable(getFunctions(getFirebaseApp(),'us-central1'),name,{timeout:60000})(data)).data);
 export async function restoreMobileDeviceAccount(){
  await waitForAuthUser();const capturedUser=getFirebaseAuth().currentUser;const {getDriverSession,completeAuthenticatedSession}=await import('./driverAuth');
  const saved=await getDriverSession(),uid=getFirebaseAuth().currentUser?.uid;
@@ -22,7 +24,11 @@ export async function publishMobileDeviceAccount(explicit=false){
  const user=getFirebaseAuth().currentUser;if(!user)return;
  const {claims}=await user.getIdTokenResult(false);if(claims.kind!=='driver'||typeof claims.driverId!=='string'||typeof claims.companyId!=='string')return;
  const local=await import('./driverAuth').then(m=>m.getDriverSession());if(local?.driverId!==claims.driverId||local?.companyId!==claims.companyId)return;
- await mobileDeviceAccount.publish({uid:user.uid,driverId:claims.driverId,companyId:claims.companyId},()=>getFirebaseAuth().currentUser===user,explicit);
+ const isCurrent=()=>getFirebaseAuth().currentUser===user;
+ const {publishWithRecovery}=require('../../modules/wellbuilt-platform/accountPublication');
+ await publishWithRecovery({explicit,isCurrent,
+  publish:()=>mobileDeviceAccount.publish({uid:user.uid,driverId:claims.driverId as string,companyId:claims.companyId as string},isCurrent,explicit),
+  report:(detail:unknown)=>console.info('WB_ACCOUNT_PUBLICATION '+JSON.stringify(detail))});
 }
 
 export async function revokeMobileDeviceAccount(){const saved=await mobileDeviceAccount.read();if(saved&&getFirebaseAuth().currentUser?.uid===saved.access.owner.uid)await mobileDeviceAccount.revoke(saved.access.owner);}

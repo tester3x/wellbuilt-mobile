@@ -47,7 +47,7 @@ test('drag origin follows the native visible offset even if JavaScript selection
   const captureTransitionStart=jest.fn();
   const action=runInNewContext(ts.transpileModule('const drag='+drag!.arguments[0].getText(ast),{
     compilerOptions:{target:ts.ScriptTarget.ES2020},
-  }).outputText+'\ndrag',{pagerInteraction:{current:false},pagerResizing:{current:false},
+  }).outputText+'\ndrag',{pagerInteraction:{current:false},pagerResizing:{current:false},pagerExpectedOffset:{current:null},setPagerBridgeActive:jest.fn(),
     captureTransitionStart,wells:['A','B','C'],cardWidth:360,currentIndex:2});
   action({nativeEvent:{contentOffset:{x:361}}});expect(captureTransitionStart).toHaveBeenLastCalledWith(1);
   action({nativeEvent:{contentOffset:{x:-50}}});expect(captureTransitionStart).toHaveBeenLastCalledWith(0);

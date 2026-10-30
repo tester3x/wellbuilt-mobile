@@ -1653,7 +1653,7 @@ export default function MainScreen() {
     setFoldWindow(previous=>previous && Math.abs(previous.width-width)<0.5 && Math.abs(previous.height-height)<0.5 ? previous : {width,height});
   },[]);
   const {columns,cardWidth,viewportHeight}=tankViewport(windowSize.width,windowSize.height);
-  const styles=foldablePhoneLayout ? portraitStyles(wellContentWidth(cardWidth),wellContentWidth(cardWidth)*2.2) : columns===1 ? portraitStyles(windowSize.width,windowSize.height) : landscapeScreenStyles;
+  const styles=useMemo(()=>foldablePhoneLayout ? portraitStyles(wellContentWidth(cardWidth),wellContentWidth(cardWidth)*2.2) : columns===1 ? portraitStyles(windowSize.width,windowSize.height) : landscapeScreenStyles,[cardWidth,columns,windowSize.width,windowSize.height]);
   const [visibleWellIndices,setVisibleWellIndices]=useState<number[]>([]);
   const [focusedIndex,setFocusedIndex]=useState<number|null>(null);
   const pickerListRef = useRef<FlatList>(null);
@@ -1669,6 +1669,8 @@ export default function MainScreen() {
   const [pagerAlignRevision,setPagerAlignRevision]=useState(0);
   const previousPagerViewport=useRef(pagerViewport);
   const pagerResizing=useRef(false);
+  const [pagerBridgeActive,setPagerBridgeActive]=useState(false);
+  const pagerExpectedOffset=useRef<number|null>(null);
   const pagerInteraction=useRef(false);
   const viewportChanged=previousPagerViewport.current!==pagerViewport;
   const selectionCatalogueRef = useRef<{
@@ -1712,7 +1714,10 @@ export default function MainScreen() {
   const pagerContentOffset=useMemo(()=>({x:cardWidth*pagerSelectionRef.current.index,y:0}),[cardWidth,wells,pagerAlignRevision]);
   useLayoutEffect(()=>{
     const {index,columns}=pagerSelectionRef.current;
+    const geometryChanged=previousPagerViewport.current.width!==pagerViewport.width || previousPagerViewport.current.columns!==pagerViewport.columns;
     pagerResizing.current=true;
+    pagerExpectedOffset.current=pagerContentOffset.x;
+    setPagerBridgeActive(geometryChanged && index>0);
     pagerInteraction.current=false;
     previousPagerViewport.current=pagerViewport;
     if(columns===1)setFocusedIndex(null);
@@ -1720,7 +1725,7 @@ export default function MainScreen() {
     flatListRef.current?.scrollToOffset({offset:pagerContentOffset.x,animated:false});
   },[pagerViewport,wells,pagerContentOffset]);
   const pagerWidthRange=useRef({min:cardWidth,max:cardWidth});
-  const pagerBuffer=wellPagerBuffer(currentIndex,wells.length,windowSize.width,windowSize.height,pagerWidthRange.current);
+  const pagerBuffer=wellPagerBuffer(currentIndex,wells.length,windowSize.width,windowSize.height,pagerWidthRange.current,viewportChanged || pagerBridgeActive);
   pagerWidthRange.current=pagerBuffer.widths;
   const actionIndex=Math.max(0,Math.min(focusedIndex ?? currentIndex,wells.length-1));
   const visibleWellRef = useRef({ well: wells[currentIndex], index: currentIndex });
@@ -2306,9 +2311,21 @@ export default function MainScreen() {
     }
   }, [currentIndex, viewportChanged]);
 
+  // Native acknowledgement ends the temporary resize bridge. Scroll events
+  // during ordinary drags update no React state and cannot realign the list.
+  const handlePagerScroll=useCallback((event:{nativeEvent:{contentOffset:{x:number}}})=>{
+    const target=pagerExpectedOffset.current;
+    if(target===null || Math.abs(event.nativeEvent.contentOffset.x-target)>1)return;
+    pagerExpectedOffset.current=null;
+    pagerResizing.current=false;
+    setPagerBridgeActive(false);
+  },[]);
+
   const handlePagerDrag=useCallback((event?:{nativeEvent:{contentOffset:{x:number}}})=>{
     pagerInteraction.current=true;
     pagerResizing.current=false;
+    pagerExpectedOffset.current=null;
+    setPagerBridgeActive(false);
     const offset=event?.nativeEvent.contentOffset.x;
     const fromIndex=typeof offset==='number' && Number.isFinite(offset)
       ? Math.max(0,Math.min(wells.length-1,Math.round(offset/cardWidth))) : currentIndex;
@@ -2648,9 +2665,11 @@ export default function MainScreen() {
         testID="well-pager"
         snapToInterval={cardWidth}
         decelerationRate="fast"
+        disableIntervalMomentum
         style={{flex:1,minHeight:0}}
         showsHorizontalScrollIndicator={false}
         contentOffset={pagerContentOffset}
+        onScroll={handlePagerScroll}
         onScrollBeginDrag={handlePagerDrag}
         onScrollEndDrag={handlePagerPosition}
         onMomentumScrollEnd={handlePagerSettled}

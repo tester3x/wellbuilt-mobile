@@ -27,7 +27,7 @@ test('catalogue reorder aligns in layout commit without a delayed index jump',()
   visit(ast);if(!effect)throw Error('alignment missing');
   const scroll=jest.fn(),visible=jest.fn();
   runInNewContext(ts.transpileModule('('+effect+')',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,{
-    pagerResizing:{current:false},pagerInteraction:{current:true},previousPagerViewport:{current:null},pagerViewport:{width:400,columns:1},
+    pagerResizing:{current:false},pagerInteraction:{current:true},pagerExpectedOffset:{current:null},setPagerBridgeActive:jest.fn(),previousPagerViewport:{current:{width:400,columns:1}},pagerViewport:{width:400,columns:1},
     pagerSelectionRef:{current:{index:7,columns:1}},wells:Array(21),pagerContentOffset:{x:2800,y:0},flatListRef:{current:{scrollToOffset:scroll}},setFocusedIndex:jest.fn(),setVisibleWellIndices:visible,
   })();
   expect(scroll).toHaveBeenCalledWith({offset:2800,animated:false});expect(visible).toHaveBeenCalledWith([7]);
@@ -41,4 +41,18 @@ test('periodic focus refresh cannot replace a populated live catalogue through i
   const evaluate=(live:string[])=>runInNewContext(guard,{parsed:['A','B'],wells:[],wellCatalogueRef:{current:live}});
   expect(evaluate([])).toBe(true);
   expect(evaluate(['B','A'])).toBe(false);
+});
+
+
+test('resize bridge ends only after native offset acknowledgement; ordinary scroll never sets selection',()=>{
+ const pagerExpectedOffset={current:2800 as number|null},pagerResizing={current:true},setPagerBridgeActive=jest.fn();
+ const scroll=callback('handlePagerScroll',{pagerExpectedOffset,pagerResizing,setPagerBridgeActive});
+ scroll({nativeEvent:{contentOffset:{x:7000}}});expect(setPagerBridgeActive).not.toHaveBeenCalled();
+ scroll({nativeEvent:{contentOffset:{x:2800}}});expect(pagerResizing.current).toBe(false);expect(pagerExpectedOffset.current).toBeNull();expect(setPagerBridgeActive).toHaveBeenCalledWith(false);
+ setPagerBridgeActive.mockClear();for(const x of [3000,4500,0])scroll({nativeEvent:{contentOffset:{x}}});expect(setPagerBridgeActive).not.toHaveBeenCalled();
+});
+test('fast swipes use the native one-interval momentum limit',()=>{
+ const ast=ts.createSourceFile('screen.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let pager:ts.JsxOpeningElement|ts.JsxSelfClosingElement|undefined;
+ function visit(n:ts.Node){if((ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))&&n.tagName.getText(ast)==='FlatList'&&n.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='testID'&&a.initializer?.getText(ast)==='"well-pager"'))pager=n;ts.forEachChild(n,visit);}visit(ast);
+ expect(pager!.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='disableIntervalMomentum'&&!a.initializer)).toBe(true);
 });

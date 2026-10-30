@@ -62,7 +62,7 @@ test('actual main card host has one shared Settings action and live widths',()=>
 
 function callback(name:string,scope:Record<string,unknown>) {
  const {node,ast}=variable('(tabs)/index.tsx',name);
- return execute((node.initializer as ts.CallExpression).arguments[0].getText(ast),scope);
+ return execute((node.initializer as ts.CallExpression).arguments[0].getText(ast),{pagerExpectedOffset:{current:null},setPagerBridgeActive:jest.fn(),...scope});
 }
 test('right-card focus survives viewability refresh and Pull opens that exact well',()=>{
  let focused:number|null=1,current=0;

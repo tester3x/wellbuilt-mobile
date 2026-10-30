@@ -29,12 +29,12 @@ test.each([
 ] as const)('%s retains both selected cards through every stale-offset resize',(_,short,long)=>{
   for(const count of [1,24,100]) {
     for(let index=0;index<count;index++) {
-      let widths:{min:number;max:number}={min:short,max:short};
+      let widths:{min:number;max:number}={min:long/2,max:long/2};
       for(const [width,height,oldCard,newCard] of [
         [short,long,long/2,short],[long,short,short,long/2],
         [short,long,long/2,short],[long,short,short,long/2],
       ]) {
-        const buffer=wellPagerBuffer(index,count,width,height,widths);
+        const buffer=wellPagerBuffer(index,count,width,height,widths,true);
         widths=buffer.widths;
         for(const visibleLength of [short,long]) {
           const range=resizedRange(index,count,oldCard,newCard,visibleLength,buffer.windowSize,buffer.maxToRenderPerBatch);
@@ -48,7 +48,7 @@ test.each([
 
 test('cover-to-open changes retain the previous width range, with bounded batches',()=>{
   const cover=wellPagerBuffer(12,24,384,900,{min:384,max:384});
-  const open=wellPagerBuffer(12,24,830,748,cover.widths);
+  const open=wellPagerBuffer(12,24,830,748,cover.widths,true);
   expect(open.widths.min).toBe(384);
   expect(open.maxToRenderPerBatch).toBeLessThanOrEqual(24);
   const range=resizedRange(12,24,384,415,830,open.windowSize,open.maxToRenderPerBatch);
@@ -62,4 +62,15 @@ test('home pager consumes the bounded buffer without changing card identity or e
   expect(source).toContain('maxToRenderPerBatch={pagerBuffer.maxToRenderPerBatch}');
   expect(source).toContain('keyExtractor={(item) => item}');
   expect(source).toContain('removeClippedSubviews={false}');
+});
+
+
+test.each([20,100,500])('stable browsing keeps a small render window at every index of %s wells',count=>{
+ for(const [width,height] of [[411,891],[384,900],[830,748],[748,830],[876,1400],[1400,876]]){
+  for(let index=0;index<count;index++){
+   const buffer=wellPagerBuffer(index,count,width,height,{min:384,max:1400},false);
+   expect(buffer.windowSize).toBe(3);expect(buffer.maxToRenderPerBatch).toBeLessThanOrEqual(4);
+   expect(buffer.widths.min).toBe(buffer.widths.max);
+  }
+ }
 });

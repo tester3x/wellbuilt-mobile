@@ -1,0 +1,24 @@
+{
+  "scope": "WB M urgent swipe lag and unexpected paging",
+  "findings": [
+    "S24 M144 controlled 90ms flings skip two wells: 6->8->10->8->6.",
+    "Resize buffer used theoretical orientation and lifetime width extrema during stable browsing; buffer grew with catalogue position.",
+    "No evidence of continuous layout-mode flapping; geometry recalculation and layout alignment are dependency-bound."
+  ],
+  "change": [
+    "Retain bridge only across an actual native geometry realignment; shrink on native offset acknowledgement or user drag.",
+    "Stable window bounded to three viewports; memoize screen styles by geometry.",
+    "Native disableIntervalMomentum limits fling snap travel."
+  ],
+  "preserved": [
+    "Fold cover/open portrait/open landscape layouts",
+    "Data and operational records",
+    "M144 staged water and readout rendering"
+  ],
+  "checks": [
+    "143 suites / 1434 tests passed",
+    "TypeScript passed",
+    "Account recovery and release/retirement checks passed"
+  ],
+  "acceptance": "Local M145 S24 validation pending. ZFold disconnected."
+}

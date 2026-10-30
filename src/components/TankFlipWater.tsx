@@ -11,14 +11,15 @@ function WaterColumn({ index, width, height, fill, offsets, inverted, renderScal
 }) {
   const style = useAnimatedStyle(() => {
     const depth = waterDepthAt((index + 0.5) / COLUMNS * width, width, height, fill.value, offsets.value);
-    // Always write a numeric position: undefined may leave a stale native anchor.
-    return { height: depth, top: inverted.value ? 0 : height - depth };
+    // A fixed-height strip moves inside the clipped tank. Animating 64 layout
+    // heights/tops forced Fabric/Yoga commits every frame, including on swipes.
+    return { transform: [{ translateY: inverted.value ? depth - height : height - depth }] };
   });
-  return <Animated.View style={[styles.column, waterColumnBounds(index,COLUMNS,width,renderScale,PixelRatio.get()), style]} />;
+  return <Animated.View style={[styles.column, {height,top:0}, waterColumnBounds(index,COLUMNS,width,renderScale,PixelRatio.get()), style]} />;
 }
-export function TankFlipWater(props: { width: number; height: number; fill: SharedValue<number>; offsets: SharedValue<number[]>; inverted: SharedValue<boolean>; renderScale?: number }) {
+export const TankFlipWater = React.memo(function TankFlipWater(props: { width: number; height: number; fill: SharedValue<number>; offsets: SharedValue<number[]>; inverted: SharedValue<boolean>; renderScale?: number }) {
   return <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={[StyleSheet.absoluteFill,{overflow:'hidden'}]}>
     {Array.from({ length: COLUMNS }, (_, index) => <WaterColumn key={index} index={index} {...props} />)}
   </View>;
-}
+});
 const styles = StyleSheet.create({ column: { position: 'absolute', backgroundColor: '#2563EB', borderTopLeftRadius: 2, borderTopRightRadius: 2 } });

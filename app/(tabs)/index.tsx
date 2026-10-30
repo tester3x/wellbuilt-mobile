@@ -40,7 +40,6 @@ import { GestureHandlerRootView, TapGestureHandler, State } from 'react-native-g
 import Animated, {
   cancelAnimation,
   Easing,
-  runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
@@ -51,6 +50,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useWellLevelTransition } from '../../src/hooks/useWellLevelTransition';
+import { useWellLevelDisplay } from '../../src/hooks/useWellLevelDisplay';
+import type { SharedValue } from 'react-native-reanimated';
 import { useTankFlip } from '../../src/hooks/useTankFlip';
 import { TankFlipWater } from '../../src/components/TankFlipWater';
 import { roamingFishPosition, movementFishFacing, floatingPosition, fishScatterDirections } from '../../src/ui/fluidWildlife';
@@ -310,7 +311,7 @@ interface WellViewProps {
   viewportHeight?: number;
   wideLayout?: boolean;
   entryFraction: number; // Captured visible fraction of the departing well (0-1)
-  onLevelChange?: (level: number) => void; // Report current level to parent
+  registerFill?: (well: string, fill: SharedValue<number>) => () => void;
   refreshTrigger?: number; // Triggers data reload after sync
   onSliderActiveChange?: (active: boolean, wellName: string) => void; // Block FlatList scroll during slider use
   loadBbls?: number; // Load size in bbls for "next load ready" calculation
@@ -320,13 +321,12 @@ interface WellViewProps {
   onToggleOvernightBbls?: () => void; // Toggle handler (persists to AsyncStorage)
 }
 
-const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, wideLayout = false, entryFraction, onLevelChange, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
+const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, wideLayout = false, entryFraction, registerFill, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
   useEffect(()=>{
     console.log('[WellPager] mount',wellName);
     return ()=>console.log('[WellPager] unmount',wellName);
   },[wellName]);
-  const [displayFeet, setDisplayFeet] = useState(0);
   const [sliderFeet, setSliderFeet] = useState(10.5);
   const [deliveryAt,setDeliveryAt]=useState<Date | null>(null);
   const [deliveryPicker,setDeliveryPicker]=useState<'date'|'time'|null>(null);
@@ -405,6 +405,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
 
   // MUST declare waterFraction before effects that use it
   const waterFraction = useSharedValue(0);
+  useEffect(() => registerFill?.(wellName, waterFraction), [registerFill, wellName, waterFraction]);
 
   // ── Alive-tank easter egg (cosmetic only — never touches tank math) ──
   // FLIP water runs in the visible tank. A rare hidden critter is decided ONCE
@@ -477,6 +478,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
     return () => sub.remove();
   }, []);
   const sceneActive = isActive && appForeground;
+  const displayFeet = useWellLevelDisplay(waterFraction, tankHeightFeet, sceneActive);
   const fishSceneActiveRef = useRef(false);
   const fluidInverted = useSharedValue(false);
   const fluidOrientation = useSharedValue(0);
@@ -526,20 +528,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, cardWidth = 
 
   // Separate effect to cancel watcher only on unmount (uses ref to get current value)
   // Removed: cancelWaitForResponse cleanup - no longer waiting for responses
-
-  const updateDisplayFeet = (fraction: number) => {
-    setDisplayFeet(fraction * tankHeightFeet);
-    // Always report level to parent (so we can track all well levels for animation)
-    if (onLevelChange) {
-      onLevelChange(fraction);
-    }
-  };
-
-  useAnimatedReaction(
-    () => waterFraction.value,
-    (currentFraction) => runOnJS(updateDisplayFeet)(currentFraction),
-    [waterFraction, tankHeightFeet]
-  );
 
   // Response processing handled entirely by backgroundSync
   // Drain animation plays for visual feedback; backgroundSync saves snapshot and clears pending
@@ -1671,25 +1659,18 @@ export default function MainScreen() {
   const pickerListRef = useRef<FlatList>(null);
 
   // Track levels for ALL wells, not just the active one
-  const wellLevels = useRef<{ [wellName: string]: number }>({});
+  const wellLevels = useRef<{ [wellName: string]: SharedValue<number> }>({});
   const [entryFraction, setEntryFraction] = useState(0);
   
   const [currentIndex, setCurrentIndex] = useState(0);
   // A resize is not a swipe. Deliver the new width and matching native offset
   // together, and ignore intermediate viewability at the previous pixel offset.
-  const pagerViewport=useMemo(()=>({width:cardWidth,columns,offset:cardWidth*currentIndex}),[cardWidth,columns]);
+  const pagerViewport=useMemo(()=>({width:cardWidth,columns}),[cardWidth,columns]);
+  const [pagerAlignRevision,setPagerAlignRevision]=useState(0);
   const previousPagerViewport=useRef(pagerViewport);
   const pagerResizing=useRef(false);
   const pagerInteraction=useRef(false);
   const viewportChanged=previousPagerViewport.current!==pagerViewport;
-  const pagerContentOffset=useMemo(()=>previousPagerViewport.current===pagerViewport ? undefined : ({x:pagerViewport.offset,y:0}),[pagerViewport]);
-  useLayoutEffect(()=>{
-    if(previousPagerViewport.current!==pagerViewport){pagerResizing.current=true;pagerInteraction.current=false;}
-    previousPagerViewport.current=pagerViewport;
-    if(columns===1)setFocusedIndex(null);
-    setVisibleWellIndices(Array.from({length:columns},(_,i)=>currentIndex+i));
-    flatListRef.current?.scrollToOffset({offset:pagerViewport.offset,animated:false});
-  },[pagerViewport]);
   const selectionCatalogueRef = useRef<{
     owner: Awaited<ReturnType<typeof captureWellSelectionOwner>>;
     eligible: string[];
@@ -1720,6 +1701,23 @@ export default function MainScreen() {
     setSliderActive(activeSliders.current.size > 0);
   }, []);
   const [wells, setWells] = useState<string[]>([]);
+  const wellCatalogueRef=useRef(wells);
+  wellCatalogueRef.current=wells;
+  // Align the committed catalogue/geometry/explicit selection together. Ordinary
+  // visibility updates during a drag must NOT snap native scrolling mid-gesture.
+  // The latest selection is sampled only for these alignment requests.
+  const pagerSelectionRef=useRef({index:currentIndex,columns});
+  pagerSelectionRef.current={index:currentIndex,columns};
+  const pagerContentOffset=useMemo(()=>({x:cardWidth*pagerSelectionRef.current.index,y:0}),[cardWidth,wells,pagerAlignRevision]);
+  useLayoutEffect(()=>{
+    const {index,columns}=pagerSelectionRef.current;
+    pagerResizing.current=true;
+    pagerInteraction.current=false;
+    previousPagerViewport.current=pagerViewport;
+    if(columns===1)setFocusedIndex(null);
+    setVisibleWellIndices(Array.from({length:columns},(_,i)=>index+i).filter(i=>i<wells.length));
+    flatListRef.current?.scrollToOffset({offset:pagerContentOffset.x,animated:false});
+  },[pagerViewport,wells,pagerContentOffset]);
   const pagerWidthRange=useRef({min:cardWidth,max:cardWidth});
   const pagerBuffer=wellPagerBuffer(currentIndex,wells.length,windowSize.width,windowSize.height,pagerWidthRange.current);
   pagerWidthRange.current=pagerBuffer.widths;
@@ -1766,9 +1764,7 @@ export default function MainScreen() {
           const idx = parseInt(saved, 10);
           if (idx >= 0 && idx < wells.length) {
             setCurrentIndex(idx);
-            setTimeout(() => {
-              flatListRef.current?.scrollToIndex({ index: idx, animated: false });
-            }, 100);
+            setPagerAlignRevision(n=>n+1);
           }
         }
       } catch (err) {
@@ -1972,7 +1968,7 @@ export default function MainScreen() {
           if (!isCurrentLoad()) return;
           if (cachedWells) {
             const parsed = JSON.parse(cachedWells) as string[];
-            if (parsed.length > 0 && wells.length === 0) {
+            if (parsed.length > 0 && wellCatalogueRef.current.length === 0) {
               console.log('[Main] Instant cache: showing', parsed.length, 'wells from last session');
               debugLog(`Well recovery: loaded ${parsed.length} wells from cache`);
               setWells(parsed);
@@ -2138,11 +2134,7 @@ export default function MainScreen() {
           setWells(previous => previous.length === filteredWells.length
             && previous.every((well, i) => well === filteredWells[i]) ? previous : filteredWells);
           setCurrentIndex(prev => retained >= 0 ? retained : Math.min(prev, filteredWells.length - 1));
-          if (retained >= 0 && retained !== previousVisible.index) {
-            setTimeout(() => {
-              if (isCurrentLoad()) flatListRef.current?.scrollToIndex({ index: retained, animated: false });
-            }, 100);
-          }
+          if (retained >= 0 && retained !== previousVisible.index) setPagerAlignRevision(n=>n+1);
 
           // Save as last known good for next time
           try {
@@ -2190,9 +2182,7 @@ export default function MainScreen() {
             const wellIndex = filteredWells.findIndex(w => w === jumpToWell);
             if (wellIndex >= 0) {
               setCurrentIndex(wellIndex);
-              setTimeout(() => {
-                flatListRef.current?.scrollToIndex({ index: wellIndex, animated: false });
-              }, 100);
+              setPagerAlignRevision(n=>n+1);
             }
           }
         } catch (e) {
@@ -2290,7 +2280,7 @@ export default function MainScreen() {
 
   // Freeze the actual displayed frame, not the destination's preloaded level.
   const captureTransitionStart = useCallback(() => {
-    const fraction = wellLevels.current[wells[currentIndex]];
+    const fraction = wellLevels.current[wells[currentIndex]]?.value;
     if (Number.isFinite(fraction)) setEntryFraction(Math.max(0, Math.min(1, fraction)));
   }, [wells, currentIndex]);
 
@@ -2305,14 +2295,13 @@ export default function MainScreen() {
       // selected until it actually leaves the visible pair.
       setFocusedIndex(previous => previous !== null && viewableItems.some(item=>item.index===previous) ? previous : null);
       const newIndex = viewableItems[0].index;
-      // Save current as previous BEFORE updating to new
+      // Entry fraction was frozen once at drag start, before any threshold changes.
       if (newIndex !== currentIndex) {
         console.log('[Main] Swipe: currentIndex', currentIndex, '→', newIndex);
-        captureTransitionStart();
       }
       setCurrentIndex(newIndex);
     }
-  }, [currentIndex, captureTransitionStart, viewportChanged]);
+  }, [currentIndex, viewportChanged]);
 
   const handlePagerDrag=useCallback(()=>{
     pagerInteraction.current=true;
@@ -2320,7 +2309,19 @@ export default function MainScreen() {
     captureTransitionStart();
   },[captureTransitionStart]);
 
-  const handlePagerSettled=useCallback(()=>{pagerInteraction.current=false;},[]);
+  const handlePagerPosition=useCallback((event:{nativeEvent:{contentOffset:{x:number}}})=>{
+    if(!pagerInteraction.current || pagerResizing.current || !wells.length)return;
+    const offset=event.nativeEvent.contentOffset.x;
+    if(!Number.isFinite(offset))return;
+    const index=Math.max(0,Math.min(wells.length-1,Math.round(offset/cardWidth)));
+    setCurrentIndex(index);
+    setVisibleWellIndices(Array.from({length:columns},(_,i)=>index+i).filter(i=>i<wells.length));
+    setFocusedIndex(previous=>previous!==null && previous>=index && previous<index+columns ? previous : null);
+  },[wells.length,cardWidth,columns]);
+  const handlePagerSettled=useCallback((event:{nativeEvent:{contentOffset:{x:number}}})=>{
+    handlePagerPosition(event);
+    pagerInteraction.current=false;
+  },[handlePagerPosition]);
 
   const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
 
@@ -2341,7 +2342,7 @@ export default function MainScreen() {
       captureTransitionStart();
     }
     setCurrentIndex(tempSelectedIndex);
-    flatListRef.current?.scrollToIndex({ index: tempSelectedIndex, animated: true });
+    setPagerAlignRevision(n=>n+1);
     setShowPicker(false);
   };
 
@@ -2350,9 +2351,10 @@ export default function MainScreen() {
     setShowPicker(false);
   };
 
-  // Update level for a specific well - called by ALL wells, not just active
-  const handleLevelChange = useCallback((wellName: string, level: number) => {
-    wellLevels.current[wellName] = level;
+  // Capture the exact drawn UI-thread fraction only when a gesture begins.
+  const registerWellFill = useCallback((wellName: string, fill: SharedValue<number>) => {
+    wellLevels.current[wellName] = fill;
+    return () => { if(wellLevels.current[wellName]===fill)delete wellLevels.current[wellName]; };
   }, []);
 
   // Navigate to current well's performance detail on tank double-tap
@@ -2417,12 +2419,12 @@ export default function MainScreen() {
     <WellPagerCard width={cardWidth} wideLayout={false}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={false}
         isActive={index===currentIndex} entryFraction={entryFraction}
-        onLevelChange={level=>handleLevelChange(item,level)} refreshTrigger={refreshTrigger}
+        registerFill={registerWellFill} refreshTrigger={refreshTrigger}
         onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
         onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
     </WellPagerCard>
-  ),[cardWidth,viewportHeight,currentIndex,entryFraction,handleLevelChange,refreshTrigger,handleSliderActiveChange,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  ),[cardWidth,viewportHeight,currentIndex,entryFraction,registerWellFill,refreshTrigger,handleSliderActiveChange,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const renderLandscapeWell = useCallback(({ item, index }: { item: string; index: number }) => (
     <WellPagerCard width={cardWidth} wideLayout={true} onFocus={()=>setFocusedIndex(index)} header={
       <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
@@ -2432,12 +2434,12 @@ export default function MainScreen() {
       </TouchableOpacity>}>
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={true}
         isActive={index===currentIndex || index===currentIndex+1}
-        entryFraction={entryFraction} onLevelChange={level=>handleLevelChange(item,level)}
+        entryFraction={entryFraction} registerFill={registerWellFill}
         refreshTrigger={refreshTrigger} onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
         onTankDoubleTap={()=>handleTankDoubleTap(item)} onTankLongPress={()=>handleTankLongPress(item)}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
     </WellPagerCard>
-  ),[cardWidth,viewportHeight,columns,currentIndex,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,handleLevelChange,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  ),[cardWidth,viewportHeight,columns,currentIndex,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,registerWellFill,refreshTrigger,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const renderWell = columns===1 ? renderPortraitWell : renderLandscapeWell;
   const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
 
@@ -2643,6 +2645,7 @@ export default function MainScreen() {
         showsHorizontalScrollIndicator={false}
         contentOffset={pagerContentOffset}
         onScrollBeginDrag={handlePagerDrag}
+        onScrollEndDrag={handlePagerPosition}
         onMomentumScrollEnd={handlePagerSettled}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
@@ -2761,7 +2764,7 @@ export default function MainScreen() {
                       if (originalIndex < 0) return;
                       captureTransitionStart();
                       setCurrentIndex(originalIndex);
-                      flatListRef.current?.scrollToIndex({index: originalIndex, animated: true});
+                      setPagerAlignRevision(n=>n+1);
                       setShowPicker(false);
                     }}>
                       <Text style={[styles.androidWheelText, item === wells[currentIndex] && styles.androidWheelTextSelected]}>{item}</Text>
@@ -2820,7 +2823,7 @@ export default function MainScreen() {
                             // Tap on highlighted well - select it and close
                             captureTransitionStart();
                             setCurrentIndex(tempSelectedIndex);
-                            flatListRef.current?.scrollToIndex({ index: tempSelectedIndex, animated: true });
+                            setPagerAlignRevision(n=>n+1);
                             setShowPicker(false);
                           } else {
                             // Tap on non-highlighted well - scroll to center it

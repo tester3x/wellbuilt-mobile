@@ -42,9 +42,10 @@ function execute(text: string, scope: Record<string, unknown>) {
 test.each([20, 25])('actual tank screen converts water fraction and clamps slider at %s feet', height => {
   const { ast, find } = screen('(tabs)/index.tsx');
   const variable = (name: string) => find(n => ts.isVariableDeclaration(n) && n.name.getText(ast) === name) as ts.VariableDeclaration;
-  const display = jest.fn(), saved = jest.fn(), slider = jest.fn();
-  execute(variable('updateDisplayFeet').initializer!.getText(ast), { tankHeightFeet: height, setDisplayFeet: display, onLevelChange: null })(10 / height);
-  expect(display).toHaveBeenCalledWith(10);
+  const display = jest.fn((fill, fullHeight) => fill.value*fullHeight), saved = jest.fn(), slider = jest.fn();
+  const shown=execute(variable('displayFeet').initializer!.getText(ast), { tankHeightFeet: height, waterFraction:{value:10/height},sceneActive:true,useWellLevelDisplay:display });
+  expect(shown).toBe(10);
+  expect(display).toHaveBeenCalledWith({value:10/height},height,true);
   const callback = variable('handleSliderChange').initializer as ts.CallExpression;
   execute(callback.arguments[0].getText(ast), { tankHeightFeet: height, wellConfig: { loadLine: 1.33, allowedBottom: 3 }, displayFeet: 10,
     setSliderFeet: slider, saveSliderPosition: saved, wellName: 'Test' })(30);

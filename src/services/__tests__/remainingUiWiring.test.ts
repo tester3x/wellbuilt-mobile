@@ -41,7 +41,7 @@ test('actual movement and release handlers commit the same normalized selected v
 });
 test.each([[800,1000],[1000,600],[360,800]])('actual card renderer keeps each well and its controls in a fixed viewport at %sx%s', (width,height)=>{
  const {columns,cardWidth,viewportHeight}=tankViewport(width,height);const {node,ast}=variable('(tabs)/index.tsx','renderLandscapeWell');const call=node.initializer as ts.CallExpression;
- const scope={React,WellPagerCard,foldablePhoneLayout:false,currentIndex:0,View:'View',Text:'Text',TouchableOpacity:'TouchableOpacity',ScrollView:'ScrollView',WellView:'WellView',cardWidth,viewportHeight,columns,handleSliderActiveChange:()=>{},visibleWellIndices:[0,1],actionIndex:0,wellConfigMap:{Left:{route:'Route',operator:'Operator'},Right:{route:'Route',operator:'Operator'}},getRouteColor:()=>'',setFocusedIndex:()=>{},openPicker:()=>{},entryFraction:0,handleLevelChange:()=>{},refreshTrigger:0,setSliderActive:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}};
+ const scope={React,WellPagerCard,foldablePhoneLayout:false,currentIndex:0,View:'View',Text:'Text',TouchableOpacity:'TouchableOpacity',ScrollView:'ScrollView',WellView:'WellView',cardWidth,viewportHeight,columns,handleSliderActiveChange:()=>{},visibleWellIndices:[0,1],actionIndex:0,wellConfigMap:{Left:{route:'Route',operator:'Operator'},Right:{route:'Route',operator:'Operator'}},getRouteColor:()=>'',setFocusedIndex:()=>{},openPicker:()=>{},entryFraction:0,registerWellFill:()=>()=>{},refreshTrigger:0,setSliderActive:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}};
  const render=execute(call.arguments[0].getText(ast),scope);let tree!:TestRenderer.ReactTestRenderer;
  act(()=>{tree=TestRenderer.create(React.createElement(React.Fragment,null,render({item:'Left',index:0}),render({item:'Right',index:1})));});
  const cards=tree.root.findAllByType('WellView' as any);expect(cards.map(c=>c.props.wellName)).toEqual(['Left','Right']);expect(cards.every(c=>c.props.isActive)).toBe(true);expect(cards.every(c=>c.props.cardWidth===width/columns)).toBe(true);expect(tree.root.findAllByType('ScrollView' as any)).toHaveLength(0);expect(words(tree.toJSON())).toContain('Left');expect(words(tree.toJSON())).toContain('Right');
@@ -93,7 +93,7 @@ test('explicit unlock takes one action and remains disabled for down wells',()=>
 
 test('portrait renderer has one well with no landscape header or landscape controls',()=>{
  const {node,ast}=variable('(tabs)/index.tsx','renderPortraitWell');
- const render=execute((node.initializer as ts.CallExpression).arguments[0].getText(ast),{React,WellPagerCard,View:'View',WellView:'WellView',cardWidth:876,viewportHeight:1400,currentIndex:1,entryFraction:0.3,handleLevelChange:()=>{},refreshTrigger:0,handleSliderActiveChange:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}});
+ const render=execute((node.initializer as ts.CallExpression).arguments[0].getText(ast),{React,WellPagerCard,View:'View',WellView:'WellView',cardWidth:876,viewportHeight:1400,currentIndex:1,entryFraction:0.3,registerWellFill:()=>()=>{},refreshTrigger:0,handleSliderActiveChange:()=>{},loadBbls:140,handleTankDoubleTap:()=>{},handleTankLongPress:()=>{},showOvernightBbls:false,handleToggleOvernightBbls:()=>{}});
  let tree!:TestRenderer.ReactTestRenderer;
  act(()=>{tree=TestRenderer.create(render({item:'Portrait well',index:1}));});
  const card=tree.root.findByType('WellView' as any);
@@ -126,12 +126,11 @@ test('intermediate resize viewability cannot change the anchored well or replay 
 });
 
 
-test('native resize offset is committed with new widths without overriding initial saved-index restoration',()=>{
+test('native alignment offset uses the selected index with committed widths for startup and resize',()=>{
  const {node,ast}=variable('(tabs)/index.tsx','pagerContentOffset');
  const fn=(node.initializer as ts.CallExpression).arguments[0].getText(ast);
- const viewport={width:700,columns:2,offset:6300};
- expect(execute(fn,{pagerViewport:viewport,previousPagerViewport:{current:viewport}})()).toBeUndefined();
- expect(execute(fn,{pagerViewport:viewport,previousPagerViewport:{current:{width:876}}})()).toEqual({x:6300,y:0});
+ expect(execute(fn,{cardWidth:876,pagerSelectionRef:{current:{index:9}}})()).toEqual({x:7884,y:0});
+ expect(execute(fn,{cardWidth:700,pagerSelectionRef:{current:{index:9}}})()).toEqual({x:6300,y:0});
 });
 
 
@@ -141,7 +140,9 @@ test('resize viewability arriving before JS dimensions is ignored without an act
  callback('onViewableItemsChanged',{viewportChanged:false,pagerInteraction,pagerResizing,currentIndex:9,setCurrentIndex,setVisibleWellIndices,setFocusedIndex:jest.fn(),captureTransitionStart,console})({viewableItems:[{index:2},{index:3}]});
  expect(setCurrentIndex).not.toHaveBeenCalled();expect(setVisibleWellIndices).not.toHaveBeenCalled();expect(captureTransitionStart).not.toHaveBeenCalled();
  callback('handlePagerDrag',{pagerInteraction,pagerResizing,captureTransitionStart})();expect(pagerInteraction.current).toBe(true);
- callback('handlePagerSettled',{pagerInteraction})();expect(pagerInteraction.current).toBe(false);
+ const handlePagerPosition=jest.fn();
+ callback('handlePagerSettled',{pagerInteraction,handlePagerPosition})({nativeEvent:{contentOffset:{x:0}}});
+ expect(handlePagerPosition).toHaveBeenCalledTimes(1);expect(pagerInteraction.current).toBe(false);
 });
 
 

@@ -16,7 +16,7 @@ visit(ast);
 if (!callback) throw new Error('Swipe capture callback missing');
 
 test('swipe captures the drawn departing level, independent of destination preload or later frames', () => {
-  const levels = { Previous: 0.63, Destination: 0.15 };
+  const levels = { Previous: {value:0.63}, Destination: {value:0.15} };
   let captured = 0;
   const action = runInNewContext(ts.transpileModule('const capture = ' + callback, {
     compilerOptions: { target: ts.ScriptTarget.ES2020 },
@@ -26,7 +26,7 @@ test('swipe captures the drawn departing level, independent of destination prelo
   });
   action();
   expect(captured).toBe(0.63);
-  levels.Previous = 0.4; levels.Destination = 0.2;
+  levels.Previous.value = 0.4; levels.Destination.value = 0.2;
   expect(captured).toBe(0.63); // The seed cannot follow a later card's updates.
   expect(source).toContain('onScrollBeginDrag={handlePagerDrag}');
   expect(source).toContain('entryFraction={entryFraction}');

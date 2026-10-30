@@ -3,8 +3,8 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 144,
-  "observedAt": "2026-10-30T05:14:26.732467+00:00",
+  "versionCodeFloor": 145,
+  "observedAt": "2026-10-30T19:20:22.680065+00:00",
   "installedReports": [
     {
       "app": "WB-T",
@@ -760,10 +760,55 @@
           "acceptance": "Installation and launch verified; complete field/cover/rotation checks not claimed"
         }
       ]
+    },
+    {
+      "sourceCommit": "2267ab7ec709daaf69e3db0885690a9a3da5dec5",
+      "versionCode": 145,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "c21d99384287fd17b138ace07d74c545ebfa348da9c40cf4e876a0eb3a2d6b3d",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-10-30T19:17:08.139160+00:00",
+      "localArtifact": "C:\\dev\\tmp\\WB-M145-2267ab7.apk",
+      "method": "Registered-home local Android SDK/Gradle; account-device-test; arm64-v8a",
+      "embeddedPanelAndSliderMarkersVerified": true,
+      "reservation": "android-release-v145",
+      "checks": [
+        "143 suites /1434 tests",
+        "TypeScript noEmit",
+        "Account recovery regressions",
+        "19 release/retirement checks",
+        "Exact clean source/all-head/immutable reservation/bundle/build/postbuild gates",
+        "APK package145 / existing release signer / installed S24 base APK hash independently matches",
+        "Same controlled 90ms swipes: M144 6->8->10->8->6; M145 6->7->8->7->6",
+        "14 forward /19 reverse /5 forward swipe sweep settles at20/1/6, artwork visible in checked endpoint captures"
+      ],
+      "verificationState": "S24145 installed and automated pager checks passed; Mike manual acceptance pending. Native views at index6 reduced1411->539. Gfx samples before25.10percent jank versus after3.58percent, not identical benchmark and not a guarantee. First post-update launch displayed blank content, recovered with force-stop/relaunch; no React/native exception in captured log, startup cause remains unproven. S24 portrait preference prevented requested system rotation; rotation/Fold posture acceptance NOT claimed. ZFold disconnected, remains144. No cloud build, account change, uninstall, data clear or operational writes.",
+      "privateEvidence": [
+        "C:/dev/tmp/wbm145-release-private.json",
+        "C:/dev/tmp/wbm145-gradle-confirm-private.log",
+        "C:/dev/tmp/wbm145-apk-receipt.json",
+        "C:/dev/tmp/wbm145-fling-valid-start-private.png",
+        "C:/dev/tmp/wbm145-fling-valid-0-private.png",
+        "C:/dev/tmp/wbm145-fling-valid-1-private.png",
+        "C:/dev/tmp/wbm145-fling-valid-2-private.png",
+        "C:/dev/tmp/wbm145-fling-valid-3-private.png",
+        "C:/dev/tmp/wbm145-sweep-gfx-private.txt",
+        "C:/dev/tmp/wbm145-react-log-private.txt"
+      ],
+      "installedDevices": [
+        {
+          "device": "S24",
+          "serial": "R5CX15HEGQB",
+          "versionCode": 145,
+          "installedApkSha256": "c21d99384287fd17b138ace07d74c545ebfa348da9c40cf4e876a0eb3a2d6b3d",
+          "acceptance": "Automated pager checks passed; manual pending; first update launch blank recovered by cold relaunch"
+        }
+      ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M144 built locally from exact clean source7a3622d74f349d57f17ed33da20221b8e3dcb463; immutable android-release-v144. S24 native/user pass followed by same-APK ZFold in-place installation and verified launch. Later commits are receipts only. Preserve all prior consumed reservations and failed candidate evidence. No cloud or operational writes.",
+  "notes": "M145 exact clean source2267ab7ec709daaf69e3db0885690a9a3da5dec5 locally built/reserved, S24 installed hash verified. Pager automated checks passed; manual/Fold acceptance pending. First postupdate blank launch recovered after force-stop/relaunch, cause unproven. Prior release evidence preserved. Other-machine unpushed work cannot be discovered.",
   "failedReservations": [
     {
       "versionCode": 123,

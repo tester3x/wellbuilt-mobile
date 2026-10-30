@@ -4,7 +4,7 @@
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
   "versionCodeFloor": 145,
-  "observedAt": "2026-10-30T19:20:22.680065+00:00",
+  "observedAt": "2026-10-30T19:26:47.053453+00:00",
   "installedReports": [
     {
       "app": "WB-T",
@@ -781,9 +781,11 @@
         "Exact clean source/all-head/immutable reservation/bundle/build/postbuild gates",
         "APK package145 / existing release signer / installed S24 base APK hash independently matches",
         "Same controlled 90ms swipes: M144 6->8->10->8->6; M145 6->7->8->7->6",
-        "14 forward /19 reverse /5 forward swipe sweep settles at20/1/6, artwork visible in checked endpoint captures"
+        "14 forward /19 reverse /5 forward swipe sweep settles at20/1/6, artwork visible in checked endpoint captures",
+        "Mike confirms S24: Responsive; wells stay predictable",
+        "ZFold installed in place; version145 independently read; pulled base APK SHA256 matches S24-tested artifact"
       ],
-      "verificationState": "S24145 installed and automated pager checks passed; Mike manual acceptance pending. Native views at index6 reduced1411->539. Gfx samples before25.10percent jank versus after3.58percent, not identical benchmark and not a guarantee. First post-update launch displayed blank content, recovered with force-stop/relaunch; no React/native exception in captured log, startup cause remains unproven. S24 portrait preference prevented requested system rotation; rotation/Fold posture acceptance NOT claimed. ZFold disconnected, remains144. No cloud build, account change, uninstall, data clear or operational writes.",
+      "verificationState": "S24145 installed and automated pager checks passed; Mike manual S24 acceptance PASSED: responsive; wells stay predictable. Native views at index6 reduced1411->539. Gfx samples before25.10percent jank versus after3.58percent, not identical benchmark and not a guarantee. First post-update launch displayed blank content, recovered with force-stop/relaunch; no React/native exception in captured log, startup cause remains unproven. S24 portrait preference prevented requested system rotation; rotation/Fold posture acceptance NOT claimed. Same verified APK installed on ZFold145; current foreground app preserved. ZFold launch/three display-state checks pending. No cloud build, account change, uninstall, data clear or operational writes.",
       "privateEvidence": [
         "C:/dev/tmp/wbm145-release-private.json",
         "C:/dev/tmp/wbm145-gradle-confirm-private.log",
@@ -802,13 +804,20 @@
           "serial": "R5CX15HEGQB",
           "versionCode": 145,
           "installedApkSha256": "c21d99384287fd17b138ace07d74c545ebfa348da9c40cf4e876a0eb3a2d6b3d",
-          "acceptance": "Automated pager checks passed; manual pending; first update launch blank recovered by cold relaunch"
+          "acceptance": "Automated pager checks and Mike manual swipe acceptance passed; first update blank launch recovered by cold relaunch"
+        },
+        {
+          "device": "ZFold",
+          "serial": "RFGL23VJCED",
+          "versionCode": 145,
+          "installedApkSha256": "c21d99384287fd17b138ace07d74c545ebfa348da9c40cf4e876a0eb3a2d6b3d",
+          "acceptance": "In-place installation/base hash/version verified; current foreground app preserved; launch and three display states pending"
         }
       ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M145 exact clean source2267ab7ec709daaf69e3db0885690a9a3da5dec5 locally built/reserved, S24 installed hash verified. Pager automated checks passed; manual/Fold acceptance pending. First postupdate blank launch recovered after force-stop/relaunch, cause unproven. Prior release evidence preserved. Other-machine unpushed work cannot be discovered.",
+  "notes": "M145 exact source2267ab7: S24 automated/manual pager acceptance passed; same signed APK installed/hash verified on ZFold145. Fold launch and posture acceptance pending. Initial S24 postupdate blank recovered by cold relaunch; cause unproven. Other-machine unpushed work cannot be discovered.",
   "failedReservations": [
     {
       "versionCode": 123,

@@ -4,7 +4,7 @@
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
   "versionCodeFloor": 144,
-  "observedAt": "2026-10-30T05:12:37.545607+00:00",
+  "observedAt": "2026-10-30T05:14:26.732467+00:00",
   "installedReports": [
     {
       "app": "WB-T",
@@ -21,6 +21,24 @@
       "app": "WBS",
       "versionCode": 100,
       "provenance": "User report only; separate package version sequence."
+    },
+    {
+      "app": "WB-M",
+      "packageId": "com.wellbuiltmobile.app",
+      "versionCode": 144,
+      "device": "S24",
+      "serial": "R5CX15HEGQB",
+      "checkedAt": "2026-10-30T05:14:26.732467+00:00",
+      "provenance": "Independent ADB package readback, pulled base APK hash matches verified artifact; existing release signer preserved."
+    },
+    {
+      "app": "WB-M",
+      "packageId": "com.wellbuiltmobile.app",
+      "versionCode": 144,
+      "device": "ZFold",
+      "serial": "RFGL23VJCED",
+      "checkedAt": "2026-10-30T05:14:26.732467+00:00",
+      "provenance": "Independent ADB package readback, pulled base APK hash matches verified artifact; existing release signer preserved."
     }
   ],
   "artifacts": [
@@ -706,9 +724,10 @@
         "Rapid8-swipe and10-direction-reversal videos reviewed",
         "38 sweep gesture attempts /39 captures contain tank artwork",
         "Tank-info touch target opens",
-        "Mike confirms S24 tanks stay visible and transitions look good"
+        "Mike confirms S24 tanks stay visible and transitions look good",
+        "ZFold installed base APK SHA256 matches S24 artifact;144 package readback and unfolded landscape launch verified"
       ],
-      "verificationState": "S24 R5CX15HEGQB144 native/user acceptance PASSED. No zero-level flashes or missing tanks in reviewed rapid/reversal samples. Fast trace34/329 janky10.33percent p9536ms vs14355/288/p9573ms; sample evidence, not guarantee across all conditions. Mike explicitly reports tanks stay visible and transitions look good. ZFold RFGL23VJCED135 rollout authorized after this pass; installation still pending at this receipt commit. Operational data/settings preserved.",
+      "verificationState": "S24 R5CX15HEGQB144 native/user acceptance PASSED: rapid/reversal samples show no zero flashes or missing tanks;39 captures contain tank artwork; Mike confirms tanks stay visible and transitions look good. Fast trace34/329 janky10.33percent p9536ms, sample not guarantee. Exact same signed APK then installed in place on ZFold RFGL23VJCED144; package/version readback and independently pulled base APK hash match; first controlled launch shows both tanks on current unfolded landscape display. Fold full field/cover/rotation acceptance not claimed from this launch. No uninstall, data clear, account change or operational data writes.",
       "privateEvidence": [
         "C:/dev/tmp/wbm144-release-private.json",
         "C:/dev/tmp/wbm144-build-private.log",
@@ -718,12 +737,33 @@
         "C:/dev/tmp/wbm144-gfx-private.txt",
         "C:/dev/tmp/wbm144-s24-swipes-private/results.json",
         "C:/dev/tmp/wbm144-native-log-private.txt",
-        "C:/dev/tmp/wbm144-R5CX15HEGQB-installed-private.apk"
+        "C:/dev/tmp/wbm144-R5CX15HEGQB-installed-private.apk",
+        "C:/dev/tmp/wbm144-RFGL23VJCED-installed-private.apk",
+        "C:/dev/tmp/wbm144-fold-active-private.png",
+        "C:/dev/tmp/wbm144-fold-native-log-private.txt"
+      ],
+      "installedDevices": [
+        {
+          "device": "S24",
+          "serial": "R5CX15HEGQB",
+          "versionCode": 144,
+          "installedApkSha256": "0118c9679061ac493bcfb81728f88286bf19e04131c1cf16a30a96a82b09ea57",
+          "launch": "passed",
+          "acceptance": "Native checks plus Mike visual confirmation passed"
+        },
+        {
+          "device": "ZFold",
+          "serial": "RFGL23VJCED",
+          "versionCode": 144,
+          "installedApkSha256": "0118c9679061ac493bcfb81728f88286bf19e04131c1cf16a30a96a82b09ea57",
+          "launch": "passed; unfolded landscape dual tanks visible",
+          "acceptance": "Installation and launch verified; complete field/cover/rotation checks not claimed"
+        }
       ]
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",
-  "notes": "M144 S24 native tests and Mike visual acceptance passed. Exact signed APK source7a3622d; subsequent receipt-only commits are not APK source. ZFold rollout next under standing authorization; no cloud, data clearing or operational writes.",
+  "notes": "M144 built locally from exact clean source7a3622d74f349d57f17ed33da20221b8e3dcb463; immutable android-release-v144. S24 native/user pass followed by same-APK ZFold in-place installation and verified launch. Later commits are receipts only. Preserve all prior consumed reservations and failed candidate evidence. No cloud or operational writes.",
   "failedReservations": [
     {
       "versionCode": 123,

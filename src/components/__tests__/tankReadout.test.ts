@@ -38,3 +38,10 @@ test('unavailable stays explicit instead of inventing a numeric level',()=>{
  expect(tankReadoutText(.7,20,'level',0,0,'','Unavailable')).toBe('Unavailable');
  expect(tankReadoutText(.7,20,'bbl',0,40,'bbl','-- bbl')).toBe('-- bbl');
 });
+
+
+test('fractional freshwater level floors inches while barrels round independently',()=>{
+ const fraction=11.999/20;
+ expect(tankReadoutText(fraction,20,'level',0,40,'bbl',null)).toBe('11\'11"');
+ expect(tankReadoutText(fraction,20,'bbl',0,40,'bbl',null)).toBe('480 bbl');
+});

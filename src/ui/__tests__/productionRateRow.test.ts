@@ -39,3 +39,20 @@ test('live ON withdrawal and return follow shared preference; freshwater never u
  act(()=>tree.update(React.createElement(ProductionRateRow,{...props,freshwater:true,consumptionDaily:72})));expect(words(tree.toJSON())).toContain('3.0 bbl/hr');expect(words(tree.toJSON())).toContain('72 bbl/day 🔒');
  act(()=>tree.unmount());
 });
+
+
+test('freshwater fractional daily rates stay readable without rounding the hourly calculation first',()=>{
+ let tree!:TestRenderer.ReactTestRenderer;
+ act(()=>{tree=TestRenderer.create(React.createElement(ProductionRateRow,{...base,freshwater:true,consumptionDaily:37.51570449074099,showOvernight:false,onToggle:()=>{}}));});
+ expect(words(tree.toJSON())).toContain('1.6 bbl/hr');
+ expect(words(tree.toJSON())).toContain('37.5 bbl/day');
+ expect(words(tree.toJSON())).not.toContain('37.515704');
+ act(()=>tree.unmount());
+});
+
+test.each([null,NaN,Infinity,-1])('invalid freshwater rate %s stays unavailable',consumptionDaily=>{
+ let tree!:TestRenderer.ReactTestRenderer;
+ act(()=>{tree=TestRenderer.create(React.createElement(ProductionRateRow,{...base,freshwater:true,consumptionDaily,showOvernight:false,onToggle:()=>{}}));});
+ expect(words(tree.toJSON())).toContain('-- bbl/hr');expect(words(tree.toJSON())).toContain('-- bbl/day');
+ act(()=>tree.unmount());
+});

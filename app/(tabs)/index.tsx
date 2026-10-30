@@ -1,3 +1,4 @@
+import {formatRateDuration} from '../../src/utils/rateDisplay';
 import {ProductionRateRow} from '../../components/ProductionRateRow';
 import {SliderInfoSlot} from '../../components/SliderInfoSlot';
 import {WellCardLayout} from '../../components/WellCardLayouts';
@@ -1433,7 +1434,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
               <>
                 <Text style={styles.statLeft}>{oneInchFlow}{t('units.perInch')}</Text>
                 <Text style={styles.statDivider}>•</Text>
-                <Text style={styles.statRight}>{formatFlowRate(flowRate)}{t('units.perFoot')}</Text>
+                <Text style={styles.statRight}>{wellConfig?.routeType === 'freshwater' ? formatRateDuration(flowMins) : formatFlowRate(flowRate)}{t('units.perFoot')}</Text>
               </>
             )}
           </View>

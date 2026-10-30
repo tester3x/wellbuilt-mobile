@@ -1,3 +1,4 @@
+import {displayConsumptionDaily} from '../src/utils/rateDisplay';
 import React from 'react';
 import {Pressable, Text, View, type TextStyle, type ViewStyle} from 'react-native';
 
@@ -20,7 +21,7 @@ type Props = {
 export function ProductionRateRow(props:Props) {
   const {afrDaily,overnightDaily,estimated,freshwater,consumptionDaily,showOvernight,onToggle,styles}=props;
   const available=!freshwater && Number.isFinite(overnightDaily) && (overnightDaily ?? 0)>0;
-  const daily=freshwater ? consumptionDaily ?? null : showOvernight && available ? overnightDaily! : afrDaily;
+  const daily=freshwater ? (consumptionDaily != null && Number.isFinite(consumptionDaily) && consumptionDaily >= 0 ? consumptionDaily : null) : showOvernight && available ? overnightDaily! : afrDaily;
   const hourly=daily==null ? '--' : freshwater ? (daily/24).toFixed(1) : Math.round(daily/24*10)/10;
   const suffix=!available ? ' 🔒' : showOvernight ? (estimated ? ' ON ≈' : ' ON') : '';
   return <Pressable testID="production-rate-toggle" accessibilityRole="button"
@@ -30,7 +31,7 @@ export function ProductionRateRow(props:Props) {
     <View style={styles.statsRow}>
       <Text style={styles.statLeft}>{hourly} {props.hourUnit}</Text>
       <Text style={styles.statDivider}>•</Text>
-      <Text style={styles.statRight}>{daily ?? '--'} {props.dayUnit}{suffix}</Text>
+      <Text style={styles.statRight}>{(freshwater ? displayConsumptionDaily(daily) : daily) ?? '--'} {props.dayUnit}{suffix}</Text>
     </View>
   </Pressable>;
 }

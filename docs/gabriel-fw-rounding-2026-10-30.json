@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-30",
+  "scope": "Gabriel freshwater consumption math and display rounding",
+  "checkout": "C:/dev/wbm-stale-level-20261005",
+  "branch": "codex/wbm-stale-level-20261005",
+  "evidence": "User screenshot: Gabriel 3/7, 37.51570449074099 BBL/day, 1.6 BBL/hour, 2h7m57s/in, N/A/ft, 11ft11in, 480 BBL, 320 BBL headroom.",
+  "findings": [
+    "Freshwater daily rate was interpolated without display rounding.",
+    "Freshwater snapshot has numeric minutes/foot but no legacy formatted flowRate string; time/foot incorrectly used that missing string.",
+    "For 40 BBL/foot, this rate implies 2h7m57s/in and 25h35m21s/ft. Projection consumes dailyBBL/BBLperFoot per day.",
+    "Independent floor-inch and nearest-whole-BBL display can show 11ft11in and 480 BBL for a level just under 12ft. Preserve established floor-inch convention.",
+    "At 12ft in 20ft tanks, 40 BBL/foot gives 320 BBL headroom and 160 BBL to the 8ft minimum."
+  ],
+  "changes": [
+    "Round fresh-water daily display to one decimal; keep raw precision for hourly and forecast calculations.",
+    "Display freshwater time/foot from numeric flowRateMinutes; leave production-water string display unchanged.",
+    "Show unavailable instead of NaN, Infinity or negative consumption rates."
+  ],
+  "checks": {
+    "typescript": "passed",
+    "jest": "142 suites / 1421 tests passed; runner reported lingering async handles after completion",
+    "retiredCodeGuard": "passed",
+    "gitDiffCheck": "passed"
+  },
+  "limits": [
+    "No live backend configuration or operational inventory was changed. Screenshot rate is a regression fixture, not a new measured consumption setting.",
+    "No new APK built or installed for this change; device acceptance remains pending."
+  ]
+}

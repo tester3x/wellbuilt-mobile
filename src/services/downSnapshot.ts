@@ -56,9 +56,11 @@ export function resolveSnapshotLevelFeet(input: {
 }
 
 export function startingLevelFromSnapshot(snapshot: {
+  pipelineHoldingLevelFeet?: number;
   lastPullBottomLevelFeet?: number;
   levelFeet?: number;
 }): number {
+  if(typeof snapshot.pipelineHoldingLevelFeet === "number") return snapshot.pipelineHoldingLevelFeet;
   const bottom = snapshot.lastPullBottomLevelFeet;
   if (typeof bottom === 'number' && bottom > 0) return bottom;
   const level = snapshot.levelFeet;
@@ -136,6 +138,7 @@ export function buildWellRenderSnapshot(input: {
 /** Same projection on initial load, navigation, and periodic refresh. */
 export function estimatedSnapshotLevel(
   snapshot: {
+    pipelineHoldingLevelFeet?: number;
     routeType?: 'produced-water' | 'freshwater';
     dailyBbl?: number | null;
     bblPerFoot?: number;
@@ -150,6 +153,7 @@ export function estimatedSnapshotLevel(
   tankHeight?: number,
 ): number {
   const height = resolveTankHeight(tankHeight);
+  if(typeof snapshot.pipelineHoldingLevelFeet === "number" && !snapshot.isDown) return Math.min(height,Math.max(0,snapshot.pipelineHoldingLevelFeet));
   if (snapshot.routeType === 'freshwater') return projectedLevel('freshwater',snapshot.levelFeet ?? 0,
     new Date(snapshot.timestamp).toISOString(),new Date(now).toISOString(),snapshot.isDown ? 0 : snapshot.dailyBbl,
     snapshot.bblPerFoot || 0,height) ?? 0;

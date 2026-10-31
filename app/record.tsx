@@ -455,7 +455,7 @@ function RecordScreenInner() {
       }
 
       // Get flow rate from snapshot (now stored with level, not separately cached)
-      const flowMins = snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
+      const flowMins = snapshot?.pipelineHoldingLevelFeet != null ? 0 : snapshot?.flowRateMinutes ?? config?.avgFlowRateMinutes ?? 0;
       setFlowRateMinutes(flowMins);
       if (snapshot?.flowRate) {
         setFlowRate(snapshot.flowRate);

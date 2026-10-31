@@ -54,6 +54,7 @@ const DOUBLE_TAP_DELAY = 300; // Max ms between taps for double-tap
 // Well config interface - imported from wellConfig.ts
 
 interface WellSummaryData {
+  pipelineHoldingLevelFeet?: number;
   routeType?: 'produced-water' | 'freshwater';
   displayName?: string;
   unavailable?: boolean;
@@ -150,7 +151,7 @@ function getTimeAtLevel(well: WellSummaryData, targetFeet: number): Date | null 
   if (targetFeet > resolveTankHeight(well.tankHeight)) return null;
   const currentLevel = getCurrentLevel(well);
   if (currentLevel >= targetFeet) return new Date(); // Already there
-  if (well.isDown || well.flowRateMinutes <= 0) return null;
+  if (well.pipelineHoldingLevelFeet != null || well.isDown || well.flowRateMinutes <= 0) return null;
   const feetToGo = targetFeet - currentLevel;
   const minutesToGo = feetToGo * well.flowRateMinutes;
   return new Date(Date.now() + minutesToGo * 60000);
@@ -159,7 +160,7 @@ function getTimeAtLevel(well: WellSummaryData, targetFeet: number): Date | null 
 // Calculate when well originally became ready (for frozen ready time display)
 // This calculates backwards from current level to find when it crossed the ready threshold
 function getTimeWhenBecameReady(well: WellSummaryData, readyLevel: number): Date | null {
-  if (well.isDown || well.flowRateMinutes <= 0) return null;
+  if (well.pipelineHoldingLevelFeet != null || well.isDown || well.flowRateMinutes <= 0) return null;
   const currentLevel = getCurrentLevel(well);
   if (currentLevel < readyLevel) return null; // Not ready yet
 
@@ -291,6 +292,7 @@ export default function SummaryScreen() {
 
         summaryData.push({
           wellName,
+          pipelineHoldingLevelFeet:snapshot?.pipelineHoldingLevelFeet,
           routeType:config?.routeType,bblPerFoot:config?.bblPerFoot,displayName:config?.displayName,unavailable:snapshot?.unavailable,dailyBbl:snapshot?.dailyBbl,
           tankHeight: resolveTankHeight(config?.tankHeight),
           route,
@@ -592,7 +594,9 @@ export default function SummaryScreen() {
     }
 
     let readyParts: { time: string; date: string };
-    if (well.isDown) {
+    if (well.pipelineHoldingLevelFeet != null && !well.isDown) {
+      readyParts={time:'Pipeline',date:'Level held'};
+    } else if (well.isDown) {
       readyParts = isReady
         ? { time: t('summary.columnReady'), date: t('summary.down') }
         : { time: t('summary.down'), date: '' };

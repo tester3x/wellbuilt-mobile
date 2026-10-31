@@ -1,3 +1,4 @@
+import {pipelineDisplay, pipelineConfigForWell, type PipelineConfig} from './pipelineOperation';
 // src/services/wellHistory.ts
 // Stores last pull data per well locally on device
 // Used to estimate current level without hitting the DB
@@ -227,6 +228,8 @@ export async function clearAllLevelSnapshots(): Promise<void> {
 const SNAPSHOT_KEY = "@wellbuilt_level_snapshots";
 
 export interface LevelSnapshot {
+  pipelineHoldingLevelFeet?: number;
+  pipelineLevelAssumed?: boolean;
   routeType?: 'produced-water' | 'freshwater';
   dailyBbl?: number | null;
   bblPerFoot?: number;
@@ -390,7 +393,7 @@ export async function saveLevelSnapshot(
   }
 }
 
-export async function getLevelSnapshot(wellName: string, config?: {
+export async function getLevelSnapshot(wellName: string, config?: PipelineConfig & {
   routeType?: 'produced-water' | 'freshwater'; inventoryGroupId?: string; bblPerFoot?: number;
 }): Promise<LevelSnapshot | null> {
   if (config?.routeType === 'freshwater' && config.inventoryGroupId) {
@@ -403,11 +406,11 @@ export async function getLevelSnapshot(wellName: string, config?: {
       flowRateMinutes:status?.dailyUseBbl ? 1440*(config.bblPerFoot || 0)/status.dailyUseBbl : 0};
   }
   if (Object.keys(cachedSnapshots).length === 0) await loadLevelSnapshots();
-  return cachedSnapshots[wellName] || null;
+  return pipelineSnapshot(cachedSnapshots[wellName] || null, config || pipelineConfigForWell(wellName));
 }
 
 export function getLevelSnapshotSync(wellName: string): LevelSnapshot | null {
-  return cachedSnapshots[wellName] || null;
+  return pipelineSnapshot(cachedSnapshots[wellName] || null, pipelineConfigForWell(wellName));
 }
 
 /**
@@ -517,4 +520,11 @@ export async function cleanupStalePendingPulls(): Promise<void> {
   } catch (error) {
     console.error('[WellHistory] Error cleaning up pending pulls:', error);
   }
+}
+
+function pipelineSnapshot(snapshot:LevelSnapshot|null, config:PipelineConfig|undefined):LevelSnapshot|null {
+  const p=pipelineDisplay(config);if(!p || !snapshot)return snapshot;
+  return {...snapshot,isDown:false,levelFeet:p.holdingLevelFeet,pipelineHoldingLevelFeet:p.holdingLevelFeet,pipelineLevelAssumed:p.assumed,
+    flowRate:`${Math.floor(p.productionMinutesPerFoot/60)}:${String(Math.floor(p.productionMinutesPerFoot)%60).padStart(2,'0')}:${String(Math.round((p.productionMinutesPerFoot%1)*60)).padStart(2,'0')}`,
+    flowRateMinutes:p.productionMinutesPerFoot,windowBblsDay:p.productionBblsDay,overnightBblsDay:undefined};
 }

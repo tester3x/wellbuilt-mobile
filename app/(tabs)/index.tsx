@@ -964,6 +964,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
   if (wellDown) {
     readyAtText = t('common.offline');
+  } else if (levelSnapshot?.pipelineHoldingLevelFeet != null) {
+    readyAtText = 'Pipeline running - level held';
   } else if (wellConfig?.routeType === 'freshwater') {
     const after=planningFeet == null ? null : planningFeet+Math.min(sliderFeet,tankHeightFeet-planningFeet);
     const minimum=wellConfig.allowedBottom;
@@ -1014,6 +1016,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
       return { text: t('well.wellIsDown', 'Well is down'), isReady: false, loads: 0 };
     }
 
+    if(levelSnapshot?.pipelineHoldingLevelFeet != null) return {text:'Pipeline running',isReady:false,loads:0};
     const currentLevel = displayFeet;
     const allowedBottom = wellConfig?.allowedBottom ?? 3;
     const bblFt = bblsPerFoot;
@@ -1439,6 +1442,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
             )}
           </View>
         </Pressable>
+        {levelSnapshot?.pipelineHoldingLevelFeet != null && <Text style={{color:"#94a3b8",textAlign:"center"}}>Pipeline running - {levelSnapshot.pipelineLevelAssumed ? "assumed " : ""}{levelSnapshot.pipelineHoldingLevelFeet} ft holding level - net rise 0</Text>}
         <ProductionRateRow
           afrDaily={afrBblsPerDay}
           overnightDaily={levelSnapshot?.overnightBblsDay}

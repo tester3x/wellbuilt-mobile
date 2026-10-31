@@ -75,6 +75,7 @@ export function getIsSyncing(): boolean {
 }
 
 interface ResponsePacket {
+  pipelineRunning?: boolean;
   wellName: string;
   currentLevel: string;
   flowRate: string;
@@ -182,7 +183,7 @@ export async function processResponsePacket(packet: ResponsePacket): Promise<voi
 
     // Schedule alert based on flow rate from snapshot (active wells only)
     const snapshot = getLevelSnapshotSync(packet.wellName);
-    if (!wellIsDown && snapshot && snapshot.flowRateMinutes && snapshot.flowRateMinutes > 0) {
+    if (!packet.pipelineRunning && !wellIsDown && snapshot && snapshot.flowRateMinutes && snapshot.flowRateMinutes > 0) {
       let snapshotTimestamp = Date.now();
       // Prefer timestampUTC (ISO 8601) for accurate parsing
       const tsParse = packet.timestampUTC || packet.timestamp;

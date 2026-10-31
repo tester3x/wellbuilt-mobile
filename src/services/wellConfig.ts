@@ -1,3 +1,4 @@
+import {registerPipelineConfigReader} from './pipelineOperation';
 // src/services/wellConfig.ts
 // Loads and caches well configuration from Firebase
 
@@ -66,6 +67,7 @@ const CACHE_BINDER_KEY = "@wellbuilt_well_config_binder";
 const FIREBASE_DATABASE_URL = "https://wellbuilt-sync-default-rtdb.firebaseio.com";
 
 export interface WellConfig {
+  pipelineOperation?: {mode:string;holdingLevelFeet:number;productionMinutesPerFoot:number;levelBasis:string};
   routeType?: 'produced-water' | 'freshwater';
   displayName?: string;
   inventoryGroupId?: string;
@@ -101,6 +103,7 @@ const DEFAULT_CONFIG: WellConfig = {
 };
 
 let cachedConfig: WellConfigMap | null = null;
+registerPipelineConfigReader(name=>cachedConfig?.[name]);
 let cachedEnvelope: WbmBootstrapEnvelope | null = null;
 let cachedAssignedRoutes: string[] | null = null;
 let cachedAssignedWells: string[] | null = null;

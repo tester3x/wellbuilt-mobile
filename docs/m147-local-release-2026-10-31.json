@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-11-01T02:59:59.797557+00:00",
+  "artifact": {
+    "sourceCommit": "f7b50cf563d10a91ce15d98db8f158e737645bca",
+    "versionCode": 147,
+    "versionName": "2.1.0",
+    "packageId": "com.wellbuiltmobile.app",
+    "sha256": "f4d76d692f809008d1358a6fd9e54455953c82d508738576d9afbee8aada02dc",
+    "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+    "builtAtUtc": "2026-11-01T02:56:01.938924+00:00",
+    "localArtifact": "C:\\dev\\tmp\\WB-M-v147-f7b50cf-local.apk",
+    "method": "Registered-home local Android SDK/JDK17/Gradle; account-device-test; arm64-v8a",
+    "embeddedMarkers": {
+      "wellDisplayOrder": true,
+      "pickerWellIndex": true,
+      "disableIntervalMomentum": true,
+      "well-phone-panel": true,
+      "Pipeline running": true
+    },
+    "checks": "Exact-source TypeScript;145 Jest suites/1440 tests;19 release/retirement regressions; mandatory fresh reconciliation and original-signer package/APK checks passed.",
+    "reconciliation": "Reviewed full delta C:/dev/tmp/wbm147-baseline-delta-private.patch plus committed picker fix11a4433 and147metadata: existing M146 pipeline display support remains configuration-gated and inactive on current wells, no backend or live configuration activation; common immutable route sort for recovery/success/hide, incomplete route metadata preserves prior eligible order, picker name snapshot and current identity-based confirmation. No Firestore read added to swipe/search, no input/pull data or selection eligibility changed. Prior M145 receipts and M146 preserved APK provenance.42 remote branches,41 non-active exact tips match previous reviewed disposition. Other-machine unpushed work cannot be discovered.",
+    "verification": "S24 first independently pulled base APK/version/hash match; native picker search with no-match and exact-name selection, cancel retains Gabriel1/index1of20, reopen retains order, swipe1->2->1 predictable. Same artifact independently pulled from ZFold147; 78-well native search reaches Gunslinger3/index9, reopened picker retains Gabriels-to-Pipeline boundary order and selected Gunslinger3; cancel/swipe reverse reaches Thor1/index8 with grouping retained. Restored original Gabriel1 by name. Folding/landscape and original intermittent failure trigger not reproduced.",
+    "buildAttemptNote": "First attempt failed before JS bundle because caller omitted existing local signing environment file paths. Same exact reserved source147 rebuilt successfully with unchanged approved credentials and account-device-test profile. No cloud fallback or signing/source changes."
+  },
+  "reservation": {
+    "tag": "android-release-v147",
+    "sourceCommit": "f7b50cf563d10a91ce15d98db8f158e737645bca"
+  },
+  "checks": [
+    {
+      "sourceCommit": "f7b50cf563d10a91ce15d98db8f158e737645bca",
+      "command": "node node_modules/typescript/bin/tsc --noEmit",
+      "result": "passed",
+      "evidence": "C:/dev/tmp/wbm147-exact-types-private.log"
+    },
+    {
+      "sourceCommit": "f7b50cf563d10a91ce15d98db8f158e737645bca",
+      "command": "node node_modules/jest/bin/jest.js --runInBand",
+      "result": "passed",
+      "evidence": "C:/dev/tmp/wbm147-exact-all-tests-private.log"
+    },
+    {
+      "sourceCommit": "f7b50cf563d10a91ce15d98db8f158e737645bca",
+      "command": "node --test scripts/release-preflight.test.cjs scripts/retired-code-guard.test.cjs",
+      "result": "passed",
+      "evidence": "C:/dev/tmp/wbm147-exact-gate-tests-private.log"
+    }
+  ],
+  "devices": [
+    {
+      "serial": "R5CX15HEGQB",
+      "package": "com.wellbuiltmobile.app",
+      "version": "versionCode=147 minSdk=24 targetSdk=36\nversionName=2.1.0",
+      "sha256": "f4d76d692f809008d1358a6fd9e54455953c82d508738576d9afbee8aada02dc",
+      "screenshot": "C:/dev/tmp/wbm147-s24-startup-private.png"
+    },
+    {
+      "serial": "RFGL23VJCED",
+      "package": "com.wellbuiltmobile.app",
+      "version": "versionCode=147 minSdk=24 targetSdk=36\nversionName=2.1.0",
+      "sha256": "f4d76d692f809008d1358a6fd9e54455953c82d508738576d9afbee8aada02dc",
+      "screenshot": "C:/dev/tmp/wbm147-zfold-startup-private.png"
+    }
+  ],
+  "nativeEvidencePrivate": [
+    "C:/dev/tmp/wbm147-s24-picker-private.png",
+    "C:/dev/tmp/wbm147-s24-after-cancel-private.xml",
+    "C:/dev/tmp/wbm147-s24-selected-private.xml",
+    "C:/dev/tmp/wbm147-s24-restored-private.xml",
+    "C:/dev/tmp/wbm147-zfold-reopened-private.png",
+    "C:/dev/tmp/wbm147-zfold-boundary-private.xml"
+  ],
+  "preservation": "No job/shift/duty actions, level/pull edits, assignment changes, hide/show preference edits or pipeline activation. Existing accounts and data retained. Selected well navigation restored."
+}

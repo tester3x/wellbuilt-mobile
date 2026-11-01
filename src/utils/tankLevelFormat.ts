@@ -20,9 +20,9 @@ function parseInchesComponent(s: string): number | null {
 }
 
 /**
- * Validate a keypad draft for feet-and-inches inch range (0–11).
+ * Validate a keypad draft for feet-and-inches inch range (0 inclusive, 12 exclusive).
  * Returns structured result with invalid substring range for inline display.
- * Partial drafts remain editable; only clearly parsed inches > 11 are rejected.
+ * Partial drafts remain editable; fractional inches through 11.9 remain valid.
  */
 export function validateMeasurementDraft(draft: string): MeasurementValidationResult {
   if (!draft) return { valid: true };
@@ -37,7 +37,7 @@ export function validateMeasurementDraft(draft: string): MeasurementValidationRe
   if (aposMatch) {
     const inchStr = aposMatch[2];
     const inches = parseInchesComponent(inchStr);
-    if (inches !== null && inches > 11) {
+    if (inches !== null && inches >= 12) {
       const invalidStart = aposMatch[1].length + 1;
       return {
         valid: false,
@@ -54,7 +54,7 @@ export function validateMeasurementDraft(draft: string): MeasurementValidationRe
   if (aposPartial) {
     const inchStr = aposPartial[2];
     const inches = parseInchesComponent(inchStr);
-    if (inches !== null && inches > 11) {
+    if (inches !== null && inches >= 12) {
       const invalidStart = aposPartial[1].length + 1;
       return {
         valid: false,
@@ -74,7 +74,7 @@ export function validateMeasurementDraft(draft: string): MeasurementValidationRe
   if (spaceMatch) {
     const inchStr = spaceMatch[3];
     const inches = parseInchesComponent(inchStr);
-    if (inches !== null && inches > 11) {
+    if (inches !== null && inches >= 12) {
       const invalidStart = spaceMatch[1].length + spaceMatch[2].length;
       return {
         valid: false,
@@ -94,7 +94,7 @@ export function validateMeasurementDraft(draft: string): MeasurementValidationRe
     const inchOnly = draft.match(/^(\d+)(")$/);
     if (inchOnly) {
       const inches = parseInchesComponent(inchOnly[1]);
-      if (inches !== null && inches > 11) {
+      if (inches !== null && inches >= 12) {
         return {
           valid: false,
           reason: 'inches_out_of_range',

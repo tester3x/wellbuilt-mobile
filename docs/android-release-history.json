@@ -3,7 +3,7 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 145,
+  "versionCodeFloor": 146,
   "observedAt": "2026-10-30T19:26:47.053453+00:00",
   "installedReports": [
     {
@@ -814,6 +814,17 @@
           "acceptance": "In-place installation/base hash/version verified; current foreground app preserved; launch and three display states pending"
         }
       ]
+    },
+    {
+      "sourceCommit": "bb3e204c3ed3bcda4902a24478ad2642471d3375",
+      "versionCode": 146,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "7683f5083e21e6f051b2906afba9ac7660931965580ae80f6843d2abd6a3a616",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "localArtifact": "C:/dev/tmp/WB-M-v146-bb3e204-local.apk",
+      "method": "Registered-home local Android SDK/JDK17/Gradle, original signer, immutable android-release-v146",
+      "verification": "APK package/version/signature/hash independently verified before preserving artifact. Built earlier; never installed. Superseded by M147 picker-order repair. No pipeline activation."
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",

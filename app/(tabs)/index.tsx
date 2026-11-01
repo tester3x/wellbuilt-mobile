@@ -1,3 +1,4 @@
+import {wellDisplayOrder,pickerWellIndex} from '../../src/utils/wellDisplayOrder';
 import {formatRateDuration} from '../../src/utils/rateDisplay';
 import {ProductionRateRow} from '../../components/ProductionRateRow';
 import {SliderInfoSlot} from '../../components/SliderInfoSlot';
@@ -1682,6 +1683,8 @@ export default function MainScreen() {
     eligible: string[];
   } | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerWells,setPickerWells]=useState<string[]>([]);
+  const routeOrderRef=useRef<unknown>([]);
   const [showMore, setShowMore] = useState(false); // WB-M "More" sheet (Route Me / Summary / Switch Apps)
   const [tempSelectedIndex, setTempSelectedIndex] = useState(0);
   const [wellSearch, setWellSearch] = useState('');
@@ -2063,33 +2066,8 @@ export default function MainScreen() {
             routeOrder = [];
           }
 
-          // Sort wells by route order, then alphabetically within each route
-          if (config) {
-            filteredWells.sort((a, b) => {
-              const routeA = config![a]?.route || 'Unknown';
-              const routeB = config![b]?.route || 'Unknown';
+          routeOrderRef.current=routeOrder;
 
-              // If we have a saved route order, use it
-              if (routeOrder.length > 0) {
-                const orderA = routeOrder.indexOf(routeA);
-                const orderB = routeOrder.indexOf(routeB);
-
-                // Both routes in saved order
-                if (orderA !== -1 && orderB !== -1) {
-                  if (orderA !== orderB) return orderA - orderB;
-                  return a.localeCompare(b); // Same route, alphabetical
-                }
-                // Only A in saved order - A comes first
-                if (orderA !== -1) return -1;
-                // Only B in saved order - B comes first
-                if (orderB !== -1) return 1;
-              }
-
-              // No saved order or routes not in saved order - alphabetical by route then name
-              if (routeA !== routeB) return routeA.localeCompare(routeB);
-              return a.localeCompare(b);
-            });
-          }
         } catch (e) {
           // CRITICAL CATCH: Something unexpected blew up above.
           // Ensure we still load SOMETHING — try to get wells from config as last resort.
@@ -2142,6 +2120,7 @@ export default function MainScreen() {
 
         // Set wells — if we got results, update the list (replaces instant cache if it was used)
         if (filteredWells.length > 0) {
+          filteredWells=wellDisplayOrder(filteredWells,config,routeOrderRef.current,wellCatalogueRef.current);
           console.log('[Main] Loaded', filteredWells.length, 'wells');
           const previousVisible = visibleWellRef.current;
           const retained = filteredWells.indexOf(previousVisible.well || '');
@@ -2350,13 +2329,14 @@ export default function MainScreen() {
     pagerInteraction.current=false;
   },[handlePagerPosition]);
 
-  const matchingPickerWells = wells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
+  const matchingPickerWells = pickerWells.filter(name => name.toLocaleLowerCase().includes(wellSearchQuery));
 
   // Open picker for well selection
   const openPicker = (index=currentIndex) => {
     pagerInteraction.current=false;
     pagerResizing.current=false;
     setWellSearch('');
+    setPickerWells([...wells]);
     setTempSelectedIndex(index);
     lastTickIndex.current = index;
     setPickerScrolling(false);
@@ -2365,10 +2345,10 @@ export default function MainScreen() {
 
   const confirmPicker = () => {
     // Save current as previous before changing
-    if (tempSelectedIndex !== currentIndex) {
-      captureTransitionStart();
-    }
-    setCurrentIndex(tempSelectedIndex);
+    const selectedIndex=pickerWellIndex(pickerWells,tempSelectedIndex,wells);
+    if(selectedIndex<0){setShowPicker(false);return;}
+    if (selectedIndex !== currentIndex) captureTransitionStart();
+    setCurrentIndex(selectedIndex);
     setPagerAlignRevision(n=>n+1);
     setShowPicker(false);
   };
@@ -2417,7 +2397,7 @@ export default function MainScreen() {
               const catalogue = selectionCatalogueRef.current;
               if (!catalogue) return;
               const selected = await loadSelectedWells(catalogue.owner, catalogue.eligible);
-              const newWells = selected.filter(w => w !== currentWell);
+              const newWells = wellDisplayOrder(selected.filter(w => w !== currentWell),wellConfigMap,routeOrderRef.current,wellCatalogueRef.current);
               await saveSelectedWells(catalogue.owner, catalogue.eligible, newWells);
               // Update local wells list - remove the current well
               setWells(newWells);
@@ -2807,7 +2787,7 @@ export default function MainScreen() {
                 <View style={styles.androidWheelHighlight} pointerEvents="none" />
                 <FlatList
                   ref={pickerListRef}
-                  data={wells}
+                  data={pickerWells}
                   keyExtractor={(item) => item}
                   style={styles.androidWheelList}
                   contentContainerStyle={{ paddingVertical: 100 }}
@@ -2817,7 +2797,7 @@ export default function MainScreen() {
                   scrollEventThrottle={16}
                   onScroll={(e) => {
                     const index = Math.round(e.nativeEvent.contentOffset.y / 50);
-                    const clampedIndex = Math.max(0, Math.min(index, wells.length - 1));
+                    const clampedIndex = Math.max(0, Math.min(index, pickerWells.length - 1));
                     if (clampedIndex !== tempSelectedIndex) {
                       setTempSelectedIndex(clampedIndex);
                       // Play tick on scroll if index changed
@@ -2831,7 +2811,7 @@ export default function MainScreen() {
                   onMomentumScrollEnd={() => {
                     setPickerScrolling(false);
                   }}
-                  initialScrollIndex={Math.min(currentIndex, Math.max(0, wells.length - 1))}
+                  initialScrollIndex={Math.min(tempSelectedIndex, Math.max(0, pickerWells.length - 1))}
                   getItemLayout={(_, index) => ({
                     length: 50,
                     offset: 50 * index,
@@ -2841,7 +2821,7 @@ export default function MainScreen() {
                     // Check if this is first well in a new route
                     const route = wellConfigMap?.[item]?.route || '';
                     const routeColor = getRouteColor(route);
-                    const prevWell = index > 0 ? wells[index - 1] : null;
+                    const prevWell = index > 0 ? pickerWells[index - 1] : null;
                     const prevRoute = prevWell ? (wellConfigMap?.[prevWell]?.route || '') : '';
                     const isFirstInRoute = route !== prevRoute;
 
@@ -2851,10 +2831,7 @@ export default function MainScreen() {
                         onPress={() => {
                           if (index === tempSelectedIndex) {
                             // Tap on highlighted well - select it and close
-                            captureTransitionStart();
-                            setCurrentIndex(tempSelectedIndex);
-                            setPagerAlignRevision(n=>n+1);
-                            setShowPicker(false);
+                            confirmPicker();
                           } else {
                             // Tap on non-highlighted well - scroll to center it
                             pickerListRef.current?.scrollToIndex({ index, animated: true });

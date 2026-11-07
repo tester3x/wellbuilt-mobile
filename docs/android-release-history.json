@@ -3,7 +3,7 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 147,
+  "versionCodeFloor": 148,
   "observedAt": "2026-10-30T19:26:47.053453+00:00",
   "installedReports": [
     {
@@ -39,6 +39,15 @@
       "serial": "RFGL23VJCED",
       "checkedAt": "2026-10-30T05:14:26.732467+00:00",
       "provenance": "Independent ADB package readback, pulled base APK hash matches verified artifact; existing release signer preserved."
+    },
+    {
+      "app": "WB-M",
+      "packageId": "com.wellbuiltmobile.app",
+      "versionCode": 148,
+      "device": "S24",
+      "serial": "R5CX15HEGQB",
+      "checkedAt": "2026-11-07T01:45:12.352Z",
+      "provenance": "Independent ADB package/version/base APK hash match; startup and native picker smoke passed."
     }
   ],
   "artifacts": [
@@ -847,6 +856,19 @@
       "reconciliation": "Reviewed full delta C:/dev/tmp/wbm147-baseline-delta-private.patch plus committed picker fix11a4433 and147metadata: existing M146 pipeline display support remains configuration-gated and inactive on current wells, no backend or live configuration activation; common immutable route sort for recovery/success/hide, incomplete route metadata preserves prior eligible order, picker name snapshot and current identity-based confirmation. No Firestore read added to swipe/search, no input/pull data or selection eligibility changed. Prior M145 receipts and M146 preserved APK provenance.42 remote branches,41 non-active exact tips match previous reviewed disposition. Other-machine unpushed work cannot be discovered.",
       "verification": "S24 first independently pulled base APK/version/hash match; native picker search with no-match and exact-name selection, cancel retains Gabriel1/index1of20, reopen retains order, swipe1->2->1 predictable. Same artifact independently pulled from ZFold147; 78-well native search reaches Gunslinger3/index9, reopened picker retains Gabriels-to-Pipeline boundary order and selected Gunslinger3; cancel/swipe reverse reaches Thor1/index8 with grouping retained. Restored original Gabriel1 by name. Folding/landscape and original intermittent failure trigger not reproduced.",
       "buildAttemptNote": "First attempt failed before JS bundle because caller omitted existing local signing environment file paths. Same exact reserved source147 rebuilt successfully with unchanged approved credentials and account-device-test profile. No cloud fallback or signing/source changes."
+    },
+    {
+      "sourceCommit": "cf8f697f94657b65ea0fe51fcd323d195a83d739",
+      "versionCode": 148,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "81d43230d7ee9d9458dec6442ec65fa674f555943a91c754b08fb1b93ad3dfea",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-11-07T01:41:09.6119353Z",
+      "localArtifact": "C:/dev/tmp/WB-M-v148-cf8f697-local.apk",
+      "method": "Registered-home local Android SDK/JDK17/Gradle, arm64-v8a; immutable android-release-v148 reservation",
+      "checks": "Exact-source TypeScript, 1,476 Jest tests and 19 release/retirement checks passed. All 41 other published branch tips matched M147 reconciliation. Unpushed work was unavailable.",
+      "verification": "S24 installed in place. Package, version and base APK SHA-256 readback matched signed artifact. Cold launch and picker exact-name, no-match and Cancel retaining Gabriel 2 passed. Fold and keypad device smoke were outside this check."
     }
   ],
   "knownOtherMachineBranch": "codex/wbm-stale-level-20261005",

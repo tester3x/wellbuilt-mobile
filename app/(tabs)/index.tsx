@@ -2765,7 +2765,7 @@ export default function MainScreen() {
                 <FlatList
                   data={matchingPickerWells}
                   keyExtractor={item => item}
-                  style={styles.androidWheelList}
+                  style={[styles.androidWheelList, styles.wellSearchResults]}
                   keyboardShouldPersistTaps="handled"
                   ListEmptyComponent={<Text style={styles.wellSearchEmpty}>{t('historyExtra.noWellsFound')}</Text>}
                   renderItem={({item}) => (
@@ -3532,8 +3532,8 @@ const styles = StyleSheet.create({
   pickerContainer: {
     backgroundColor: '#1F2937',
     borderRadius: 16,
-    width: wp('80%'),
-    maxHeight: hp('50%'),
+    width: '80%',
+    maxHeight: '90%',
     overflow: 'hidden',
   },
   wellSearchContainer: {
@@ -3541,12 +3541,13 @@ const styles = StyleSheet.create({
     marginVertical: 10, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#111827',
   },
   wellSearchInput: {flex: 1, color: 'white', minHeight: 44, paddingHorizontal: 8, fontSize: 16},
+  wellSearchResults: {flexShrink: 1},
   wellSearchEmpty: {color: '#9CA3AF', textAlign: 'center', padding: 24},
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: wp('4%'),
+    paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#374151',

@@ -330,6 +330,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     return ()=>console.log('[WellPager] unmount',wellName);
   },[wellName]);
   const [sliderFeet, setSliderFeet] = useState(10.5);
+  const sliderEditRevision = useRef(0);
   const [deliveryAt,setDeliveryAt]=useState<Date | null>(null);
   const [deliveryPicker,setDeliveryPicker]=useState<'date'|'time'|null>(null);
   const [deliveryBase,setDeliveryBase]=useState<{feet:number|null;rate:number|null;isDown:boolean}|null>(null);
@@ -555,6 +556,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
         // Load well config - MUST await since it's async
         const config = await getWellConfig(wellName);
         if (!isMounted) return;
+        const sliderRevision = sliderEditRevision.current;
         const { snapshot, pending, pull, slider: savedSliderPos } = await readWellDisplayData(wellName, config);
         if (!isMounted) return;
         setWellConfig(config);
@@ -634,7 +636,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
         }
 
         // Load persisted slider position (keeps driver's last setting)
-        setSliderFeet(Math.min(savedSliderPos, tankHeightFeet));
+        if (sliderEditRevision.current === sliderRevision) {
+          setSliderFeet(Math.min(savedSliderPos, tankHeightFeet));
+        }
 
         // Use pending pull from pre-check above (already fetched before setLevelSnapshot)
         if (pending) {
@@ -879,6 +883,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   // Above current: standard 3" grid (10'0", 10'3", 10'6"...)
   // Below current: 3" grid based on current level (auto-adjusts as tank fills)
   const handleSliderChange = useCallback((value: number) => {
+    if (!isActive || sliderLocked || wellDown || !Number.isFinite(value)) return;
+    sliderEditRevision.current += 1;
     if (wellConfig?.routeType === 'freshwater') {
       const feet=Math.max(0,Math.min(tankHeightFeet-(planningFeet ?? tankHeightFeet),Math.round(value*60)/60));
       setSliderFeet(feet); return;
@@ -909,7 +915,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
     // Save slider position to storage (persists across app restarts)
     saveSliderPosition(wellName, snappedValue);
-  }, [displayFeet, wellName, wellConfig, tankHeightFeet, planningFeet]);
+  }, [displayFeet, wellName, wellConfig, tankHeightFeet, planningFeet, isActive, sliderLocked, wellDown]);
 
   // Handle slider drag start - activate UI, cancel lock timer, and notify parent
   const handleSliderStart = useCallback(() => {

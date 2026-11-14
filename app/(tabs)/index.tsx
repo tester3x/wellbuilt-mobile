@@ -390,10 +390,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   // Pending pull / waiting state
   const [pendingPull, setPendingPull] = useState<PendingPull | null>(null);
   const wellDown = !!(pendingPull?.wellDown || levelSnapshot?.isDown);
-  // Unlocked is not dragging. Only the slider responder may claim the pager;
-  // hiding, locking, rotating or unmounting a card must release its claim.
+  // On phones, claim the pager before the next touch can start a swipe.
+  // In the wide layout, only an actual slider drag claims the pager.
   useEffect(() => {
     if (!isActive || sliderLocked || wellDown) onSliderActiveChange?.(false, wellName);
+    else if (!wideLayout) onSliderActiveChange?.(true, wellName);
     return () => onSliderActiveChange?.(false, wellName);
   }, [wideLayout, isActive, sliderLocked, wellDown, wellName, onSliderActiveChange]);
   // Removed: const [isWaiting, setIsWaiting] = useState(false);
@@ -924,7 +925,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   // Handle slider drag end - start lock timer and notify parent
   const handleSliderEnd = useCallback(() => {
     resetSliderLockTimer();
-    onSliderActiveChange?.(false, wellName);
+    if (wideLayout) onSliderActiveChange?.(false, wellName);
   }, [resetSliderLockTimer, onSliderActiveChange, wideLayout, wellName]);
 
   // Animated style for slider level/datetime fade
@@ -1706,7 +1707,10 @@ export default function MainScreen() {
   const [sliderActive, setSliderActive] = useState(false);
   const activeSliders = useRef(new Set<string>());
   const handleSliderActiveChange = useCallback((active:boolean,wellName:string) => {
-    if (active) activeSliders.current.add(wellName);
+    if (active) {
+      activeSliders.current.add(wellName);
+      pagerInteraction.current = false;
+    }
     else activeSliders.current.delete(wellName);
     setSliderActive(activeSliders.current.size > 0);
   }, []);
@@ -1750,6 +1754,7 @@ export default function MainScreen() {
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false); // Sync indicator
   const [currentWellHasDraft, setCurrentWellHasDraft] = useState(false); // Draft indicator for Pull button
   const [isViewer, setIsViewer] = useState(false); // Viewer-only mode (can't submit pulls)
+  const lastFocusRefresh = useRef(0);
   const [appForegroundCount, setAppForegroundCount] = useState(0); // Foreground and visible-screen catalogue refresh generation
   const [showOvernightBbls, setShowOvernightBbls] = useState(false); // Global overnight vs segment bbls/day toggle
   const lastTickIndex = useRef(0);
@@ -1916,8 +1921,7 @@ export default function MainScreen() {
       if (nextAppState === 'active') {
         startBackgroundSync();
         void syncOnForeground();
-        // Re-trigger well load — covers returning from dead zone while backgrounded
-        setAppForegroundCount(prev => prev + 1);
+        // Changed-well notifications refresh only the cards whose data changed.
       } else {
         stopBackgroundSync();
         // Auto-flush debug logs to Firebase when app goes to background
@@ -1966,8 +1970,13 @@ export default function MainScreen() {
       }
       wellRetryCount.current = 0;
 
-      // Bump refresh trigger to make WellView reload and check for pending
-      setRefreshTrigger(prev => prev + 1);
+      // Navigation focus can follow a local record edit. Periodic catalogue reads
+      // must not reload the cards or interrupt a slider interaction.
+      if (lastFocusRefresh.current !== appForegroundCount) {
+        lastFocusRefresh.current = appForegroundCount;
+      } else {
+        setRefreshTrigger(prev => prev + 1);
+      }
 
       let cancelled = false;
       const generation = getSessionGeneration();
@@ -2110,7 +2119,7 @@ export default function MainScreen() {
           }
         }
 
-        if (!isCurrentLoad()) return;
+        if (!isCurrentLoad() || activeSliders.current.size || pagerInteraction.current) return;
         if (catalogueResolved && filteredWells.length === 0) {
           setWells([]);
           setCurrentIndex(0);
@@ -2305,6 +2314,7 @@ export default function MainScreen() {
   },[]);
 
   const handlePagerDrag=useCallback((event?:{nativeEvent:{contentOffset:{x:number}}})=>{
+    if (activeSliders.current.size) return;
     pagerInteraction.current=true;
     pagerResizing.current=false;
     pagerExpectedOffset.current=null;

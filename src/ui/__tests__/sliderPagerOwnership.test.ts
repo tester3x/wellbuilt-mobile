@@ -45,3 +45,19 @@ test.each([{isActive:false},{sliderLocked:true},{wellDown:true}])('unavailable c
   execute(releaseEffect,{isActive:true,sliderLocked:false,wellDown:false,wellName:'Left',onSliderActiveChange:change,...state})();
   expect(change).toHaveBeenCalledWith(false,'Left');
 });
+
+
+test('a portrait card keeps pager ownership from unlock through the drag and until relock', () => {
+  const change = jest.fn();
+  const scope = {
+    wideLayout: false, isActive: true, sliderLocked: false, wellDown: false,
+    wellName: 'Selected well', onSliderActiveChange: change, resetSliderLockTimer: jest.fn(),
+  };
+  const cleanup = execute(releaseEffect, scope)();
+  expect(change).toHaveBeenCalledWith(true, 'Selected well');
+  change.mockClear();
+  handler('handleSliderEnd', scope)();
+  expect(change).not.toHaveBeenCalled();
+  cleanup();
+  expect(change).toHaveBeenCalledWith(false, 'Selected well');
+});

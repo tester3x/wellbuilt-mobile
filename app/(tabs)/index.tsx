@@ -315,6 +315,8 @@ interface WellViewProps {
   entryFraction: number; // Captured visible fraction of the departing well (0-1)
   registerFill?: (well: string, fill: SharedValue<number>) => () => void;
   refreshTrigger?: number; // Triggers data reload after sync
+  sliderLocked: boolean;
+  onSliderUnlock: () => void;
   onSliderActiveChange?: (active: boolean, wellName: string) => void; // Block FlatList scroll during slider use
   loadBbls?: number; // Load size in bbls for "next load ready" calculation
   onTankDoubleTap?: (wellName: string) => void; // Navigate to this tank's performance
@@ -323,7 +325,7 @@ interface WellViewProps {
   onToggleOvernightBbls?: () => void; // Toggle handler (persists to AsyncStorage)
 }
 
-const WellView = React.memo(function WellView({ wellName, isActive, entryPrepared, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, wideLayout = false, entryFraction, registerFill, refreshTrigger, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
+const WellView = React.memo(function WellView({ wellName, isActive, entryPrepared, cardWidth = SCREEN_WIDTH, viewportHeight = SCREEN_HEIGHT, wideLayout = false, entryFraction, registerFill, refreshTrigger, sliderLocked, onSliderUnlock, onSliderActiveChange, loadBbls = 140, onTankDoubleTap, onTankLongPress, showOvernightBbls = false, onToggleOvernightBbls }: WellViewProps) {
   const { t } = useTranslation();
   useEffect(()=>{
     console.log('[WellPager] mount',wellName);
@@ -347,7 +349,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   const [drainCompleteSignal, setDrainCompleteSignal] = useState(0); // Triggers live update effect after drain finishes
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [sliderUIActive, setSliderUIActive] = useState(false); // Controls slider level/datetime visibility
-  const [sliderLocked, setSliderLocked] = useState(true); // Slider locked state
   const [sliderPeeking, setSliderPeeking] = useState(false); // Tap to peek values without unlocking
   const [showTankMath, setShowTankMath] = useState(false); // Tap first metrics row → peek bbl/in • bbl/ft (~4s, all wells)
   // showOvernightBbls is now a prop from MainScreen (global toggle)
@@ -381,7 +382,6 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   const sliderOpacity = useSharedValue(0); // For fade animation
 
   // Slider timing constants
-  const SLIDER_LOCK_DELAY = 5000; // 5 seconds of inactivity to lock
   const DOUBLE_TAP_DELAY = 300; // Max ms between taps for double-tap
   const PEEK_DURATION = 3000; // 3 seconds to show values on single tap
 
@@ -391,11 +391,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   // Pending pull / waiting state
   const [pendingPull, setPendingPull] = useState<PendingPull | null>(null);
   const wellDown = !!(pendingPull?.wellDown || levelSnapshot?.isDown);
-  // On phones, claim the pager before the next touch can start a swipe.
-  // In the wide layout, only an actual slider drag claims the pager.
+  // Only a slider drag claims the pager.
   useEffect(() => {
     if (!isActive || sliderLocked || wellDown) onSliderActiveChange?.(false, wellName);
-    else if (!wideLayout) onSliderActiveChange?.(true, wellName);
     return () => onSliderActiveChange?.(false, wellName);
   }, [wideLayout, isActive, sliderLocked, wellDown, wellName, onSliderActiveChange]);
   // Removed: const [isWaiting, setIsWaiting] = useState(false);
@@ -784,19 +782,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     };
   }, [levelSnapshot, wellDown, waterFraction, drainCompleteSignal, tankHeightFeet]);
 
-  // Reset slider lock timer - call after any slider interaction
-  const resetSliderLockTimer = useCallback(() => {
-    if (sliderLockTimerRef.current) {
-      clearTimeout(sliderLockTimerRef.current);
-      sliderLockTimerRef.current = null;
-    }
-    sliderLockTimerRef.current = setTimeout(() => {
-      setSliderLocked(true);
-      setSliderPeeking(false);
-      sliderOpacity.value = withTiming(0, { duration: 300 });
-      setTimeout(() => setSliderUIActive(false), 300);
-    }, SLIDER_LOCK_DELAY);
-  }, [sliderOpacity]);
+  useEffect(() => {
+    if (sliderLockTimerRef.current) clearTimeout(sliderLockTimerRef.current);
+    setSliderPeeking(false);
+    setSliderUIActive(!sliderLocked);
+    sliderOpacity.value = withTiming(sliderLocked ? 0 : 1, { duration: 200 });
+    lastTapTimeRef.current = 0;
+  }, [sliderLocked, sliderOpacity]);
 
   // Slider UI activation - fade in level/datetime
   const activateSliderUI = useCallback(() => {
@@ -815,12 +807,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
   const unlockSlider = useCallback(() => {
     if (wellDown) return;
-    setSliderLocked(false);
-    setSliderPeeking(false);
-    activateSliderUI();
-    resetSliderLockTimer();
-    lastTapTimeRef.current = 0;
-  }, [wellDown, activateSliderUI, resetSliderLockTimer]);
+    onSliderUnlock();
+  }, [wellDown, onSliderUnlock]);
 
   // Handle tap on slider track - single tap to peek, double tap to unlock
   const handleSliderTrackTap = useCallback(() => {
@@ -834,13 +822,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
       // Check for double-tap to unlock
       if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
         // Double tap - unlock the slider
-        setSliderLocked(false);
-        setSliderPeeking(false);
-        activateSliderUI();
-        // Start lock timer immediately
-        resetSliderLockTimer();
-        // Reset tap time to prevent triple-tap issues
-        lastTapTimeRef.current = 0;
+        onSliderUnlock();
       } else {
         // Single tap - peek values without unlocking
         setSliderPeeking(true);
@@ -862,9 +844,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     } else {
       // Already unlocked - just reset the lock timer
       activateSliderUI();
-      resetSliderLockTimer();
     }
-  }, [wellDown, sliderLocked, activateSliderUI, resetSliderLockTimer, sliderOpacity]);
+  }, [wellDown, sliderLocked, activateSliderUI, onSliderUnlock, sliderOpacity]);
 
   useEffect(()=>{
     if (wellConfig?.routeType !== 'freshwater' || !wellConfig.inventoryGroupId || !deliveryAt) {setDeliveryBase(null);return;}
@@ -930,9 +911,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
   // Handle slider drag end - start lock timer and notify parent
   const handleSliderEnd = useCallback(() => {
-    resetSliderLockTimer();
-    if (wideLayout) onSliderActiveChange?.(false, wellName);
-  }, [resetSliderLockTimer, onSliderActiveChange, wideLayout, wellName]);
+    onSliderActiveChange?.(false, wellName);
+  }, [onSliderActiveChange, wellName]);
 
   // Animated style for slider level/datetime fade
   const sliderInfoStyle = useAnimatedStyle(() => ({
@@ -1711,6 +1691,13 @@ export default function MainScreen() {
   const [wellRefreshes, setWellRefreshes] = useState<Record<string, number>>({});
   const [pickerScrolling, setPickerScrolling] = useState(false);
   const [sliderActive, setSliderActive] = useState(false);
+  const [sliderLocked, setSliderLocked] = useState(true);
+  const unlockWellSliders = useCallback(() => setSliderLocked(false), []);
+  useEffect(() => {
+    if (sliderLocked || sliderActive) return;
+    const timer = setTimeout(() => setSliderLocked(true), 5000);
+    return () => clearTimeout(timer);
+  }, [sliderLocked, sliderActive]);
   const activeSliders = useRef(new Set<string>());
   const handleSliderActiveChange = useCallback((active:boolean,wellName:string) => {
     if (active) {
@@ -2443,11 +2430,12 @@ export default function MainScreen() {
       <WellView wellName={item} cardWidth={cardWidth} viewportHeight={viewportHeight} wideLayout={false}
         isActive={index===currentIndex} entryPrepared={index>=currentIndex-columns && index<currentIndex+2*columns} entryFraction={entryFraction}
         registerFill={registerWellFill} refreshTrigger={refreshTrigger+(wellRefreshes[item] || 0)}
+        sliderLocked={sliderLocked} onSliderUnlock={unlockWellSliders}
         onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
         onTankDoubleTap={handleTankDoubleTap} onTankLongPress={handleTankLongPress}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
     </WellPagerCard>
-  ),[cardWidth,viewportHeight,currentIndex,columns,entryFraction,registerWellFill,refreshTrigger,wellRefreshes,handleSliderActiveChange,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  ),[cardWidth,viewportHeight,currentIndex,columns,entryFraction,registerWellFill,refreshTrigger,wellRefreshes,sliderLocked,unlockWellSliders,handleSliderActiveChange,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const renderLandscapeWell = useCallback(({ item, index }: { item: string; index: number }) => (
     <WellPagerCard width={cardWidth} wideLayout={true} onFocus={()=>setFocusedIndex(index)} header={
       <TouchableOpacity onPress={()=>{setFocusedIndex(index);openPicker(index);}} style={{alignItems:'center',padding:8}}>
@@ -2459,11 +2447,12 @@ export default function MainScreen() {
         isActive={index===currentIndex || index===currentIndex+1}
         entryPrepared={index>=currentIndex-columns && index<currentIndex+2*columns}
         entryFraction={entryFraction} registerFill={registerWellFill}
-        refreshTrigger={refreshTrigger+(wellRefreshes[item] || 0)} onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
+        refreshTrigger={refreshTrigger+(wellRefreshes[item] || 0)} sliderLocked={sliderLocked} onSliderUnlock={unlockWellSliders}
+        onSliderActiveChange={handleSliderActiveChange} loadBbls={loadBbls}
         onTankDoubleTap={handleTankDoubleTap} onTankLongPress={handleTankLongPress}
         showOvernightBbls={showOvernightBbls} onToggleOvernightBbls={handleToggleOvernightBbls}/>
     </WellPagerCard>
-  ),[cardWidth,viewportHeight,columns,currentIndex,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,registerWellFill,refreshTrigger,wellRefreshes,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
+  ),[cardWidth,viewportHeight,columns,currentIndex,sliderLocked,unlockWellSliders,handleSliderActiveChange,visibleWellIndices,actionIndex,wellConfigMap,entryFraction,registerWellFill,refreshTrigger,wellRefreshes,loadBbls,handleTankDoubleTap,handleTankLongPress,showOvernightBbls,handleToggleOvernightBbls]);
   const renderWell = columns===1 ? renderPortraitWell : renderLandscapeWell;
   const getItemLayout=(_:unknown,index:number)=>({length:cardWidth,offset:cardWidth*index,index});
 

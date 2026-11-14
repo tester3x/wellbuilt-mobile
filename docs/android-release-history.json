@@ -62,7 +62,7 @@
       "localArtifact": "C:/dev/release-artifacts/wbm-150/com.wellbuiltmobile.app-v150.apk",
       "method": "Registered-home Gradle arm64-v8a, android-release-v150.",
       "checks": "TypeScript, 21 focused tests including drag timing, release gate, APK identity and signing.",
-      "verification": "Installed S24 first, then Z Fold. Launched and confirmed version 150 via ADB on each. Physical drag timing not measured."
+      "verification": "Installed S24 first, then Z Fold. Launched and confirmed version 150 via ADB on each. On-device slider timing passed on S24 (Gabriel 2) and Z Fold (Gabriel 3). The slider stayed unlocked during an eight-second hold and about three seconds after release, then relocked by 5.3 seconds after release. Build 150 retained on both phones."
     },
     {
       "sourceCommit": "3e0c54d3e9cb015c7b253242940233889fc4ff97",

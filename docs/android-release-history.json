@@ -3,7 +3,7 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 148,
+  "versionCodeFloor": 149,
   "observedAt": "2026-10-30T19:26:47.053453+00:00",
   "installedReports": [
     {
@@ -51,6 +51,19 @@
     }
   ],
   "artifacts": [
+    {
+      "sourceCommit": "3e0c54d3e9cb015c7b253242940233889fc4ff97",
+      "versionCode": 149,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "929fa7c3d3f04ce673dc883ee45944465b2b3a4fcf40a892adc077e53bc51a51",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-11-14T17:19:55.794316+00:00",
+      "localArtifact": "C:\\dev\\release-artifacts\\wbm-149\\com.wellbuiltmobile.app-v149.apk",
+      "method": "Registered-home Android SDK/JDK/Gradle arm64-v8a; immutable android-release-v149 reservation.",
+      "checks": "TypeScript, 13 targeted Jest tests, release gate, APK identity and signature passed.",
+      "verification": "Installed S24 first, launched and confirmed version via ADB. Installed and confirmed version on Z Fold. Slider field behavior pending."
+    },
     {
       "sourceCommit": "1cdc7e89f4e11c3c17cd53ae8a818c4b0d3bb4c5",
       "versionCode": 119,

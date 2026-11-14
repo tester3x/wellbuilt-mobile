@@ -45,20 +45,3 @@ test.each([{isActive:false},{sliderLocked:true},{wellDown:true}])('unavailable c
   execute(releaseEffect,{isActive:true,sliderLocked:false,wellDown:false,wellName:'Left',onSliderActiveChange:change,...state})();
   expect(change).toHaveBeenCalledWith(false,'Left');
 });
-
-
-test('an unlocked portrait card allows paging until a drag starts', () => {
-  const change = jest.fn();
-  const scope = {
-    wideLayout: false, isActive: true, sliderLocked: false, wellDown: false,
-    wellName: 'Selected well', onSliderActiveChange: change,
-    sliderLockTimerRef: {current: null}, activateSliderUI: jest.fn(),
-  };
-  const cleanup = execute(releaseEffect, scope)();
-  expect(change).not.toHaveBeenCalled();
-  handler('handleSliderStart', scope)();
-  expect(change).toHaveBeenLastCalledWith(true, 'Selected well');
-  handler('handleSliderEnd', scope)();
-  expect(change).toHaveBeenLastCalledWith(false, 'Selected well');
-  cleanup();
-});

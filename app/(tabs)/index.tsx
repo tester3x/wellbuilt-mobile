@@ -879,7 +879,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   const planningTime = deliveryAt ?? new Date();
   // Handle slider changes with custom snapping
   // Above current: standard 3" grid (10'0", 10'3", 10'6"...)
-  // Below current: 3" grid based on current level (auto-adjusts as tank fills)
+  // Below current, snap the pull volume in five-barrel steps.
   const handleSliderChange = useCallback((value: number) => {
     if (!isActive || sliderLocked || wellDown || !Number.isFinite(value)) return;
     sliderEditRevision.current += 1;
@@ -900,10 +900,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
       // Above current: snap to standard 3" grid (0.25 ft increments from 0)
       snappedValue = Math.round(value * 4) / 4;
     } else {
-      // Below current: snap to 3" grid based on current level
-      const diff = reference - value;
-      const snappedDiff = Math.round(diff * 4) / 4;
-      snappedValue = reference - snappedDiff;
+      const barrelsPerFoot = getBblPerFootSync(wellName);
+      if (!Number.isFinite(barrelsPerFoot) || barrelsPerFoot <= 0) return;
+      const maxSteps = Math.floor((reference - sliderMin) * barrelsPerFoot / 5);
+      const steps = Math.min(maxSteps, Math.round((reference - value) * barrelsPerFoot / 5));
+      snappedValue = reference - steps * 5 / barrelsPerFoot;
     }
 
     // Clamp to slider range
@@ -991,7 +992,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     // The more we pull, the more hours forward we project
     isPlanningPull = true;
     const feetToPull = displayFeet - sliderFeet;
-    bblsToPull = Math.round(feetToPull * bblsPerFoot);
+    bblsToPull = Math.round(feetToPull * bblsPerFoot / 5) * 5;
 
     // Calculate hours forward: scale from 0 to MAX_PULL_HOURS based on pull amount
     // Use the ratio of feet pulled to total pullable feet (current level - min level)
@@ -1594,7 +1595,7 @@ wellConfig?.routeType === 'freshwater' && <View style={{alignItems:'center',padd
                     layoutScale={panelScale}
                     containerStyle={styles.slider}
                     dragGain={wideLayout ? 1 : undefined}
-                    trackClickable={!wideLayout}
+                    trackClickable={false}
                     thumbTouchSize={wideLayout ? {width:44,height:54} : undefined}
                     minimumValue={wellConfig?.routeType === 'freshwater' ? 0 : sliderMin}
                     maximumValue={wellConfig?.routeType === 'freshwater' ? Math.max(0.001,tankHeightFeet-(planningFeet ?? tankHeightFeet)) : tankHeightFeet}

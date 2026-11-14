@@ -375,6 +375,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   } : portraitStyles(cardWidth,viewportHeight,sceneScale),[contentWidth,sceneScale,fittedFold,wideLayout,cardWidth,viewportHeight]);
   const sliderInactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // An active drag must never be treated as slider inactivity.
+  const sliderDraggingRef = useRef(false);
   const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
   const lastTapTimeRef = useRef<number>(0); // For double-tap detection on slider
   const lastTankTapTimeRef = useRef<number>(0); // For double-tap detection on tank
@@ -788,7 +790,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
       clearTimeout(sliderLockTimerRef.current);
       sliderLockTimerRef.current = null;
     }
+    // Only run the lock countdown once the slider is no longer being dragged.
+    if (sliderDraggingRef.current) return;
     sliderLockTimerRef.current = setTimeout(() => {
+      if (sliderDraggingRef.current) return;
+      sliderLockTimerRef.current = null;
       setSliderLocked(true);
       setSliderPeeking(false);
       sliderOpacity.value = withTiming(0, { duration: 300 });
@@ -882,6 +888,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   // Below current, snap the pull volume in five-barrel steps.
   const handleSliderChange = useCallback((value: number) => {
     if (!isActive || sliderLocked || wellDown || !Number.isFinite(value)) return;
+    // Finger movement counts as activity; while dragging, this cancels but never rearms the timer.
+    resetSliderLockTimer();
     sliderEditRevision.current += 1;
     if (wellConfig?.routeType === 'freshwater') {
       const feet=Math.max(0,Math.min(tankHeightFeet-(planningFeet ?? tankHeightFeet),Math.round(value*60)/60));
@@ -914,10 +922,11 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
     // Save slider position to storage (persists across app restarts)
     saveSliderPosition(wellName, snappedValue);
-  }, [displayFeet, wellName, wellConfig, tankHeightFeet, planningFeet, isActive, sliderLocked, wellDown]);
+  }, [displayFeet, wellName, wellConfig, tankHeightFeet, planningFeet, isActive, sliderLocked, wellDown, resetSliderLockTimer]);
 
   // Handle slider drag start - activate UI, cancel lock timer, and notify parent
   const handleSliderStart = useCallback(() => {
+    sliderDraggingRef.current = true;
     // Cancel lock timer while sliding
     if (sliderLockTimerRef.current) {
       clearTimeout(sliderLockTimerRef.current);
@@ -929,6 +938,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
   // Handle slider drag end - start lock timer and notify parent
   const handleSliderEnd = useCallback(() => {
+    sliderDraggingRef.current = false;
     resetSliderLockTimer();
     onSliderActiveChange?.(false, wellName);
   }, [resetSliderLockTimer, onSliderActiveChange, wideLayout, wellName]);

@@ -29,7 +29,7 @@ findEffect(ast);
 test('unlocking both landscape cards leaves paging enabled; dragging claims only its own well',()=>{
   const claims=new Set<string>();
   const onSliderActiveChange=(active:boolean,well:string)=>active?claims.add(well):claims.delete(well);
-  const scope=(wellName:string)=>({wideLayout:true,isActive:true,sliderLocked:false,wellDown:false,wellName,onSliderActiveChange,activateSliderUI:jest.fn(),sliderLockTimerRef:{current:null},resetSliderLockTimer:jest.fn(),clearTimeout:jest.fn()});
+  const scope=(wellName:string)=>({wideLayout:true,isActive:true,sliderLocked:false,wellDown:false,wellName,onSliderActiveChange,activateSliderUI:jest.fn(),sliderDraggingRef:{current:false},sliderLockTimerRef:{current:null},resetSliderLockTimer:jest.fn(),clearTimeout:jest.fn()});
   const left=scope('Left'),right=scope('Right');
   const cleanupLeft=execute(releaseEffect,left)(),cleanupRight=execute(releaseEffect,right)();
   expect(claims.size).toBe(0); // unlocked on both sides, no gesture
@@ -44,4 +44,33 @@ test.each([{isActive:false},{sliderLocked:true},{wellDown:true}])('unavailable c
   const change=jest.fn();
   execute(releaseEffect,{isActive:true,sliderLocked:false,wellDown:false,wellName:'Left',onSliderActiveChange:change,...state})();
   expect(change).toHaveBeenCalledWith(false,'Left');
+});
+
+
+test('holds the slider unlocked throughout a drag and relocks five seconds after release', () => {
+  jest.useFakeTimers();
+  try {
+    const setSliderLocked = jest.fn();
+    const scope = {
+      sliderDraggingRef: {current: false}, sliderLockTimerRef: {current: null},
+      clearTimeout, setTimeout, SLIDER_LOCK_DELAY: 5000, setSliderLocked,
+      setSliderPeeking: jest.fn(), setSliderUIActive: jest.fn(),
+      sliderOpacity: {value: 1}, withTiming: (value: number) => value,
+      activateSliderUI: jest.fn(), wellName: 'Test well', onSliderActiveChange: jest.fn(),
+      resetSliderLockTimer: () => reset(),
+    };
+    const reset = handler('resetSliderLockTimer', scope);
+    reset();
+    jest.advanceTimersByTime(4000);
+    handler('handleSliderStart', scope)();
+    jest.advanceTimersByTime(9000);
+    expect(setSliderLocked).not.toHaveBeenCalled();
+    handler('handleSliderEnd', scope)();
+    jest.advanceTimersByTime(4999);
+    expect(setSliderLocked).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    expect(setSliderLocked).toHaveBeenCalledWith(true);
+  } finally {
+    jest.useRealTimers();
+  }
 });

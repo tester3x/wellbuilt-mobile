@@ -2684,7 +2684,6 @@ export default function MainScreen() {
         disableIntervalMomentum
         style={{flex:1,minHeight:0}}
         showsHorizontalScrollIndicator={false}
-        contentOffset={pagerContentOffset}
         onScroll={handlePagerScroll}
         onScrollBeginDrag={handlePagerDrag}
         onScrollEndDrag={handlePagerPosition}

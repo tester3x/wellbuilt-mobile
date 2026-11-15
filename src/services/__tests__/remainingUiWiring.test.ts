@@ -77,9 +77,9 @@ test('right-card focus survives viewability refresh and Pull opens that exact we
  expect(push).toHaveBeenCalledWith({pathname:'/record',params:{wellName:'Right'}});
  view({viewableItems:[{index:2}]});expect(focused).toBeNull();expect(current).toBe(2);
 });
-test('two unlocked cards retain pager ownership until both release it',()=>{
+test('two dragging cards retain pager ownership until both release it',()=>{
  const activeSliders={current:new Set<string>()};const setSliderActive=jest.fn();
- const active=callback('handleSliderActiveChange',{activeSliders,setSliderActive});
+ const active=callback('handleSliderActiveChange',{activeSliders,setSliderActive,pagerInteraction:{current:false}});
  active(true,'Left');active(true,'Right');active(false,'Left');
  expect(setSliderActive).toHaveBeenLastCalledWith(true);
  active(false,'Right');expect(setSliderActive).toHaveBeenLastCalledWith(false);
@@ -117,7 +117,7 @@ test('restored portrait has intrinsic middle and original phone/tablet typograph
 test('intermediate resize viewability cannot change the anchored well or replay swipe entry',()=>{
  const setVisibleWellIndices=jest.fn(),setFocusedIndex=jest.fn(),setCurrentIndex=jest.fn(),captureTransitionStart=jest.fn();
  const pagerResizing={current:true};
- const scope={viewportChanged:false,pagerInteraction:{current:true},pagerResizing,setVisibleWellIndices,setFocusedIndex,setCurrentIndex,captureTransitionStart,currentIndex:9,console};
+ const scope={activeSliders:{current:new Set()},pagerExpectedOffset:{current:null},setPagerBridgeActive:jest.fn(),viewportChanged:false,pagerInteraction:{current:true},pagerResizing,setVisibleWellIndices,setFocusedIndex,setCurrentIndex,captureTransitionStart,currentIndex:9,console};
  callback('onViewableItemsChanged',scope)({viewableItems:[{index:14},{index:15}]});
  expect(setVisibleWellIndices).not.toHaveBeenCalled();expect(setCurrentIndex).not.toHaveBeenCalled();expect(captureTransitionStart).not.toHaveBeenCalled();
  pagerResizing.current=false;
@@ -139,7 +139,7 @@ test('resize viewability arriving before JS dimensions is ignored without an act
  const pagerInteraction={current:false},pagerResizing={current:false};
  callback('onViewableItemsChanged',{viewportChanged:false,pagerInteraction,pagerResizing,currentIndex:9,setCurrentIndex,setVisibleWellIndices,setFocusedIndex:jest.fn(),captureTransitionStart,console})({viewableItems:[{index:2},{index:3}]});
  expect(setCurrentIndex).not.toHaveBeenCalled();expect(setVisibleWellIndices).not.toHaveBeenCalled();expect(captureTransitionStart).not.toHaveBeenCalled();
- callback('handlePagerDrag',{pagerInteraction,pagerResizing,captureTransitionStart,currentIndex:9})();expect(pagerInteraction.current).toBe(true);
+ callback('handlePagerDrag',{activeSliders:{current:new Set()},pagerExpectedOffset:{current:null},setPagerBridgeActive:jest.fn(),pagerInteraction,pagerResizing,captureTransitionStart,currentIndex:9})();expect(pagerInteraction.current).toBe(true);
  const handlePagerPosition=jest.fn();
  callback('handlePagerSettled',{pagerInteraction,handlePagerPosition})({nativeEvent:{contentOffset:{x:0}}});
  expect(handlePagerPosition).toHaveBeenCalledTimes(1);expect(pagerInteraction.current).toBe(false);

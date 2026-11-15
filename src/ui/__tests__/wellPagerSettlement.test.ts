@@ -55,4 +55,5 @@ test('fast swipes use the native one-interval momentum limit',()=>{
  const ast=ts.createSourceFile('screen.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let pager:ts.JsxOpeningElement|ts.JsxSelfClosingElement|undefined;
  function visit(n:ts.Node){if((ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))&&n.tagName.getText(ast)==='FlatList'&&n.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='testID'&&a.initializer?.getText(ast)==='"well-pager"'))pager=n;ts.forEachChild(n,visit);}visit(ast);
  expect(pager!.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='disableIntervalMomentum'&&!a.initializer)).toBe(true);
+ expect(pager!.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='contentOffset')).toBe(false);
 });

@@ -26,10 +26,36 @@ function findEffect(node:ts.Node) {
 }
 findEffect(ast);
 
+const dragState = () => ({
+  sliderEditRevision: {current: 0}, sliderDragBasis: {current: null},
+  displayFeet: 8, getBblPerFootSync: () => 20,
+});
+
+test('a level refresh does not change snap points in an active drag', () => {
+  const scope = {
+    ...dragState(), isActive: true, sliderLocked: false, wellDown: false,
+    sliderDraggingRef: {current: false}, sliderLockTimerRef: {current: null},
+    activateSliderUI: jest.fn(), resetSliderLockTimer: jest.fn(),
+    onSliderActiveChange: jest.fn(), wellName: 'Test well',
+    wellConfig: {}, tankHeightFeet: 20, setSliderFeet: jest.fn(),
+    saveSliderPosition: jest.fn(),
+  };
+  handler('handleSliderStart', scope)();
+  scope.displayFeet = 3.9;
+  handler('handleSliderChange', scope)(7.6);
+  expect(scope.setSliderFeet).toHaveBeenLastCalledWith(7.5);
+  handler('handleSliderEnd', scope)();
+  handler('handleSliderChange', scope)(7.6);
+  expect(scope.setSliderFeet).toHaveBeenLastCalledWith(7.5);
+  handler('handleSliderChange', scope)(7.625);
+  expect(scope.setSliderFeet).toHaveBeenLastCalledWith(7.75);
+});
+
+
 test('unlocking both landscape cards leaves paging enabled; dragging claims only its own well',()=>{
   const claims=new Set<string>();
   const onSliderActiveChange=(active:boolean,well:string)=>active?claims.add(well):claims.delete(well);
-  const scope=(wellName:string)=>({wideLayout:true,isActive:true,sliderLocked:false,wellDown:false,wellName,onSliderActiveChange,activateSliderUI:jest.fn(),sliderDraggingRef:{current:false},sliderLockTimerRef:{current:null},resetSliderLockTimer:jest.fn(),clearTimeout:jest.fn()});
+  const scope=(wellName:string)=>({...dragState(),wideLayout:true,isActive:true,sliderLocked:false,wellDown:false,wellName,onSliderActiveChange,activateSliderUI:jest.fn(),sliderDraggingRef:{current:false},sliderLockTimerRef:{current:null},resetSliderLockTimer:jest.fn(),clearTimeout:jest.fn()});
   const left=scope('Left'),right=scope('Right');
   const cleanupLeft=execute(releaseEffect,left)(),cleanupRight=execute(releaseEffect,right)();
   expect(claims.size).toBe(0); // unlocked on both sides, no gesture
@@ -52,6 +78,7 @@ test('holds the slider unlocked throughout a drag and relocks five seconds after
   try {
     const setSliderLocked = jest.fn();
     const scope = {
+      ...dragState(),
       sliderDraggingRef: {current: false}, sliderLockTimerRef: {current: null},
       clearTimeout, setTimeout, SLIDER_LOCK_DELAY: 5000, setSliderLocked,
       setSliderPeeking: jest.fn(), setSliderUIActive: jest.fn(),

@@ -377,6 +377,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
   const sliderLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // An active drag must never be treated as slider inactivity.
   const sliderDraggingRef = useRef(false);
+  const sliderDragBasis = useRef<{ feet: number; barrelsPerFoot: number } | null>(null);
   const tankMathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Auto-revert tank-math peek
   const lastTapTimeRef = useRef<number>(0); // For double-tap detection on slider
   const lastTankTapTimeRef = useRef<number>(0); // For double-tap detection on tank
@@ -636,7 +637,7 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
         }
 
         // Load persisted slider position (keeps driver's last setting)
-        if (sliderEditRevision.current === sliderRevision) {
+        if (!sliderDraggingRef.current && sliderEditRevision.current === sliderRevision) {
           setSliderFeet(Math.min(savedSliderPos, tankHeightFeet));
         }
 
@@ -901,14 +902,14 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     const sliderMin = allowedBottom < literalLoadLine ? allowedBottom : literalLoadLine;
 
     // Use current displayed level as reference (auto-updates as tank fills)
-    const reference = Math.max(sliderMin, Math.min(tankHeightFeet, displayFeet));
+    const reference = Math.max(sliderMin, Math.min(tankHeightFeet, sliderDragBasis.current?.feet ?? displayFeet));
     let snappedValue: number;
 
     if (value >= reference) {
       // Above current: snap to standard 3" grid (0.25 ft increments from 0)
       snappedValue = Math.round(value * 4) / 4;
     } else {
-      const barrelsPerFoot = getBblPerFootSync(wellName);
+      const barrelsPerFoot = sliderDragBasis.current?.barrelsPerFoot ?? getBblPerFootSync(wellName);
       if (!Number.isFinite(barrelsPerFoot) || barrelsPerFoot <= 0) return;
       const maxSteps = Math.floor((reference - sliderMin) * barrelsPerFoot / 5);
       const steps = Math.min(maxSteps, Math.round((reference - value) * barrelsPerFoot / 5));
@@ -926,6 +927,8 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
   // Handle slider drag start - activate UI, cancel lock timer, and notify parent
   const handleSliderStart = useCallback(() => {
+    sliderEditRevision.current += 1;
+    sliderDragBasis.current = { feet: displayFeet, barrelsPerFoot: getBblPerFootSync(wellName) };
     sliderDraggingRef.current = true;
     // Cancel lock timer while sliding
     if (sliderLockTimerRef.current) {
@@ -934,11 +937,12 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     }
     activateSliderUI();
     onSliderActiveChange?.(true, wellName);
-  }, [activateSliderUI, onSliderActiveChange, wideLayout, wellName]);
+  }, [activateSliderUI, displayFeet, onSliderActiveChange, wideLayout, wellName]);
 
   // Handle slider drag end - start lock timer and notify parent
   const handleSliderEnd = useCallback(() => {
     sliderDraggingRef.current = false;
+    sliderDragBasis.current = null;
     resetSliderLockTimer();
     onSliderActiveChange?.(false, wellName);
   }, [resetSliderLockTimer, onSliderActiveChange, wideLayout, wellName]);
@@ -975,6 +979,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
 
   const MAX_PULL_HOURS = 24; // Max hours to project forward when fully pulled
 
+  const sliderReferenceFeet = sliderDragBasis.current?.feet ?? displayFeet;
+  const sliderBarrelsPerFoot = sliderDragBasis.current?.barrelsPerFoot ?? bblsPerFoot;
+
   let readyAtText = '';
   let isPlanningPull = false;
   let bblsToPull = 0; // BBLs that would be taken if pulling to slider level
@@ -990,9 +997,9 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     readyAtText=planningDown ? 'Consumption paused' : at ? 'To '+formatFeetInches(minimum!)+' @ '+formatDateTimeSuffix(new Date(at),t('well.today'),t('well.tomorrow')) : 'Forecast unavailable';
   } else if (flowMins <= 0) {
     readyAtText = 'N/A';
-  } else if (displayFeet < sliderFeet) {
+  } else if (sliderReferenceFeet < sliderFeet) {
     // Slider is ABOVE current level (Fill side) - when will tank reach slider level?
-    const feetNeeded = sliderFeet - displayFeet;
+    const feetNeeded = sliderFeet - sliderReferenceFeet;
     const minsNeeded = feetNeeded * flowMins;
     const readyAt = new Date(Date.now() + minsNeeded * 60 * 1000);
     readyAtText = formatDateTimeSuffix(readyAt, t('well.today'), t('well.tomorrow'));
@@ -1001,13 +1008,13 @@ const WellView = React.memo(function WellView({ wellName, isActive, entryPrepare
     // Calculate hours forward based on how far we're pulling down
     // The more we pull, the more hours forward we project
     isPlanningPull = true;
-    const feetToPull = displayFeet - sliderFeet;
-    bblsToPull = Math.round(feetToPull * bblsPerFoot / 5) * 5;
+    const feetToPull = sliderReferenceFeet - sliderFeet;
+    bblsToPull = Math.round(feetToPull * sliderBarrelsPerFoot / 5) * 5;
 
     // Calculate hours forward: scale from 0 to MAX_PULL_HOURS based on pull amount
     // Use the ratio of feet pulled to total pullable feet (current level - min level)
     const minLevel = wellConfig?.allowedBottom ?? 1;
-    const maxPullableFeet = Math.max(displayFeet - minLevel, 1);
+    const maxPullableFeet = Math.max(sliderReferenceFeet - minLevel, 1);
     const pullRatio = Math.min(feetToPull / maxPullableFeet, 1);
     const hoursForward = pullRatio * MAX_PULL_HOURS;
 

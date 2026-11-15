@@ -20,3 +20,8 @@ test('background refresh cannot make picker choose another well at the same nume
   expect(pickerWellIndex(snapshot,1,['A south','Y north','Z north'])).toBe(2);
   expect(pickerWellIndex(snapshot,1,['A south','Y north'])).toBe(-1);
 });
+
+test('duplicate names cannot create a second pager card for the same well',()=>{
+  expect(wellDisplayOrder(['Gabriel 5','Gabriel 5','Gabriel 6'],{},[]))
+    .toEqual(['Gabriel 5','Gabriel 6']);
+});

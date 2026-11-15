@@ -1,6 +1,7 @@
 /** Display order is shared by successful loads and recovery, never by selection storage. */
 export function wellDisplayOrder(names: readonly string[], config: Record<string, any> | null,
   savedRouteOrder: unknown, previous: readonly string[] = []): string[] {
+  names = [...new Set(names)];
   const order = Array.isArray(savedRouteOrder) ? savedRouteOrder.filter((v): v is string => typeof v === 'string') : [];
   const route = (name: string) => typeof config?.[name]?.route === 'string' ? config[name].route.trim() : '';
   // A temporarily incomplete catalogue cannot turn a previously grouped list

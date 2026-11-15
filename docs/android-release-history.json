@@ -3,7 +3,7 @@
   "remote": "https://github.com/tester3x/wellbuilt-mobile.git",
   "packageId": "com.wellbuiltmobile.app",
   "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
-  "versionCodeFloor": 150,
+  "versionCodeFloor": 152,
   "observedAt": "2026-10-30T19:26:47.053453+00:00",
   "installedReports": [
     {
@@ -51,6 +51,34 @@
     }
   ],
   "artifacts": [
+    {
+      "sourceCommit": "487de88c37ba2f326943e37ccc421a52492eb169",
+      "versionCode": 152,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "0c1f95765d308e5269299be1a04bdc33053e1f636b1f064c18241e6d19c91fba",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-11-15T19:49:00.063Z",
+      "localArtifact": "C:/dev/release-artifacts/wbm-152/com.wellbuiltmobile.app-v152.apk",
+      "method": "Registered-home local Android SDK/JDK21/Gradle arm64-v8a, immutable android-release-v152",
+      "checks": "TypeScript, 44 targeted Jest tests, release gate, signed APK package and version.",
+      "reconciliation": "Remote branch reconciliation and full delta in C:/dev/release-artifacts/wbm-152/manifest.json and delta.patch.",
+      "verification": "Installed and independently read back on S24 only. Gabriel 3 to 5 to 7 and back to 5 showed matching headings, data and indexes. Gabriel 5 slider changed both directions, stayed unlocked during a seven-second drag and relocked within 5.4 seconds after release. No live load submitted. Fold remains on M150."
+    },
+    {
+      "sourceCommit": "af9deb4d7c8d25a10849d6e774fb560c0b02b477",
+      "versionCode": 151,
+      "versionName": "2.1.0",
+      "packageId": "com.wellbuiltmobile.app",
+      "sha256": "fb40b9f894d051441f232f1b4858fd3b4083db30efebf31b04c475dbdad3b169",
+      "signingCertificateSha256": "4c4f7b4de36380e6326ed5f9296907203b3283061f41b7b0f67ef496d64c814b",
+      "builtAtUtc": "2026-11-15T19:40:42.130Z",
+      "localArtifact": "C:/dev/release-artifacts/wbm-151/com.wellbuiltmobile.app-v151.apk",
+      "method": "Registered-home local Android SDK/JDK21/Gradle arm64-v8a, immutable android-release-v151",
+      "checks": "TypeScript, 27 targeted Jest tests, release gate, signed APK package and version.",
+      "reconciliation": "Remote branch reconciliation and full delta in C:/dev/release-artifacts/wbm-151/manifest.json and delta.patch.",
+      "verification": "Installed on S24, where the Gabriel 5 heading could appear above Gabriel 3 data during a swipe/slider sequence. Superseded by M152."
+    },
     {
       "sourceCommit": "c4f1e1c7615b9a494e22dc2a8915c5714e1b4ad2",
       "versionCode": 150,
